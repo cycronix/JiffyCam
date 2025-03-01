@@ -73,8 +73,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 For any inquiries or issues, please contact:
 
-- **Your Name** - [your_email@example.com](mailto:your_email@example.com)
-- GitHub: [your_username](https://github.com/your_username)
+- GitHub: [cycronix](https://github.com/cycronix)
 
 ---
 
