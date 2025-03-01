@@ -1,0 +1,62 @@
+## Real-Time Code Flow
+
+1. **Initialization**:
+   - JiffyCam object is created
+   - Configuration is loaded
+   - Circular buffer is initialized
+   - Status flags are set to initial values
+
+2. **Starting the System**:
+   - `start()` method is called
+   - Sets `_running` flag to True
+   - Initializes and starts the camera, writer, and watchdog threads
+
+3. **Camera Thread Flow**:
+   - Continuously captures frames from the camera
+   - Checks `_running` and `_paused` flags to determine operation
+   - Adds timestamps to frames
+   - Stores frames in the circular buffer
+   - Updates frame counters and statistics
+
+4. **Recording Trigger**:
+   - When recording is triggered (either manually or by event):
+     - `_recording` flag is set to True
+     - Frames from the buffer (including pre-trigger frames) are marked for saving
+
+5. **Writer Thread Flow**:
+   - Monitors the clip queue for frames to be saved
+   - When clips are available:
+     - Sets `_saving` flag to True
+     - Creates output file and writes frames
+     - Updates statistics
+     - Sets `_saving` flag to False when complete
+
+6. **Watchdog Thread Flow**:
+   - Periodically checks system health:
+     - Camera thread responsiveness
+     - Writer thread responsiveness
+     - Disk space availability
+   - Updates `_watchdog_ok` flag based on health checks
+   - Can trigger system shutdown if critical issues are detected
+
+7. **Shutdown Process**:
+   - `stop()` method is called
+   - Sets `_running` flag to False
+   - Waits for threads to complete their work
+   - Releases resources (camera, files)
+   - Finalizes any pending operations
+
+## Thread Synchronization
+
+The code uses various synchronization mechanisms:
+- Thread locks to protect shared resources
+- Event objects to signal between threads
+- Queue structures for thread-safe data passing
+## Error Handling
+
+The system includes error handling mechanisms:
+- Try/except blocks to catch and log exceptions
+- The watchdog thread to detect and respond to system issues
+- Graceful degradation when resources are constrained
+
+This architecture allows JiffyCam to capture video continuously while maintaining a buffer of recent footage, and quickly save clips when triggered, all while monitoring system health.
