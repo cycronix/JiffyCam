@@ -4,7 +4,6 @@ data_dir: JiffyData
 device_aliases:
   WebCam: 0
   WebCam2: 2
-  BackYard: rtsp://admin:Barkley.1@192.168.50.227/cam/realmonitor?channel=1&subtype=0
-  FrontYard: rtsp://admin:Barkley.1@192.168.50.224/cam/realmonitor?channel=1&subtype=0
+  FrontYard: rtsp://admin:mypasswd.1@192.168.50.XXX/cam/realmonitor?channel=1&subtype=0
 resolution: '0x0'
 save_interval: 5
