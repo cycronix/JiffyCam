@@ -1,5 +1,7 @@
 JiffyData/
+models/
 Old/
 ghat.txt
 .DS_Store
+__pycache__/
 

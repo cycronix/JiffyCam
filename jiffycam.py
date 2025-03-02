@@ -21,6 +21,8 @@ import glob
 from collections import OrderedDict
 import traceback
 
+from jiffydetect import detect
+
 # Initialize HTTP pool manager
 http = urllib3.PoolManager()
 
@@ -151,10 +153,15 @@ class VideoCapture:
             # Set JPEG quality to 95
             encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
             
-            # Remove server_path related code as it's no longer used
-            # url = f"http://{server_path}/put/{cam_name}"
-            
             if save_frame:
+                detect_mode = True
+                if(detect_mode):
+                    tryframe = detect(frame, None)
+                    if(tryframe is None):       # ONLY save detections!  (to do: heartbeat saves)
+                        return frame
+                    else:
+                        frame = tryframe
+
                 # Get the data directory directly from the config
                 data_dir = self.config.get('data_dir', 'JiffyData')
                 
@@ -182,6 +189,10 @@ class VideoCapture:
                 self.save_status = f"Saved: {save_path}"
         except Exception as e:
             self.handle_error(f"Error sending frame: {str(e)}")
+            return None
+
+        return frame
+
 
     def capture_video_loop(self, source, server_path: str, cam_name: str, cam_width: int, cam_height: int, save_interval: int, session: str):
         """Initialize and run video capture loop."""
@@ -243,7 +254,14 @@ class VideoCapture:
                     frames_this_second = 0
                     last_fps_time = current_time
 
-                # Update frame queue
+                # Send frame to server (server_path is no longer used but kept for backward compatibility)
+                frame = self.send_frame(server_path, cam_name, frame, time.time(), save_frame, session)
+                if self.error_event.is_set():  # Check if error occurred in send_frame
+                    break
+                save_frame = False
+                self.frame_count += 1
+
+             # Update frame queue
                 if not self.frame_queue.full():
                     self.frame_queue.put((frame, current_fps, width, height))
                 else:
@@ -253,12 +271,6 @@ class VideoCapture:
                     except:
                         pass
 
-                # Send frame to server (server_path is no longer used but kept for backward compatibility)
-                self.send_frame(server_path, cam_name, frame, time.time(), save_frame, session)
-                if self.error_event.is_set():  # Check if error occurred in send_frame
-                    break
-                save_frame = False
-                self.frame_count += 1
                 time.sleep(0.01)  # Small delay to prevent overwhelming the system
             else:
                 consecutive_failures += 1
