@@ -89,7 +89,7 @@ def detect(image, previmage):
                     print('no detection')
                     return None
         
-    print('BuhBye')
+    #print('BuhBye')
     
 # ---------------------------------------------------------------------------------------------------------------------
 
