@@ -598,27 +598,46 @@ def main():
             hour_12 = 12
         return f"{hour_12}:{minute:02d}:{second:02d} {period}"
     
+    # Function to toggle real-time capture - MOVED HERE before it's referenced in sidebar
+    def toggle_rt_capture():
+        """Toggle real-time capture on/off"""
+        # Toggle the rt_capture state
+        st.session_state.rt_capture = not st.session_state.rt_capture
+        
+        if st.session_state.rt_capture:     
+            # When starting capture, also exit playback mode
+            st.session_state.in_playback_mode = False
+            # Get resolution
+            resolution = st.session_state.resolution
+            
+            # Check if resolution is a key in RESOLUTIONS dictionary
+            if resolution in RESOLUTIONS:
+                width, height = RESOLUTIONS[resolution]
+                resolution_str = f"{width}x{height}"
+            else:
+                # Assume resolution is already in the format "widthxheight"
+                resolution_str = resolution
+                
+                # Validate format
+                if not isinstance(resolution_str, str) or 'x' not in resolution_str:
+                    resolution_str = "1920x1080"  # Default if invalid
+            
+            # Reset browsing state
+            st.session_state.browsing_saved_images = False
+            st.session_state.date = datetime.now().date()
+
+            # Set the time slider to 0
+            st.session_state.time_slider = 0
+            
+            # Start capture with the resolution string
+            st.session_state.video_capture.start_capture(resolution_str)
+        else:
+            st.session_state.video_capture.stop_capture()
+    
     # Function to synchronize time slider with current time values
     def sync_time_slider():
-        """Synchronize the time slider with the current hour, minute, and second values.
-        Note: This function is currently disabled to prevent automatic syncing of the time slider.
-        """
+        """Synchronize the time slider with the current hour, minute, and second values."""
         # This function is disabled to prevent the time slider from syncing to actual time
-        # Uncomment the code below to re-enable automatic syncing
-        """
-        if 'hour' in st.session_state and 'minute' in st.session_state and 'second' in st.session_state:
-            # Create a datetime.time object for the current time
-            current_time_obj = datetime_time(
-                st.session_state.hour,
-                st.session_state.minute,
-                st.session_state.second
-            )
-            
-            # Only update if the time_slider doesn't match the current time
-            if 'time_slider' not in st.session_state or st.session_state.time_slider != current_time_obj:
-                # This will be processed on the next rerun
-                st.session_state.time_slider = current_time_obj
-        """
         pass  # Do nothing to prevent syncing
     
     # Call the sync function at startup
@@ -627,6 +646,10 @@ def main():
     # Initialize VideoCapture instance
     if 'video_capture' not in st.session_state:
         st.session_state.video_capture = VideoCapture()
+    
+    # Initialize in_playback_mode first, before any other code tries to use it
+    if 'in_playback_mode' not in st.session_state:
+        st.session_state.in_playback_mode = False
     
     # Initialize session state from config
     # Remove server_path initialization as it's no longer used
@@ -919,7 +942,26 @@ def main():
             min_value=0,
             help="Interval between saved frames (0 to disable periodic saves)"
         )
-
+        
+        # Add the toggle capture button to the sidebar
+        # Check if capture is currently running to set the initial button state
+        is_capturing = st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive()
+        st.session_state.rt_active = is_capturing
+        
+        # Create a toggle button that changes text based on state
+        button_text = "Stop Capture" if is_capturing else "Start Capture"
+        button_color = "secondary" if is_capturing else "primary"
+        
+        # Add a separator before the capture button
+        st.markdown("---")
+        
+        # Create the button with the appropriate text and styling
+        st.button(button_text, key="rt_toggle", on_click=toggle_rt_capture, 
+                  help="Toggle real-time capture", type=button_color)
+        
+        if is_capturing:
+            st.success("Capture is active and running")
+        
         # Move status and error placeholders to sidebar
         st.header("Status")
         status_placeholder = st.empty()
@@ -1211,18 +1253,8 @@ def main():
         
         def update_image_display(direction=None):
             """Update the image display based on the current date and time."""
-            # Get the current date and time from session state
-            requested_date = st.session_state.date
-            
-            # Create a datetime object for the requested time
-            requested_datetime = datetime.combine(
-                requested_date,
-                datetime.min.time().replace(
-                    hour=st.session_state.hour,
-                    minute=st.session_state.minute,
-                    second=st.session_state.second
-                )
-            )
+            # Always set playback mode to True when browsing images
+            st.session_state.in_playback_mode = True
             
             # Find the closest image to the requested time
             closest_image = find_closest_image(
@@ -1234,95 +1266,47 @@ def main():
             )
             
             if closest_image:
-                # Unpack the tuple
                 image_path, timestamp = closest_image
-                
-                # Update the session state with the timestamp of the closest image
-                # but keep the original date
-                st.session_state.hour = timestamp.hour
-                st.session_state.minute = timestamp.minute
-                st.session_state.second = timestamp.second
-                
-                # We don't update the date here to prevent jumping to a new date
-                # st.session_state.date = timestamp.date()
-                
-                # Sync the time slider with the updated time values ONLY if it wasn't manually adjusted
-                # or if this is not a result of a manual adjustment (e.g., from Prev/Next buttons)
-
-                if 'time_slider' in st.session_state and not st.session_state.slider_manually_adjusted:
-                    st.session_state.time_slider = datetime_time(
-                        timestamp.hour,
-                        timestamp.minute,
-                        timestamp.second
-                    )
-                
-                # Display the image
                 try:
                     frame = cv2.imread(image_path)
                     if frame is not None:
-                        # Store the frame in session state
-                        st.session_state.last_frame = frame
-                        # Update the image display
+                        # Store the frame in session state and timestamp
+                        st.session_state.last_frame = frame.copy()
+                        st.session_state.actual_timestamp = timestamp
+                        
+                        # Update the display
                         video_placeholder.image(frame, channels="BGR", use_container_width=True)
                         
-                        # Update the time values with the timestamp
+                        # Update time values with the timestamp
                         st.session_state.hour = timestamp.hour
                         st.session_state.minute = timestamp.minute
                         st.session_state.second = timestamp.second
-                        st.session_state.date = timestamp.date()
                         
-                        # Update the browsing values as well
-                        st.session_state.browsing_hour = timestamp.hour
-                        st.session_state.browsing_minute = timestamp.minute
-                        st.session_state.browsing_second = timestamp.second
-                        st.session_state.browsing_date = timestamp.date()
-                        
-                        # Sync the time slider with the timestamp
-                        if 'time_slider' in st.session_state:
-                            st.session_state.time_slider = datetime_time(
-                                timestamp.hour,
-                                timestamp.minute,
-                                timestamp.second
-                            )
-                        
-                        # Update the time display with actual values
-                        time_str = format_time_12h(timestamp.hour, timestamp.minute, timestamp.second)
-                        
-                        # Use custom HTML with inline style that will override any CSS classes
-                        time_html = f"""
-                        <style>
-                        .time-text {{
-                            font-size: 1.6rem;
-                            font-weight: 400;
-                            text-align: center;
-                            color: #808080;
-                        }}
-                        </style>
-                        <div class="time-text">{time_str}</div>
-                        """
-                        
-                        # Display the time with the neutral color
-                        time_display.markdown(time_html, unsafe_allow_html=True)
+                        # Update the time display
+                        time_display.markdown(
+                            f'<div class="time-display">{format_time_12h(timestamp.hour, timestamp.minute, timestamp.second)}</div>',
+                            unsafe_allow_html=True
+                        )
                         
                         # Update status with timestamp info
                         status_placeholder.text(f"Displaying image from: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+                        return True
                         
-                        # Store the actual timestamp in session state
-                        st.session_state.actual_timestamp = timestamp
-                    else:
-                        status_placeholder.text(f"Could not read image: {image_path}")
                 except Exception as e:
                     status_placeholder.text(f"Error loading image: {str(e)}")
+                    # Keep showing the last frame if there's an error
+                    if st.session_state.last_frame is not None:
+                        video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
             else:
-                # Format the date string properly based on the type of requested_date
-                if isinstance(requested_date, str):
-                    date_str = requested_date
-                else:
-                    date_str = requested_date.strftime('%Y-%m-%d')
-                status_placeholder.text(f"No images found for {date_str} at {st.session_state.hour:02d}:{st.session_state.minute:02d}:{st.session_state.second:02d}")
-                # Keep displaying the last frame if available
+                # No image found for the selected time
+                status_placeholder.text(f"No images found for the selected time")
+                # Keep showing the last frame
                 if st.session_state.last_frame is not None:
                     video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
+            
+            # Stay in playback mode regardless of result
+            st.session_state.in_playback_mode = True
+            return False
 
         # Create placeholder for video - MOVED INSIDE time_container
         video_placeholder = st.empty()
@@ -1335,12 +1319,11 @@ def main():
         
         # Function to handle date change
         def on_date_change():
-            # Stop capture if running
-            if st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive():
-                st.session_state.video_capture.stop_capture()
-            
             # Update browsing date
             st.session_state.browsing_date = st.session_state.date
+            
+            # Set flag to indicate we're in playback mode instead of stopping capture
+            st.session_state.in_playback_mode = True
             
             # Reset the slider_manually_adjusted flag to ensure the slider updates
             st.session_state.slider_manually_adjusted = False
@@ -1364,6 +1347,8 @@ def main():
             st.session_state.rt_capture = not st.session_state.rt_capture
             
             if st.session_state.rt_capture:     
+                # When starting capture, also exit playback mode
+                st.session_state.in_playback_mode = False
                 # Get resolution
                 resolution = st.session_state.resolution
                 
@@ -1451,21 +1436,22 @@ def main():
         # Function to handle previous image button
         def on_prev_button():
             """Handle previous image button click."""
-            # Stop capture if running
-            if st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive():
-                st.session_state.video_capture.stop_capture()
+            # Remove the capture stop code
+            # if st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive():
+            #     st.session_state.video_capture.stop_capture()
             
-            # Reset the slider_manually_adjusted flag since we want to sync the slider
-            # when navigation buttons are used
+            # Set flag to indicate we're in playback mode
+            st.session_state.in_playback_mode = True
+            
+            # Reset the slider_manually_adjusted flag
             st.session_state.slider_manually_adjusted = False
             
-            # Decrement the second by 1 to find the previous image
+            # Decrement time logic...
             current_second = st.session_state.second
             if current_second == 0:
                 # Handle rollover
                 current_minute = st.session_state.minute
                 if current_minute == 0:
-                    # Handle hour rollover
                     st.session_state.hour = (st.session_state.hour - 1) % 24
                     st.session_state.minute = 59
                 else:
@@ -1474,35 +1460,32 @@ def main():
             else:
                 st.session_state.second = current_second - 1
             
-            # Sync the time slider with the updated time values
+            # Update the time slider and display
             if 'time_slider' in st.session_state:
                 st.session_state.time_slider = datetime_time(
                     st.session_state.hour,
                     st.session_state.minute,
                     st.session_state.second
                 )
-                
+            
             # Find and display the previous image
             update_image_display(direction="down")
         
         # Function to handle next image button
         def on_next_button():
             """Handle next image button click."""
-            # Stop capture if running
-            if st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive():
-                st.session_state.video_capture.stop_capture()
+            # Set flag to indicate we're in playback mode
+            st.session_state.in_playback_mode = True
             
-            # Reset the slider_manually_adjusted flag since we want to sync the slider
-            # when navigation buttons are used
+            # Reset the slider_manually_adjusted flag
             st.session_state.slider_manually_adjusted = False
             
-            # Increment the second by 1 to find the next image
+            # Increment time logic
             current_second = st.session_state.second
             if current_second == 59:
                 # Handle rollover
                 current_minute = st.session_state.minute
                 if current_minute == 59:
-                    # Handle hour rollover
                     st.session_state.hour = (st.session_state.hour + 1) % 24
                     st.session_state.minute = 0
                 else:
@@ -1511,14 +1494,14 @@ def main():
             else:
                 st.session_state.second = current_second + 1
             
-            # Sync the time slider with the updated time values
+            # Update the time slider and display
             if 'time_slider' in st.session_state:
                 st.session_state.time_slider = datetime_time(
                     st.session_state.hour,
                     st.session_state.minute,
                     st.session_state.second
                 )
-                
+            
             # Find and display the next image
             update_image_display(direction="up")
         
@@ -1540,23 +1523,39 @@ def main():
         with time_cols[3]:
             st.markdown('<div style="width:1px; background-color:#555555; height:32px; margin:0 auto;"></div>', unsafe_allow_html=True)
             
-        # Record button - in the last column
+        # Record button - in the last column - always shows Live Display button
         with time_cols[4]:
-            # Check if capture is currently running to set the initial button state
+            # Check if capture is currently running
             is_capturing = st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive()
-            st.session_state.rt_active = is_capturing
             
-            # Ensure rt_capture is in sync with the actual capture state
-            #print(f"rt_capture: {st.session_state.rt_capture}, is_capturing: {is_capturing}")
-            #if st.session_state.rt_capture != is_capturing:   #mjm
-            #    st.session_state.rt_capture = is_capturing
+            # Determine button state
+            if not is_capturing:
+                # Capture not running - show disabled button
+                st.button("Live", key="live_btn", use_container_width=True, 
+                          help="Start capture to enable live display", disabled=True)
+            else:
+                # Capture is running - determine if button should be active
+                already_live = not st.session_state.in_playback_mode
+                
+                # Display the Live Display button (disabled if already showing live)
+                if st.button("Live", key="live_btn", use_container_width=True,
+                            help="Return to live view" if not already_live else "Already showing live view",
+                            disabled=already_live):
+                    # Only execute this code when button is pressed AND it was active
+                    if not already_live:
+                        # Update playback mode flag to show live view
+                        st.session_state.in_playback_mode = False
+                        
+                        # Update browsing date and time to current
+                        current_time = datetime.now()
+                        # Only update browsing_date, not the widget-bound date variable
+                        st.session_state.browsing_date = current_time.date()
+                        st.session_state.hour = current_time.hour
+                        st.session_state.minute = current_time.minute
+                        st.session_state.second = current_time.second
             
-            # Create a simple button that changes text based on state
-            button_text = " ⏸ " if is_capturing else " ● "
-            
-            # Create the button with the appropriate text
-            st.button(button_text, key="rt_toggle", on_click=toggle_rt_capture, help="Toggle real-time capture", use_container_width=True)
-            
+
+        
         # Close the time controls container
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1602,9 +1601,8 @@ def main():
             # Set the flag to indicate the slider was manually adjusted
             st.session_state.slider_manually_adjusted = True
             
-            # Stop capture if running
-            if st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive():
-                st.session_state.video_capture.stop_capture()
+            # Set flag to indicate we're in playback mode instead of stopping capture
+            st.session_state.in_playback_mode = True
             
             # Update the image display with the new time
             update_image_display(direction="down")
@@ -2063,10 +2061,8 @@ def main():
         if st.session_state.video_capture.error_event.is_set():
             # Force cleanup on error
             st.session_state.video_capture.stop_capture()
-            # Show error and status
             error_placeholder.error(st.session_state.video_capture.last_error)
             status_placeholder.text("Status: Stopped")
-            # Keep displaying the last frame if available
             if st.session_state.last_frame is not None:
                 video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
             break
@@ -2074,138 +2070,60 @@ def main():
         # Update status and video frame
         is_capturing = st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive()
         
-        # Ensure rt_active and rt_capture are in sync with the actual capture state
-        #print(f"rt_active: {st.session_state.rt_active}, rt_capture: {st.session_state.rt_capture}, is_capturing: {is_capturing}")
-        #st.session_state.rt_active = is_capturing    #mjm
-        #if not is_capturing and st.session_state.rt_capture:
-        #    st.session_state.rt_capture = False
-        
         if is_capturing:
-            # Reset browsing flag when capturing
-            st.session_state.browsing_saved_images = False
-            
-            # Reset the slider_manually_adjusted flag in real-time mode
-            # This ensures the time slider position is updated with current time
-            # when recording starts (in toggle_rt_capture), but not continuously
-            # st.session_state.slider_manually_adjusted = False
-            
-            # Get latest frame and stats
-            if not st.session_state.video_capture.frame_queue.empty():
-                try:
-                    frame, fps, width, height = st.session_state.video_capture.frame_queue.get_nowait()
-                    # Store the frame in session state to keep it visible when stopped
-                    st.session_state.last_frame = frame.copy()
-                    video_placeholder.image(frame, channels="BGR", use_container_width=True)
-                    # Update status values only when we get new ones
-                    st.session_state.video_capture.current_fps = fps
-                    st.session_state.video_capture.current_width = width
-                    st.session_state.video_capture.current_height = height
-                except:
-                    pass
-            
-            # Update current time display and progress ONLY when capturing
-            current_time = datetime.now()
-            
-            # Update time adjustment controls to match current time during active capture
-            st.session_state.hour = current_time.hour
-            st.session_state.minute = current_time.minute
-            st.session_state.second = current_time.second
-            
-            # Do NOT update the time slider during active capture
-            # Streamlit doesn't allow modifying widget values after instantiation
-            # The time displays will show the current time instead
-            
-            # Update the time display with current values
-            # Use blue text when an image was just saved (within the last 0.5 seconds), otherwise use red text for recording
-            current_time = time.time()
-            show_blue = (current_time - st.session_state.video_capture.image_saved_time) < 0.5 and st.session_state.video_capture.image_saved_time > 0
-            
-            # Format the time string
-            time_str = format_time_12h(st.session_state.hour, st.session_state.minute, st.session_state.second)
-            
-            # Determine the color based on the condition
-            if show_blue:
-                color = "#00BFFF"  # Bright blue
+            # When capture is running
+            if st.session_state.in_playback_mode:
+                # In playback mode with active capture:
+                # 1. Empty the queue without updating display
+                while not st.session_state.video_capture.frame_queue.empty():
+                    try:
+                        _, fps, width, height = st.session_state.video_capture.frame_queue.get_nowait()
+                        # Only update stats, don't touch the display
+                        st.session_state.video_capture.current_fps = fps
+                        st.session_state.video_capture.current_width = width
+                        st.session_state.video_capture.current_height = height
+                    except:
+                        pass
+                # 2. Make sure the playback frame stays visible
+                if st.session_state.last_frame is not None:
+                    video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
             else:
-                color = "#FF4500"  # Bright red
-            
-            # Use custom HTML with inline style that will override any CSS classes
-            time_html = f"""
-            <style>
-            .time-text {{
-                font-size: 1.6rem;
-                font-weight: 400;
-                text-align: center;
-                color: {color};
-            }}
-            </style>
-            <div class="time-text">{time_str}</div>
-            """
-            
-            # Display the time with the appropriate color
-            time_display.markdown(time_html, unsafe_allow_html=True)
-            
-            # Fix time calculation by using timestamp instead of datetime object
-            current_timestamp = time.time()
-            time_since_last_save = current_timestamp - st.session_state.video_capture.last_save_time
-            next_save = max(0, int(st.session_state.save_interval) - int(time_since_last_save))
-            
-            # Note: We don't update the time_slider during real-time capture
-            # as Streamlit doesn't allow modifying widget values after instantiation
-            # The time displays above will show the current time instead
-            
-            status_text = f"""
-            Status: Running
-            Frames captured: {st.session_state.video_capture.frame_count}
-            Time: {datetime.now().strftime('%H:%M:%S')}
-            Resolution: {st.session_state.video_capture.current_width}x{st.session_state.video_capture.current_height}
-            FPS: {st.session_state.video_capture.current_fps}
-            {st.session_state.video_capture.save_status}
-            """
-            status_placeholder.text(status_text)
+                # Normal real-time display mode
+                if not st.session_state.video_capture.frame_queue.empty():
+                    try:
+                        frame, fps, width, height = st.session_state.video_capture.frame_queue.get_nowait()
+                        if frame is not None:
+                            # Update the current time in real-time mode
+                            current_time = datetime.now()
+                            st.session_state.hour = current_time.hour
+                            st.session_state.minute = current_time.minute
+                            st.session_state.second = current_time.second
+                            
+                            # Update the time display
+                            time_display.markdown(
+                                f'<div class="time-display">{format_time_12h(current_time.hour, current_time.minute, current_time.second)}</div>',
+                                unsafe_allow_html=True
+                            )
+                            
+                            # Store and display the frame
+                            st.session_state.last_frame = frame.copy()
+                            video_placeholder.image(frame, channels="BGR", use_container_width=True)
+                            st.session_state.video_capture.current_fps = fps
+                            st.session_state.video_capture.current_width = width
+                            st.session_state.video_capture.current_height = height
+                    except:
+                        pass
         else:
-            # When not capturing, we need to handle two cases:
-            # 1. Browsing saved images - use the stored display values
-            # 2. Just stopped capturing - show basic time display
-            
-            if st.session_state.browsing_saved_images:
-                # When browsing, we don't need to update the time display here
-                # as it is already updated in the update_image_display function
-                # Just ensure the status message is displayed
-                if st.session_state.actual_timestamp:
-                    status_placeholder.text(f"Displaying image from: {st.session_state.actual_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
-                else:
-                    status_placeholder.text("Status: Stopped")
-            else:
-                # Just stopped capturing - show basic time display with neutral color
-                time_str = format_time_12h(st.session_state.hour, st.session_state.minute, st.session_state.second)
-                
-                # Use custom HTML with inline style that will override any CSS classes
-                time_html = f"""
-                <style>
-                .time-text {{
-                    font-size: 1.6rem;
-                    font-weight: 400;
-                    text-align: center;
-                    color: #808080;
-                }}
-                </style>
-                <div class="time-text">{time_str}</div>
-                """
-                
-                # Display the time with the neutral color
-                time_display.markdown(time_html, unsafe_allow_html=True)
-                
-                status_placeholder.text("Status: Stopped")
-            
-            # Keep displaying the last frame if available
-            if st.session_state.last_frame is not None:
+            # When capture is not running - crucial for playback with paused capture
+            if st.session_state.in_playback_mode and st.session_state.last_frame is not None:
+                # Keep showing the playback frame continuously
                 video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
-
-        # Check if we need to display the most recent image (e.g., after camera name change)
-        if st.session_state.need_to_display_recent and not is_capturing:
-            display_most_recent_image(video_placeholder, status_placeholder)
-            st.session_state.need_to_display_recent = False
+                
+                # Update status message to show we're in playback mode
+                if hasattr(st.session_state, 'actual_timestamp') and st.session_state.actual_timestamp:
+                    status_placeholder.text(f"Viewing saved image from: {st.session_state.actual_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+                else:
+                    status_placeholder.text("Viewing saved image")
 
         # Add a small delay to prevent overwhelming the CPU
         time.sleep(0.1)
