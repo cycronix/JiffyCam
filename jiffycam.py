@@ -219,7 +219,7 @@ class VideoCapture:
         
         save_frame = False  # Initialize as False to skip first frame
         last_fps_time = time.time()
-        self.last_save_time = time.time()  # Initialize last save time
+        self.last_save_time = 0  # Initialize last save time
         frames_this_second = 0
         current_fps = 0
         consecutive_failures = 0  # Track consecutive read failures
@@ -232,20 +232,10 @@ class VideoCapture:
                 current_time = time.time()
                 frame_count_since_start += 1  # Increment frame counter
 
-                # Special handling for the nskip frame - save it immediately (usb cameras have delay adjusting brightness and focus
-                nskip = 4 # skip the first 4 frames
-                if frame_count_since_start == nskip and save_interval > 0:
-                    save_frame = True
-                    self.last_save_time = current_time
-                    self.save_status = "Saving startup frame immediately"
-                    self.skip_first_save = False
                 # Regular interval saving for subsequent frames
-                elif frame_count_since_start > 2 and save_interval > 0 and current_time - self.last_save_time >= save_interval:
+                if( save_interval > 0 and (current_time - self.last_save_time) >= save_interval):
                     save_frame = True
                     self.last_save_time = current_time
-                # Skip the first frame
-                elif frame_count_since_start == 1 and save_interval > 0:
-                    self.save_status = "Skipped first frame save to allow camera adjustment"
 
                 # Update FPS calculation
                 frames_this_second += 1
@@ -396,6 +386,19 @@ class VideoCapture:
         #print(f"Stopping capture: {st.session_state.rt_capture}")
         #if 'rt_capture' in st.session_state:
         #    st.session_state.rt_capture = False
+
+        try:
+            # Release PyTorch resources explicitly
+            if hasattr(self, 'model') and self.model is not None:
+                self.model = None
+                
+            # Force garbage collection
+            import gc
+            gc.collect()
+            
+        except Exception as e:
+            print(f"Warning during cleanup: {e}")
+            # Continue shutdown despite errors
 
     def start_capture_thread(self, cam_device, width, height, server_path, session, cam_name, save_interval):
         """Start video capture in a separate thread."""
