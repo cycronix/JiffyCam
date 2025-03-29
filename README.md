@@ -7,7 +7,7 @@ A modern Streamlit-based video capture utility for capturing and browsing video 
 
 ## Overview
 
-JiffyCam is a modern replacement for vidcap that uses Streamlit for the UI to capture video from a camera, detect objects, save frames, and browse historical images. It provides an intuitive interface for real-time video capture and historical image browsing with time-based navigation.
+JiffyCam is a portable all-Python webapp that uses Streamlit for the UI to capture video from a camera, detect objects, save frames, and browse historical images. It provides an intuitive interface for real-time video capture and historical image browsing with time-based navigation.
 
 ## Features
 
@@ -65,7 +65,7 @@ JiffyCam stores its configuration in `jiffycam.yaml`. The main settings include:
 
 - `cam_device`: Camera device identifier
 - `cam_name`: Name used for captured images
-- `save_interval`: Time between automatic saves (in seconds)
+- `save_interval`: Time between automatic object detection & saves (in seconds)
 - `device_aliases`: Named aliases for camera devices
 - `data_dir`: Directory where captures are stored
 
