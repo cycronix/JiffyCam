@@ -3,6 +3,8 @@
 
 A modern Streamlit-based video capture utility for capturing and browsing video from cameras.
 
+[JiffyCam Screenshot](jiffycam.jpg)
+
 ## Overview
 
 JiffyCam is a modern replacement for vidcap that uses Streamlit for the UI to capture video from a camera, detect objects, save frames, and browse historical images. It provides an intuitive interface for real-time video capture and historical image browsing with time-based navigation.
