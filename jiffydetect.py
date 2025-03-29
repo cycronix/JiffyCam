@@ -82,7 +82,7 @@ def detect(image, previmage):
                     status = f"{cname} d={bconf:.2f} m={bd:.2f}"
                     label = None if hide_labels else (cname if hide_conf else status)
                     newimage = box_label(thisimage.copy(), xyxy, label)  	# this clobbers prior box_label if any
-                    cv2.imwrite('jiffycamDetect.jpg', newimage)
+                    #cv2.imwrite('jiffycamDetect.jpg', newimage)
                     #print('detect: '+status+', newimage: '+ str(newimage.shape))
                     return newimage   
                 else:
