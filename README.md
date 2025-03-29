@@ -88,10 +88,19 @@ JiffyData/
 
 ## License
 
-[Your license information here]
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## Contact
+
+For any inquiries or issues, please contact:
+
+- GitHub: [cycronix](https://github.com/cycronix)
+
 
 ## Acknowledgements
 
 - Built with [Streamlit](https://streamlit.io/)
 - Uses [OpenCV](https://opencv.org/) for video capture
-- Object detection via jiffydetect
+
