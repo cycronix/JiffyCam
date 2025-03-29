@@ -51,10 +51,9 @@ RESOLUTIONS = {
 # Initialize session state if running for the first time
 if 'st' in globals() and hasattr(st, 'session_state'):
     # Initialize slider-related state variables
-    if 'programmatic_time_update' not in st.session_state:
-        st.session_state.programmatic_time_update = False
-    if 'manual_slider_adjustment_active' not in st.session_state:
-        st.session_state.manual_slider_adjustment_active = False
+
+    if 'slider_currently_being_dragged' not in st.session_state:
+        st.session_state.slider_currently_being_dragged = False
 
 class VideoCapture:
     def __init__(self):
@@ -302,9 +301,6 @@ class VideoCapture:
         st.session_state.hour = current_time.hour
         st.session_state.minute = current_time.minute
         st.session_state.second = current_time.second
-        
-        # Reset the slider_manually_adjusted flag
-        st.session_state.slider_manually_adjusted = False
         
         # Update time_slider to current time
         st.session_state.time_slider = datetime_time(
@@ -597,10 +593,10 @@ def get_timestamp_range(cam_name: str) -> Tuple[Optional[datetime], Optional[dat
 
 def main():
     # Add these at the very beginning of main(), before any other code
-    if 'programmatic_time_update' not in st.session_state:
-        st.session_state.programmatic_time_update = False
-    if 'manual_slider_adjustment_active' not in st.session_state:
-        st.session_state.manual_slider_adjustment_active = False
+
+    if 'slider_currently_being_dragged' not in st.session_state:
+        st.session_state.slider_currently_being_dragged = False
+
     
     st.set_page_config(
         page_title="JiffyCam",
@@ -835,9 +831,6 @@ def main():
     if 'need_to_display_recent' not in st.session_state:
         st.session_state.need_to_display_recent = True
     
-    # Add a flag to track if the slider was manually adjusted
-    if 'slider_manually_adjusted' not in st.session_state:
-        st.session_state.slider_manually_adjusted = False
     
     # Create sidebar for settings
     with st.sidebar:
@@ -1272,12 +1265,9 @@ def main():
         
         def update_image_display(direction=None):
             """Update the image display based on the current date and time."""
-            # Ensure necessary session state variables exist
-            if 'programmatic_time_update' not in st.session_state:
-                st.session_state.programmatic_time_update = False
-            
-            if 'manual_slider_adjustment_active' not in st.session_state:
-                st.session_state.manual_slider_adjustment_active = False
+            # Ensure necessary session state variables exist         
+            if 'slider_currently_being_dragged' not in st.session_state:
+                st.session_state.slider_currently_being_dragged = False
             
             # Rest of the function remains the same...
             # Always set playback mode to True when browsing images
@@ -1316,22 +1306,12 @@ def main():
                         )
                         
                         # Only update the slider position programmatically if this wasn't triggered by a manual slider adjustment
-                        if not st.session_state.manual_slider_adjustment_active:
-                            st.session_state.programmatic_time_update = True
+                        if not st.session_state.slider_currently_being_dragged:
                             st.session_state.time_slider = datetime_time(
                                 timestamp.hour,
                                 timestamp.minute,
                                 timestamp.second
                             )
-                        else:
-                            # Reset the manual adjustment flag only if the displayed time doesn't match the slider
-                            # This allows the next programmatic update to occur
-                            slider_time = st.session_state.time_slider
-                            if (slider_time.hour == timestamp.hour and 
-                                slider_time.minute == timestamp.minute and 
-                                slider_time.second == timestamp.second):
-                                # Times match, so we can reset the manual flag
-                                st.session_state.manual_slider_adjustment_active = False
                         
                         # Update status with timestamp info
                         status_placeholder.text(f"Displaying image from: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -1369,10 +1349,7 @@ def main():
             
             # Set flag to indicate we're in playback mode instead of stopping capture
             st.session_state.in_playback_mode = True
-            
-            # Reset the slider_manually_adjusted flag to ensure the slider updates
-            st.session_state.slider_manually_adjusted = False
-            
+                        
             # Update the time slider to match the current time values
             if 'time_slider' in st.session_state:
                 st.session_state.time_slider = datetime_time(
@@ -1481,12 +1458,10 @@ def main():
         # Function to handle previous image button
         def on_prev_button():
             """Handle previous image button click."""
-            # Reset the manual slider adjustment flag
-            st.session_state.manual_slider_adjustment_active = False
             
             # Rest of the function remains the same
             st.session_state.in_playback_mode = True
-            st.session_state.slider_manually_adjusted = False
+            st.session_state.slider_currently_being_dragged = False
             
             # Decrement time logic...
             current_second = st.session_state.second
@@ -1512,16 +1487,15 @@ def main():
             
             # Find and display the previous image
             update_image_display(direction="down")
-        
+            st.session_state.slider_currently_being_dragged = True   # mjm
+
         # Function to handle next image button
         def on_next_button():
             """Handle next image button click."""
-            # Reset the manual slider adjustment flag
-            st.session_state.manual_slider_adjustment_active = False
             
             # Rest of the function remains the same
             st.session_state.in_playback_mode = True
-            st.session_state.slider_manually_adjusted = False
+            st.session_state.slider_currently_being_dragged = False
             
             # Increment time logic
             current_second = st.session_state.second
@@ -1547,7 +1521,8 @@ def main():
             
             # Find and display the next image
             update_image_display(direction="up")
-        
+            st.session_state.slider_currently_being_dragged = True   # mjm
+
         # Time display (combined H:M:S format)
         with time_cols[0]:
             time_display = st.empty()
@@ -1638,16 +1613,8 @@ def main():
     def on_time_slider_change():
         """Handle time slider change."""
         # Ensure necessary session state variables exist
-        if 'programmatic_time_update' not in st.session_state:
-            st.session_state.programmatic_time_update = False
-        
-        if 'manual_slider_adjustment_active' not in st.session_state:
-            st.session_state.manual_slider_adjustment_active = False
-        
-        # Skip if this is a programmatic update
-        if st.session_state.programmatic_time_update:
-            st.session_state.programmatic_time_update = False
-            return
+        if 'slider_currently_being_dragged' not in st.session_state:
+            st.session_state.slider_currently_being_dragged = False
         
         # Get the time object from the slider
         time_obj = st.session_state.time_slider
@@ -1667,11 +1634,8 @@ def main():
             st.session_state.minute = minutes
             st.session_state.second = seconds
             
-            # Set the flag to indicate the slider was manually adjusted
-            st.session_state.slider_manually_adjusted = True
-            
-            # Mark that a manual adjustment is active - this prevents programmatic updates
-            st.session_state.manual_slider_adjustment_active = True
+            # Mark that a manual adjustment is currently active (prevents immediate jumps)
+            st.session_state.slider_currently_being_dragged = True
             
             # Set flag to indicate we're in playback mode instead of stopping capture
             st.session_state.in_playback_mode = True
@@ -1806,7 +1770,7 @@ def main():
     """, unsafe_allow_html=True)
     
     # Initialize the time_slider with a datetime.time object if not already set
-    if 'time_slider' not in st.session_state or not st.session_state.slider_manually_adjusted:
+    if 'time_slider' not in st.session_state or not st.session_state.slider_currently_being_dragged:
         st.session_state.time_slider = datetime_time(
             st.session_state.hour,
             st.session_state.minute,
@@ -2049,7 +2013,7 @@ def main():
         
         # Reset the slider_manually_adjusted flag since we want to sync the slider
         # when displaying the most recent image
-        st.session_state.slider_manually_adjusted = False
+        st.session_state.slider_currently_being_dragged = False
         
         # Find the most recent image
         result = find_most_recent_image(st.session_state.cam_name)
