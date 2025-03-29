@@ -1528,32 +1528,46 @@ def main():
             # Check if capture is currently running
             is_capturing = st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive()
             
-            # Determine button state
+            # Initialize the button state variables if they don't exist
+            if 'live_button_clicked' not in st.session_state:
+                st.session_state.live_button_clicked = False
+            
+            # Determine if we're in playback mode
+            in_playback = st.session_state.in_playback_mode
+            
+            # Set button text based on current state - use pause icon instead of text
+            button_text = "Live" if in_playback else "⏸"
+            button_help = "Return to live view" if in_playback else "Pause on current frame"
+            
+            # Define helper function for button action
+            def toggle_live_pause():
+                # If in playback mode, go to live mode
+                if st.session_state.in_playback_mode:
+                    st.session_state.in_playback_mode = False
+                    st.session_state.live_button_clicked = True  # Track that button was clicked
+                    
+                    # Update browsing date and time to current
+                    current_time = datetime.now()
+                    st.session_state.browsing_date = current_time.date()
+                    st.session_state.hour = current_time.hour
+                    st.session_state.minute = current_time.minute
+                    st.session_state.second = current_time.second
+                else:
+                    # If in live mode, pause by entering playback mode
+                    # The current frame is already stored in st.session_state.last_frame
+                    st.session_state.in_playback_mode = True
+                    # Store the current time
+                    current_time = datetime.now()
+                    st.session_state.actual_timestamp = current_time
+            
             if not is_capturing:
                 # Capture not running - show disabled button
                 st.button("Live", key="live_btn", use_container_width=True, 
                           help="Start capture to enable live display", disabled=True)
             else:
-                # Capture is running - determine if button should be active
-                already_live = not st.session_state.in_playback_mode
-                
-                # Display the Live Display button (disabled if already showing live)
-                if st.button("Live", key="live_btn", use_container_width=True,
-                            help="Return to live view" if not already_live else "Already showing live view",
-                            disabled=already_live):
-                    # Only execute this code when button is pressed AND it was active
-                    if not already_live:
-                        # Update playback mode flag to show live view
-                        st.session_state.in_playback_mode = False
-                        
-                        # Update browsing date and time to current
-                        current_time = datetime.now()
-                        # Only update browsing_date, not the widget-bound date variable
-                        st.session_state.browsing_date = current_time.date()
-                        st.session_state.hour = current_time.hour
-                        st.session_state.minute = current_time.minute
-                        st.session_state.second = current_time.second
-            
+                # Display the button with text based on current state
+                st.button(button_text, key="live_btn", use_container_width=True,
+                          help=button_help, on_click=toggle_live_pause)
 
         
         # Close the time controls container
