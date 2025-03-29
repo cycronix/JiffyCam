@@ -105,4 +105,6 @@ For any inquiries or issues, please contact:
 
 - Built with [Streamlit](https://streamlit.io/)
 - Uses [OpenCV](https://opencv.org/) for video capture
+- Uses [Ultralytics](https://ultralytics.com) for object detection
+- Saves images in [CloudTurbine](https://cloudturbine.com) compatible time-stamped files
 
