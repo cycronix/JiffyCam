@@ -1997,7 +1997,7 @@ def main():
                     st.session_state.hour = timestamp.hour
                     st.session_state.minute = timestamp.minute
                     st.session_state.second = timestamp.second
-                    st.session_state.date = timestamp.date()
+                    #st.session_state.date = timestamp.date()
                     
                     # Update the browsing values as well
                     st.session_state.browsing_hour = timestamp.hour
@@ -2006,7 +2006,7 @@ def main():
                     st.session_state.browsing_date = timestamp.date()
                     
                     # Sync the time slider with the timestamp
-                    if 'time_slider' in st.session_state:
+                    if False and'time_slider' in st.session_state:
                         st.session_state.time_slider = datetime_time(
                             timestamp.hour,
                             timestamp.minute,
