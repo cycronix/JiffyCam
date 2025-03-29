@@ -1,82 +1,97 @@
+
 # JiffyCam
 
-JiffyCam is a portable, all-python real-time video capture webapp designed to efficiently record and manage video streams. It features a circular buffer for continuous recording and allows users to save clips on demand, making it ideal for surveillance, event recording, and more.
+A modern Streamlit-based video capture utility for capturing and browsing video from cameras.
 
-![What is this](jiffycam.jpg)
+## Overview
 
-## Table of Contents
-
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Contributing](#contributing)
-- [License](#license)
-- [Contact](#contact)
+JiffyCam is a modern replacement for vidcap that uses Streamlit for the UI to capture video from a camera, detect objects, save frames, and browse historical images. It provides an intuitive interface for real-time video capture and historical image browsing with time-based navigation.
 
 ## Features
 
-- **Real-Time Video Capture**: Capture video from various camera sources in real-time.
-- **Circular Buffer**: Continuously records video, allowing for easy retrieval of recent footage.
-- **Clip Saving**: Save clips on demand with a simple user interface.
-- **Health Monitoring**: Includes a watchdog mechanism to ensure system stability.
-- **User-Friendly Interface**: Intuitive controls for managing recordings and settings.
+- **Real-time capture**: Capture video from multiple camera devices
+- **Object detection**: Built-in support for object detection with jiffydetect
+- **Time-based browsing**: Navigate through historical images with an intuitive timeline interface
+- **Interactive time controls**: Navigate via time slider, next/previous buttons, or direct time input
+- **Live/Pause toggle**: Seamlessly switch between live view and browsing historical images
+- **Status indicators**: Clear status messages for captures, saves, and browsing
+- **Date picker**: Easily browse images from different dates
+- **Configurable save interval**: Set automatic frame saving at custom intervals
+- **Device management**: Easily switch between different camera devices
 
 ## Installation
 
-To install JiffyCam, follow these steps:
-
-1. **Clone the repository**:
+1. Clone the repository:
    ```bash
-   git clone https://github.com/your_username/jiffycam.git
+   git clone https://github.com/your-username/jiffycam.git
    cd jiffycam
    ```
 
-2. **Install the required dependencies**:
+2. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
+3. Run the application:
+   ```bash
+   streamlit run jiffycam.py
+   ```
+
 ## Usage
 
-To run the application, use the following command:
+### Camera Setup
+1. Select a camera device from the dropdown in the sidebar
+2. Configure the save interval (in seconds) to control how often frames are saved
+3. Click "Start Capture" to begin capturing video
 
-```bash
-streamlit run jiffycam.py
-```
+### Navigation
+- Use the date picker to select a date to browse
+- Use the time slider to navigate to a specific time on that date
+- Use the ◀ and ▶ buttons to move to previous or next frames
+- Click "Live" to return to live view, or "⏸" to pause on the current frame
 
-### Controls
-
-- **Toggle Real-Time Capture**: Use the button in the interface to start or stop real-time capture.
-- **Save Clips**: Clips can be saved by triggering the save functionality in the UI.
+### Status Information
+The application provides status information in the sidebar:
+- Current FPS during live capture
+- Timestamp information when viewing saved images
+- Notifications when frames are saved
+- Error messages if issues occur
 
 ## Configuration
 
-JiffyCam allows for configuration through a configuration file. You can load and save your settings using the following methods:
+JiffyCam stores its configuration in `jiffycam.yaml`. The main settings include:
 
-- **Load Configuration**: Automatically loads settings on startup.
-- **Save Configuration**: Save your current settings to a file.
+- `cam_device`: Camera device identifier
+- `cam_name`: Name used for captured images
+- `save_interval`: Time between automatic saves (in seconds)
+- `device_aliases`: Named aliases for camera devices
+- `data_dir`: Directory where captures are stored
 
-## Contributing
+## Recent Improvements
 
-Contributions are welcome! If you would like to contribute to JiffyCam, please follow these steps:
+- **Enhanced status messages**: Clear status indicators for all operations
+- **Improved timeline navigation**: Smoother, more intuitive time-based browsing
+- **Live/Pause toggle**: Single button to switch between live and historical viewing
+- **Smart slider behavior**: Time slider now respects manual positioning while still updating with navigation
+- **Save notifications**: Clear notifications when frames are saved
 
-1. **Fork the repository**.
-2. **Create a new branch** (`git checkout -b feature/YourFeature`).
-3. **Make your changes and commit them** (`git commit -m 'Add some feature'`).
-4. **Push to the branch** (`git push origin feature/YourFeature`).
-5. **Open a pull request**.
+## Data Storage
+
+Captured frames are stored in the following directory structure:
+```
+JiffyData/
+└── [Session]/
+    └── [CameraName]/
+        └── [Timestamp]/
+            └── [CameraName].jpg
+```
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+[Your license information here]
 
-## Contact
+## Acknowledgements
 
-For any inquiries or issues, please contact:
-
-- GitHub: [cycronix](https://github.com/cycronix)
-
----
-
-Thank you for using JiffyCam! We hope you find it useful for your video capture needs.
+- Built with [Streamlit](https://streamlit.io/)
+- Uses [OpenCV](https://opencv.org/) for video capture
+- Object detection via jiffydetect
