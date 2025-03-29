@@ -180,13 +180,16 @@ class VideoCapture:
                 
                 # Set flag when image is saved and track the time it was saved
                 self.image_just_saved = True
-                self.image_saved_time = time.time()  # Track when the image was saved
+                self.image_saved_time = time.time()
                 
                 # Update last save time
                 self.last_save_time = time.time()
                 
-                # Update save status message
-                self.save_status = f"Saved: {save_path}"
+                # Format human-readable timestamp
+                timestamp_readable = datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Update save status message with more detailed info
+                self.save_status = f"Frame saved at {timestamp_readable} in {os.path.basename(save_path)}"
         except Exception as e:
             self.handle_error(f"Error sending frame: {str(e)}")
             return None
@@ -2069,6 +2072,12 @@ def main():
         display_most_recent_image(video_placeholder, status_placeholder)
         st.session_state.need_to_display_recent = False
 
+    # First, add this after initializing session state variables (around line 325-350)
+    # Add a session state variable for status message
+    if 'status_message' not in st.session_state:
+        st.session_state.status_message = ""
+
+    # Then, modify the main UI loop near the end of the file (around line 2100)
     # Update the UI
     while True:
         # Check for errors and thread state
@@ -2077,6 +2086,7 @@ def main():
             st.session_state.video_capture.stop_capture()
             error_placeholder.error(st.session_state.video_capture.last_error)
             status_placeholder.text("Status: Stopped")
+            st.session_state.status_message = "Status: Stopped"
             if st.session_state.last_frame is not None:
                 video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
             break
@@ -2101,6 +2111,13 @@ def main():
                 # 2. Make sure the playback frame stays visible
                 if st.session_state.last_frame is not None:
                     video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
+                    
+                    # Update status message for playback mode
+                    if hasattr(st.session_state, 'actual_timestamp') and st.session_state.actual_timestamp:
+                        new_status = f"Viewing saved image from: {st.session_state.actual_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+                        if st.session_state.status_message != new_status:
+                            status_placeholder.text(new_status)
+                            st.session_state.status_message = new_status
             else:
                 # Normal real-time display mode
                 if not st.session_state.video_capture.frame_queue.empty():
@@ -2125,6 +2142,24 @@ def main():
                             st.session_state.video_capture.current_fps = fps
                             st.session_state.video_capture.current_width = width
                             st.session_state.video_capture.current_height = height
+                            
+                            # Check if we have a save status to show
+                            if st.session_state.video_capture.image_just_saved:
+                                new_status = st.session_state.video_capture.save_status
+                                # Only update if the status has changed
+                                if st.session_state.status_message != new_status:
+                                    status_placeholder.text(new_status)
+                                    st.session_state.status_message = new_status
+                                
+                                # Clear the image_just_saved flag after 3 seconds
+                                if time.time() - st.session_state.video_capture.image_saved_time > 3:
+                                    st.session_state.video_capture.image_just_saved = False
+                            else:
+                                # Update status with FPS
+                                new_status = f"Live view - FPS: {fps}"
+                                if st.session_state.status_message != new_status:
+                                    status_placeholder.text(new_status)
+                                    st.session_state.status_message = new_status
                     except:
                         pass
         else:
@@ -2133,11 +2168,17 @@ def main():
                 # Keep showing the playback frame continuously
                 video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
                 
-                # Update status message to show we're in playback mode
+                # Update status message for playback mode
                 if hasattr(st.session_state, 'actual_timestamp') and st.session_state.actual_timestamp:
-                    status_placeholder.text(f"Viewing saved image from: {st.session_state.actual_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+                    new_status = f"Viewing saved image from: {st.session_state.actual_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+                    if st.session_state.status_message != new_status:
+                        status_placeholder.text(new_status)
+                        st.session_state.status_message = new_status
                 else:
-                    status_placeholder.text("Viewing saved image")
+                    new_status = "Viewing saved image"
+                    if st.session_state.status_message != new_status:
+                        status_placeholder.text(new_status)
+                        st.session_state.status_message = new_status
 
         # Add a small delay to prevent overwhelming the CPU
         time.sleep(0.1)
