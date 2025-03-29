@@ -2,6 +2,8 @@
 
 JiffyCam is a real-time video capture application designed to efficiently record and manage video streams. It features a circular buffer for continuous recording and allows users to save clips on demand, making it ideal for surveillance, event recording, and more.
 
+![What is this](jiffycam.jpg)
+
 ## Table of Contents
 
 - [Features](#features)
