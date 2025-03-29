@@ -79,7 +79,6 @@ class VideoCapture:
         """Load configuration from YAML file if it exists."""
         default_config = {
             'cam_device': '0',
-            # Remove server_path as it's no longer used
             'session': 'Default',  # Default session value, but not saved to YAML anymore
             'cam_name': 'cam0',
             'resolution': '1920x1080',  # Combined resolution field
@@ -156,7 +155,7 @@ class VideoCapture:
         self.error_event.set()
         self.stop_event.set()
 
-    def send_frame(self, server_path: str, cam_name: str, frame, ftime: float, save_frame: bool, session: str):
+    def send_frame(self, cam_name: str, frame, ftime: float, save_frame: bool, session: str):
         """Send frame to server and optionally save to disk."""
         try:
             # Set JPEG quality to 95
@@ -206,9 +205,8 @@ class VideoCapture:
         return frame
 
 
-    def capture_video_loop(self, source, server_path: str, cam_name: str, cam_width: int, cam_height: int, save_interval: int, session: str):
+    def capture_video_loop(self, source, cam_name: str, cam_width: int, cam_height: int, save_interval: int, session: str):
         """Initialize and run video capture loop."""
-        # Note: server_path parameter is kept for backward compatibility but is no longer used
         
         if isinstance(source, str) and source.isdigit():
             source = int(source)
@@ -256,8 +254,7 @@ class VideoCapture:
                     frames_this_second = 0
                     last_fps_time = current_time
 
-                # Send frame to server (server_path is no longer used but kept for backward compatibility)
-                frame = self.send_frame(server_path, cam_name, frame, time.time(), save_frame, session)
+                frame = self.send_frame(cam_name, frame, time.time(), save_frame, session)
                 if self.error_event.is_set():  # Check if error occurred in send_frame
                     break
                 save_frame = False
@@ -311,7 +308,6 @@ class VideoCapture:
         
         # Get configuration values
         cam_device = st.session_state.cam_device
-        # Remove server_path as it's no longer used
         session = st.session_state.session
         cam_name = st.session_state.cam_name
         save_interval = st.session_state.save_interval
@@ -338,8 +334,6 @@ class VideoCapture:
         # Create configuration dictionary
         config = {
             'cam_device': selected_device_alias,  # Store the alias key instead of the device path
-            # Remove server_path as it's no longer used
-            # 'session' is no longer saved to YAML as it's automatically set to match the selected device alias
             'cam_name': cam_name,
             'save_interval': save_interval,
             'device_aliases': device_aliases
@@ -372,7 +366,6 @@ class VideoCapture:
             cam_device=cam_device,  # Use the actual device path for capture
             width=width,
             height=height,
-            server_path="",  # Pass empty string as server_path is no longer used
             session=session,
             cam_name=cam_name,
             save_interval=save_interval
@@ -409,7 +402,7 @@ class VideoCapture:
             print(f"Warning during cleanup: {e}")
             # Continue shutdown despite errors
 
-    def start_capture_thread(self, cam_device, width, height, server_path, session, cam_name, save_interval):
+    def start_capture_thread(self, cam_device, width, height, session, cam_name, save_interval):
         """Start video capture in a separate thread."""
         if self.capture_thread and self.capture_thread.is_alive():
             return
@@ -432,7 +425,6 @@ class VideoCapture:
             target=self.capture_video_loop,
             args=(
                 cam_device,
-                server_path,  # Keep this parameter for now to avoid changing the method signature
                 cam_name,
                 width,
                 height,
@@ -667,7 +659,6 @@ def main():
         st.session_state.in_playback_mode = False
     
     # Initialize session state from config
-    # Remove server_path initialization as it's no longer used
     if 'cam_name' not in st.session_state:
         st.session_state.cam_name = st.session_state.video_capture.config.get('cam_name', 'cam0')
     if 'previous_cam_name' not in st.session_state:
@@ -678,10 +669,6 @@ def main():
     # Always ensure data_dir is set in session state
     # This is critical as it's used in multiple places
     st.session_state.data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
-    
-    # Remove debug output
-    # st.sidebar.write(f"Config data_dir: {st.session_state.video_capture.config.get('data_dir', 'Not found')}")
-    # st.sidebar.write(f"Session state data_dir: {st.session_state.data_dir}")
     
     # Ensure the data directory exists
     os.makedirs(st.session_state.data_dir, exist_ok=True)
