@@ -46,6 +46,16 @@ RESOLUTIONS = {
     "Default (0x0)": (0, 0)
 }
 
+# Add this right after your imports, before any functions are defined
+
+# Initialize session state if running for the first time
+if 'st' in globals() and hasattr(st, 'session_state'):
+    # Initialize slider-related state variables
+    if 'programmatic_time_update' not in st.session_state:
+        st.session_state.programmatic_time_update = False
+    if 'manual_slider_adjustment_active' not in st.session_state:
+        st.session_state.manual_slider_adjustment_active = False
+
 class VideoCapture:
     def __init__(self):
         self.stop_event = threading.Event()
@@ -586,6 +596,12 @@ def get_timestamp_range(cam_name: str) -> Tuple[Optional[datetime], Optional[dat
     return oldest, newest
 
 def main():
+    # Add these at the very beginning of main(), before any other code
+    if 'programmatic_time_update' not in st.session_state:
+        st.session_state.programmatic_time_update = False
+    if 'manual_slider_adjustment_active' not in st.session_state:
+        st.session_state.manual_slider_adjustment_active = False
+    
     st.set_page_config(
         page_title="JiffyCam",
         page_icon="🎥",
@@ -1256,6 +1272,14 @@ def main():
         
         def update_image_display(direction=None):
             """Update the image display based on the current date and time."""
+            # Ensure necessary session state variables exist
+            if 'programmatic_time_update' not in st.session_state:
+                st.session_state.programmatic_time_update = False
+            
+            if 'manual_slider_adjustment_active' not in st.session_state:
+                st.session_state.manual_slider_adjustment_active = False
+            
+            # Rest of the function remains the same...
             # Always set playback mode to True when browsing images
             st.session_state.in_playback_mode = True
             
@@ -1290,6 +1314,24 @@ def main():
                             f'<div class="time-display">{format_time_12h(timestamp.hour, timestamp.minute, timestamp.second)}</div>',
                             unsafe_allow_html=True
                         )
+                        
+                        # Only update the slider position programmatically if this wasn't triggered by a manual slider adjustment
+                        if not st.session_state.manual_slider_adjustment_active:
+                            st.session_state.programmatic_time_update = True
+                            st.session_state.time_slider = datetime_time(
+                                timestamp.hour,
+                                timestamp.minute,
+                                timestamp.second
+                            )
+                        else:
+                            # Reset the manual adjustment flag only if the displayed time doesn't match the slider
+                            # This allows the next programmatic update to occur
+                            slider_time = st.session_state.time_slider
+                            if (slider_time.hour == timestamp.hour and 
+                                slider_time.minute == timestamp.minute and 
+                                slider_time.second == timestamp.second):
+                                # Times match, so we can reset the manual flag
+                                st.session_state.manual_slider_adjustment_active = False
                         
                         # Update status with timestamp info
                         status_placeholder.text(f"Displaying image from: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -1439,14 +1481,11 @@ def main():
         # Function to handle previous image button
         def on_prev_button():
             """Handle previous image button click."""
-            # Remove the capture stop code
-            # if st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive():
-            #     st.session_state.video_capture.stop_capture()
+            # Reset the manual slider adjustment flag
+            st.session_state.manual_slider_adjustment_active = False
             
-            # Set flag to indicate we're in playback mode
+            # Rest of the function remains the same
             st.session_state.in_playback_mode = True
-            
-            # Reset the slider_manually_adjusted flag
             st.session_state.slider_manually_adjusted = False
             
             # Decrement time logic...
@@ -1477,10 +1516,11 @@ def main():
         # Function to handle next image button
         def on_next_button():
             """Handle next image button click."""
-            # Set flag to indicate we're in playback mode
-            st.session_state.in_playback_mode = True
+            # Reset the manual slider adjustment flag
+            st.session_state.manual_slider_adjustment_active = False
             
-            # Reset the slider_manually_adjusted flag
+            # Rest of the function remains the same
+            st.session_state.in_playback_mode = True
             st.session_state.slider_manually_adjusted = False
             
             # Increment time logic
@@ -1597,6 +1637,18 @@ def main():
     # Function to handle time slider change
     def on_time_slider_change():
         """Handle time slider change."""
+        # Ensure necessary session state variables exist
+        if 'programmatic_time_update' not in st.session_state:
+            st.session_state.programmatic_time_update = False
+        
+        if 'manual_slider_adjustment_active' not in st.session_state:
+            st.session_state.manual_slider_adjustment_active = False
+        
+        # Skip if this is a programmatic update
+        if st.session_state.programmatic_time_update:
+            st.session_state.programmatic_time_update = False
+            return
+        
         # Get the time object from the slider
         time_obj = st.session_state.time_slider
         
@@ -1617,6 +1669,9 @@ def main():
             
             # Set the flag to indicate the slider was manually adjusted
             st.session_state.slider_manually_adjusted = True
+            
+            # Mark that a manual adjustment is active - this prevents programmatic updates
+            st.session_state.manual_slider_adjustment_active = True
             
             # Set flag to indicate we're in playback mode instead of stopping capture
             st.session_state.in_playback_mode = True

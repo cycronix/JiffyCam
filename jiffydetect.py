@@ -197,7 +197,7 @@ def box_label(im=None, box=None, label='', mycolor=(0,0,255), txt_color=(0,0,0),
     cv2.rectangle(im, p1, p2, mycolor, -1, cv2.LINE_AA)  # filled
     cv2.putText(im, label, (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),0, lw / 3, txt_color, thickness=tf, lineType=cv2.LINE_AA)
         
-    addBorder(im)  	# add border frame to highlight target-hit
+    #addBorder(im)  	# add border frame to highlight target-hit
 
     return im
 
