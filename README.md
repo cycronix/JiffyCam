@@ -80,6 +80,7 @@ JiffyCam consists of several key components:
 - **jiffycam.py**: Main application with the Streamlit UI and video processing
 - **jiffydetect.py**: Object detection functionality
 - **jiffyput.py**: Frame processing and storage module that handles saving frames with timestamps
+- **jiffyget.py**: Image retrieval module for finding and loading saved images
 
 ## Recent Improvements
 
@@ -88,7 +89,7 @@ JiffyCam consists of several key components:
 - **Live/Pause toggle**: Single button to switch between live and historical viewing
 - **Smart slider behavior**: Time slider now respects manual positioning while still updating with navigation
 - **Save notifications**: Clear notifications when frames are saved
-- **Modular architecture**: New jiffyput module for better separation of concerns
+- **Modular architecture**: New jiffyput and jiffyget modules for better separation of concerns
 
 ## Data Storage
 

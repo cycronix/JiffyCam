@@ -23,6 +23,7 @@ import traceback
 
 from jiffydetect import detect
 from jiffyput import jiffyput  # Import the jiffyput module
+from jiffyget import jiffyget as external_jiffyget, get_timestamp_range as external_get_timestamp_range  # Import the jiffyget functions
 
 # Initialize HTTP pool manager
 http = urllib3.PoolManager()
@@ -438,92 +439,17 @@ def jiffyget(hour: int, minute: int, second: int, cam_name: str, direction: str 
         Tuple of (image_path, timestamp) or None if no image found
     """
     # Safely get session with a fallback to 'Default'
-    session = st.session_state.get('session', 'Default')  # Changed from camera_group
+    session = st.session_state.get('session', 'Default')
     
     # Get the data directory directly from the VideoCapture config
     data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
     
-    # Construct the base directory path
-    base_dir = os.path.join(data_dir, session, os.path.dirname(cam_name))
-    
-    if not os.path.exists(base_dir):
-        return None
-    
     # Use browsing_date from session state instead of current date
     browse_date = st.session_state.browsing_date
     
-    # Create target datetime for the selected time
-    target_time = datetime.combine(browse_date, datetime.min.time()) + timedelta(hours=hour, minutes=minute, seconds=second)
-    target_timestamp = int(target_time.timestamp() * 1000)  # Convert to milliseconds
-    
-    # Get all timestamp directories
-    timestamp_dirs = glob.glob(os.path.join(base_dir, "*"))
-    if not timestamp_dirs:
-        return None
-    
-    # Convert directory names to timestamps and filter by current date
-    timestamps = []
-    for dir_path in timestamp_dirs:
-        try:
-            dir_name = os.path.basename(dir_path)
-            timestamp = int(dir_name)
-            dt = datetime.fromtimestamp(timestamp / 1000)
-            
-            # Only include timestamps from the current date
-            if dt.date() == browse_date:
-                timestamps.append((timestamp, dir_path))
-        except ValueError:
-            continue
-    
-    # If no timestamps found for the current date, return None
-    if not timestamps:
-        return None
-    
-    # Sort timestamps
-    timestamps.sort()
-    
-    # Find the closest timestamp based on direction
-    closest_timestamp = None
-    closest_dir = None
-    
-    if direction == "up":  # Find at-or-after for increasing time
-        for timestamp, dir_path in timestamps:
-            if timestamp >= target_timestamp:
-                closest_timestamp = timestamp
-                closest_dir = dir_path
-                break
-    else:  # Find at-or-before for decreasing time (default behavior)
-        for timestamp, dir_path in timestamps:
-            if timestamp <= target_timestamp:
-                closest_timestamp = timestamp
-                closest_dir = dir_path
-            else:
-                break
-    
-    if closest_dir is None:
-        # If no match found and we have timestamps, return the oldest or newest based on direction
-        # but only if they are from the same date
-        if timestamps:
-            if direction == "up":
-                # If going up in time and no match, return the newest (last) timestamp
-                closest_timestamp, closest_dir = timestamps[-1]
-            else:
-                # If going down in time and no match, return the oldest (first) timestamp
-                closest_timestamp, closest_dir = timestamps[0]
-        else:
-            return None
-    
-    # Get the image file in the closest directory
-    base_name = os.path.basename(cam_name)
-    image_path = os.path.join(closest_dir, f"{base_name}.jpg")
-    
-    if os.path.exists(image_path):
-        # Convert timestamp to datetime for display
-        frame = cv2.imread(image_path)
-        closest_datetime = datetime.fromtimestamp(closest_timestamp / 1000)
-        return frame, closest_datetime
-    
-    return None
+    # Call the external jiffyget function
+    return external_jiffyget(hour, minute, second, cam_name, session, data_dir, browse_date, direction)
+
 
 def get_timestamp_range(cam_name: str) -> Tuple[Optional[datetime], Optional[datetime]]:
     """Get the oldest and newest timestamps available for the camera.
@@ -535,43 +461,13 @@ def get_timestamp_range(cam_name: str) -> Tuple[Optional[datetime], Optional[dat
         Tuple of (oldest_timestamp, newest_timestamp) as datetime objects, or (None, None) if no images
     """
     # Safely get session with a fallback to 'Default'
-    session = st.session_state.get('session', 'Default')  # Changed from camera_group
+    session = st.session_state.get('session', 'Default')
     
     # Get the data directory directly from the VideoCapture config
     data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
     
-    # Construct the base directory path
-    base_dir = os.path.join(data_dir, session, os.path.dirname(cam_name))
-    
-    if not os.path.exists(base_dir):
-        return None, None
-    
-    # Get all timestamp directories
-    timestamp_dirs = glob.glob(os.path.join(base_dir, "*"))
-    if not timestamp_dirs:
-        return None, None
-    
-    # Convert directory names to timestamps
-    timestamps = []
-    for dir_path in timestamp_dirs:
-        try:
-            dir_name = os.path.basename(dir_path)
-            timestamp = int(dir_name)
-            timestamps.append(timestamp)
-        except ValueError:
-            continue
-    
-    if not timestamps:
-        return None, None
-    
-    # Sort timestamps
-    timestamps.sort()
-    
-    # Convert to datetime objects
-    oldest = datetime.fromtimestamp(timestamps[0] / 1000)
-    newest = datetime.fromtimestamp(timestamps[-1] / 1000)
-    
-    return oldest, newest
+    # Call the external get_timestamp_range function
+    return external_get_timestamp_range(cam_name, session, data_dir)
 
 def main():
     # Add these at the very beginning of main(), before any other code
@@ -1054,11 +950,10 @@ def main():
             if 'slider_currently_being_dragged' not in st.session_state:
                 st.session_state.slider_currently_being_dragged = False
             
-            # Rest of the function remains the same...
             # Always set playback mode to True when browsing images
             st.session_state.in_playback_mode = True
             
-            # Find the closest image to the requested time
+            # Find the closest image to the requested time using the wrapper function
             closest_image = jiffyget(
                 st.session_state.hour,
                 st.session_state.minute,
