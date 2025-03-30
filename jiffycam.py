@@ -22,6 +22,7 @@ from collections import OrderedDict
 import traceback
 
 from jiffydetect import detect
+from jiffyput import jiffyput  # Import the jiffyput module
 
 # Initialize HTTP pool manager
 http = urllib3.PoolManager()
@@ -158,51 +159,39 @@ class VideoCapture:
     def send_frame(self, cam_name: str, frame, ftime: float, save_frame: bool, session: str):
         """Send frame to server and optionally save to disk."""
         try:
-            # Set JPEG quality to 95
-            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
+            # Create state dictionary to pass to jiffyput
+            state = {
+                'image_just_saved': self.image_just_saved,
+                'image_saved_time': self.image_saved_time,
+                'last_save_time': self.last_save_time,
+                'save_status': self.save_status,
+                'last_error': self.last_error
+            }
             
-            if save_frame:
-                detect_mode = True
-                if(detect_mode):
-                    tryframe = detect(frame, None)
-                    if(tryframe is None):       # ONLY save detections!  (to do: heartbeat saves)
-                        return frame
-                    else:
-                        frame = tryframe
-
-                # Get the data directory directly from the config
-                data_dir = self.config.get('data_dir', 'JiffyData')
+            # Call jiffyput function
+            result = jiffyput(cam_name, frame, ftime, save_frame, session, self.config, state)
+            
+            # Update class attributes from state dictionary
+            if result is not None:
+                self.image_just_saved = state.get('image_just_saved', self.image_just_saved)
+                self.image_saved_time = state.get('image_saved_time', self.image_saved_time)
+                self.last_save_time = state.get('last_save_time', self.last_save_time)
+                self.save_status = state.get('save_status', self.save_status)
                 
-                # Create save directory using session and timestamp
-                save_dir = os.path.join(data_dir, session, os.path.dirname(cam_name))
-                os.makedirs(save_dir, exist_ok=True)
+                # If there was an error, handle it
+                if 'last_error' in state and state['last_error'] is not None:
+                    self.handle_error(state['last_error'])
+                    return None
+            else:
+                # If jiffyput returned None, there was an error
+                self.handle_error("Error in jiffyput processing")
+                return None
                 
-                # Save frame as JPEG
-                timestamp_ms = int(ftime * 1000)
-                save_path = os.path.join(save_dir, str(timestamp_ms))
-                os.makedirs(save_path, exist_ok=True)
-                
-                # Save the image
-                image_path = os.path.join(save_path, os.path.basename(cam_name) + '.jpg')
-                cv2.imwrite(image_path, frame, encode_param)
-                
-                # Set flag when image is saved and track the time it was saved
-                self.image_just_saved = True
-                self.image_saved_time = time.time()
-                
-                # Update last save time
-                self.last_save_time = time.time()
-                
-                # Format human-readable timestamp
-                timestamp_readable = datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')
-                
-                # Update save status message with more detailed info
-                self.save_status = f"Frame saved at {timestamp_readable} in {os.path.basename(save_path)}"
         except Exception as e:
             self.handle_error(f"Error sending frame: {str(e)}")
             return None
 
-        return frame
+        return result
 
 
     def capture_video_loop(self, source, cam_name: str, cam_width: int, cam_height: int, save_interval: int, session: str):
@@ -435,7 +424,7 @@ class VideoCapture:
         )
         self.capture_thread.start()
 
-def find_closest_image(hour: int, minute: int, second: int, cam_name: str, direction: str = "down") -> Optional[Tuple[str, datetime]]:
+def jiffyget(hour: int, minute: int, second: int, cam_name: str, direction: str = "down"):
     """Find the closest image to the given time.
     
     Args:
@@ -530,8 +519,9 @@ def find_closest_image(hour: int, minute: int, second: int, cam_name: str, direc
     
     if os.path.exists(image_path):
         # Convert timestamp to datetime for display
+        frame = cv2.imread(image_path)
         closest_datetime = datetime.fromtimestamp(closest_timestamp / 1000)
-        return image_path, closest_datetime
+        return frame, closest_datetime
     
     return None
 
@@ -1056,199 +1046,7 @@ def main():
 
     # Create time display and progress containers - MOVED ABOVE video placeholder
     time_container = st.container()
-    with time_container:
-        # Functions to increment/decrement time values
-        def increment_hour():
-            # Stop capture if running
-            if st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive():
-                st.session_state.video_capture.stop_capture()
-            
-            # Check if we're at the newest timestamp already
-            if st.session_state.newest_timestamp:
-                current_time = datetime(
-                    datetime.now().year, 
-                    datetime.now().month, 
-                    datetime.now().day,
-                    st.session_state.hour,
-                    st.session_state.minute,
-                    st.session_state.second
-                )
-                if current_time >= st.session_state.newest_timestamp:
-                    # Already at or beyond newest timestamp, don't increment
-                    update_image_display(direction="up")
-                    return
-            
-            # Increment the hour
-            st.session_state.hour = (st.session_state.hour + 1) % 24
-            
-            # Update the time display
-            time_display.markdown(f'<div class="time-display">{format_time_12h(st.session_state.hour, st.session_state.minute, st.session_state.second)}</div>', unsafe_allow_html=True)
-            
-            # Find and display closest image with "up" direction
-            update_image_display(direction="up")
-        
-        def decrement_hour():
-            # Stop capture if running
-            if st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive():
-                st.session_state.video_capture.stop_capture()
-            
-            # Check if we're at the oldest timestamp already
-            if st.session_state.oldest_timestamp:
-                current_time = datetime(
-                    datetime.now().year, 
-                    datetime.now().month, 
-                    datetime.now().day,
-                    st.session_state.hour,
-                    st.session_state.minute,
-                    st.session_state.second
-                )
-                if current_time <= st.session_state.oldest_timestamp:
-                    # Already at or before oldest timestamp, don't decrement
-                    update_image_display(direction="down")
-                    return
-            
-            # Decrement the hour
-            st.session_state.hour = (st.session_state.hour - 1) % 24
-            
-            # Update the time display
-            time_display.markdown(f'<div class="time-display">{format_time_12h(st.session_state.hour, st.session_state.minute, st.session_state.second)}</div>', unsafe_allow_html=True)
-            
-            # Find and display closest image with "down" direction
-            update_image_display(direction="down")
-        
-        def increment_minute():
-            # Stop capture if running
-            if st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive():
-                st.session_state.video_capture.stop_capture()
-            
-            # Check if we're at the newest timestamp already
-            if st.session_state.newest_timestamp:
-                current_time = datetime(
-                    datetime.now().year, 
-                    datetime.now().month, 
-                    datetime.now().day,
-                    st.session_state.hour,
-                    st.session_state.minute,
-                    st.session_state.second
-                )
-                if current_time >= st.session_state.newest_timestamp:
-                    # Already at or beyond newest timestamp, don't increment
-                    update_image_display(direction="up")
-                    return
-            
-            # Increment minute and handle rollover to hour
-            st.session_state.minute = (st.session_state.minute + 1) % 60
-            if st.session_state.minute == 0:  # Rolled over from 59 to 0
-                st.session_state.hour = (st.session_state.hour + 1) % 24
-            
-            # Update the time display
-            time_display.markdown(f'<div class="time-display">{format_time_12h(st.session_state.hour, st.session_state.minute, st.session_state.second)}</div>', unsafe_allow_html=True)
-            
-            # Find and display closest image with "up" direction
-            update_image_display(direction="up")
-        
-        def decrement_minute():
-            # Stop capture if running
-            if st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive():
-                st.session_state.video_capture.stop_capture()
-            
-            # Check if we're at the oldest timestamp already
-            if st.session_state.oldest_timestamp:
-                current_time = datetime(
-                    datetime.now().year, 
-                    datetime.now().month, 
-                    datetime.now().day,
-                    st.session_state.hour,
-                    st.session_state.minute,
-                    st.session_state.second
-                )
-                if current_time <= st.session_state.oldest_timestamp:
-                    # Already at or before oldest timestamp, don't decrement
-                    update_image_display(direction="down")
-                    return
-            
-            # Decrement minute and handle rollover to hour
-            if st.session_state.minute == 0:  # Will roll under from 0 to 59
-                st.session_state.hour = (st.session_state.hour - 1) % 24
-                st.session_state.minute = 59
-            else:
-                st.session_state.minute = st.session_state.minute - 1
-            
-            # Update the time display
-            time_display.markdown(f'<div class="time-display">{format_time_12h(st.session_state.hour, st.session_state.minute, st.session_state.second)}</div>', unsafe_allow_html=True)
-            
-            # Find and display closest image with "down" direction
-            update_image_display(direction="down")
-        
-        def increment_second():
-            # Stop capture if running
-            if st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive():
-                st.session_state.video_capture.stop_capture()
-            
-            # Check if we're at the newest timestamp already
-            if st.session_state.newest_timestamp:
-                current_time = datetime(
-                    datetime.now().year, 
-                    datetime.now().month, 
-                    datetime.now().day,
-                    st.session_state.hour,
-                    st.session_state.minute,
-                    st.session_state.second
-                )
-                if current_time >= st.session_state.newest_timestamp:
-                    # Already at or beyond newest timestamp, don't increment
-                    update_image_display(direction="up")
-                    return
-            
-            # Increment second and handle rollover to minute and hour
-            st.session_state.second = (st.session_state.second + 1) % 60
-            if st.session_state.second == 0:  # Rolled over from 59 to 0
-                st.session_state.minute = (st.session_state.minute + 1) % 60
-                if st.session_state.minute == 0:  # Minute also rolled over
-                    st.session_state.hour = (st.session_state.hour + 1) % 24
-            
-            # Update the time display
-            time_display.markdown(f'<div class="time-display">{format_time_12h(st.session_state.hour, st.session_state.minute, st.session_state.second)}</div>', unsafe_allow_html=True)
-            
-            # Find and display closest image with "up" direction
-            update_image_display(direction="up")
-        
-        def decrement_second():
-            # Stop capture if running
-            if st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive():
-                st.session_state.video_capture.stop_capture()
-            
-            # Check if we're at the oldest timestamp already
-            if st.session_state.oldest_timestamp:
-                current_time = datetime(
-                    datetime.now().year, 
-                    datetime.now().month, 
-                    datetime.now().day,
-                    st.session_state.hour,
-                    st.session_state.minute,
-                    st.session_state.second
-                )
-                if current_time <= st.session_state.oldest_timestamp:
-                    # Already at or before oldest timestamp, don't decrement
-                    update_image_display(direction="down")
-                    return
-            
-            # Decrement second and handle rollover to minute and hour
-            if st.session_state.second == 0:  # Will roll under from 0 to 59
-                if st.session_state.minute == 0:  # Minute will also roll under
-                    st.session_state.hour = (st.session_state.hour - 1) % 24
-                    st.session_state.minute = 59
-                else:
-                    st.session_state.minute = st.session_state.minute - 1
-                st.session_state.second = 59
-            else:
-                st.session_state.second = st.session_state.second - 1
-            
-            # Update the time display
-            time_display.markdown(f'<div class="time-display">{format_time_12h(st.session_state.hour, st.session_state.minute, st.session_state.second)}</div>', unsafe_allow_html=True)
-            
-            # Find and display closest image with "down" direction
-            update_image_display(direction="down")
+    with time_container:   
         
         def update_image_display(direction=None):
             """Update the image display based on the current date and time."""
@@ -1261,7 +1059,7 @@ def main():
             st.session_state.in_playback_mode = True
             
             # Find the closest image to the requested time
-            closest_image = find_closest_image(
+            closest_image = jiffyget(
                 st.session_state.hour,
                 st.session_state.minute,
                 st.session_state.second,
@@ -1270,9 +1068,9 @@ def main():
             )
             
             if closest_image:
-                image_path, timestamp = closest_image
+                frame, timestamp = closest_image
                 try:
-                    frame = cv2.imread(image_path)
+                    #frame = cv2.imread(image_path)
                     if frame is not None:
                         # Store the frame in session state and timestamp
                         st.session_state.last_frame = frame.copy()
@@ -1937,145 +1735,21 @@ def main():
     
     video_placeholder = st.empty()
 
-    # Function to find the most recent image for a camera
-    def find_most_recent_image(cam_name: str) -> Optional[Tuple[str, datetime]]:
-        """Find the most recent image for the given camera name.
-        
-        Args:
-            cam_name: Camera name
-            
-        Returns:
-            Tuple of (image_path, timestamp) or None if no image found
-        """
-        # Safely get session with a fallback to 'Default'
-        session = st.session_state.get('session', 'Default')  # Changed from camera_group
-        
-        # Get the data directory directly from the VideoCapture config
-        data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
-        
-        # Construct the base directory path
-        base_dir = os.path.join(data_dir, session, os.path.dirname(cam_name))  # Changed from camera_group
-        
-        if not os.path.exists(base_dir):
-            return None
-        
-        # Get all timestamp directories
-        timestamp_dirs = glob.glob(os.path.join(base_dir, "*"))
-        if not timestamp_dirs:
-            return None
-        
-        # Convert directory names to timestamps
-        timestamps = []
-        for dir_path in timestamp_dirs:
-            try:
-                dir_name = os.path.basename(dir_path)
-                timestamp = int(dir_name)
-                timestamps.append((timestamp, dir_path))
-            except ValueError:
-                continue
-        
-        # Sort timestamps in descending order (newest first)
-        timestamps.sort(reverse=True)
-        
-        # Get the newest timestamp
-        if timestamps:
-            newest_timestamp, newest_dir = timestamps[0]
-            
-            # Get the image file in the newest directory
-            base_name = os.path.basename(cam_name)
-            image_path = os.path.join(newest_dir, f"{base_name}.jpg")
-            
-            if os.path.exists(image_path):
-                # Convert timestamp to datetime for display
-                newest_datetime = datetime.fromtimestamp(newest_timestamp / 1000)
-                return image_path, newest_datetime
-        
-        return None
-
+   
     # Function to display the most recent image for the current camera
-    def display_most_recent_image(video_placeholder, status_placeholder):
+    def display_most_recent_image():
         """Display the most recent image for the current camera."""
-        # Set the browsing flag to True when we're looking at saved images
-        st.session_state.browsing_saved_images = True
-        
-        # Reset the slider_manually_adjusted flag since we want to sync the slider
-        # when displaying the most recent image
-        st.session_state.slider_currently_being_dragged = False
-        
-        # Find the most recent image
-        result = find_most_recent_image(st.session_state.cam_name)
-        
-        if result:
-            image_path, timestamp = result
-            try:
-                # Read the image
-                frame = cv2.imread(image_path)
-                if frame is not None:
-                    # Store the frame in session state
-                    st.session_state.last_frame = frame
-                    # Update the image display
-                    video_placeholder.image(frame, channels="BGR", use_container_width=True)
-                    
-                    # Update the time values with the timestamp
-                    st.session_state.hour = timestamp.hour
-                    st.session_state.minute = timestamp.minute
-                    st.session_state.second = timestamp.second
-                    #st.session_state.date = timestamp.date()
-                    
-                    # Update the browsing values as well
-                    st.session_state.browsing_hour = timestamp.hour
-                    st.session_state.browsing_minute = timestamp.minute
-                    st.session_state.browsing_second = timestamp.second
-                    st.session_state.browsing_date = timestamp.date()
-                    
-                    # Sync the time slider with the timestamp
-                    if False and'time_slider' in st.session_state:
-                        st.session_state.time_slider = datetime_time(
-                            timestamp.hour,
-                            timestamp.minute,
-                            timestamp.second
-                        )
-                    
-                    # Update the time display with actual values
-                    time_str = format_time_12h(timestamp.hour, timestamp.minute, timestamp.second)
-                    
-                    # Use custom HTML with inline style that will override any CSS classes
-                    time_html = f"""
-                    <style>
-                    .time-text {{
-                        font-size: 1.6rem;
-                        font-weight: 400;
-                        text-align: center;
-                        color: #808080;
-                    }}
-                    </style>
-                    <div class="time-text">{time_str}</div>
-                    """
-                    
-                    # Display the time with the neutral color
-                    time_display.markdown(time_html, unsafe_allow_html=True)
-                    
-                    # Update status with timestamp info
-                    status_placeholder.text(f"Displaying most recent image from: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
-                    
-                    # Store the actual timestamp in session state
-                    st.session_state.actual_timestamp = timestamp
-                    
-                    # Get the timestamp range if we don't have it yet
-                    if st.session_state.oldest_timestamp is None or st.session_state.newest_timestamp is None:
-                        oldest, newest = get_timestamp_range(st.session_state.cam_name)
-                        st.session_state.oldest_timestamp = oldest
-                        st.session_state.newest_timestamp = newest
-                else:
-                    status_placeholder.text(f"Could not read image: {image_path}")
-            except Exception as e:
-                status_placeholder.text(f"Error loading image: {str(e)}")
-        else:
-            status_placeholder.text(f"No saved images found for camera: {st.session_state.cam_name}")
+        timestamp = datetime.now()
+        st.session_state.hour = timestamp.hour
+        st.session_state.minute = timestamp.minute
+        st.session_state.second = timestamp.second
+        update_image_display(direction="up")
+        return
+
 
     # Display the most recent image on startup or when camera name changes
     if st.session_state.need_to_display_recent and not is_capturing:
-        display_most_recent_image(video_placeholder, status_placeholder)
+        display_most_recent_image()
         st.session_state.need_to_display_recent = False
 
     # First, add this after initializing session state variables (around line 325-350)

@@ -1,4 +1,3 @@
-
 # JiffyCam
 
 A modern Streamlit-based video capture utility for capturing and browsing video from cameras.
@@ -39,6 +38,11 @@ JiffyCam is a portable all-Python webapp that uses Streamlit for the UI to captu
    streamlit run jiffycam.py
    ```
 
+   To run with a specific port:
+   ```bash
+   streamlit run jiffycam.py --server.port 8080
+   ```
+
 ## Usage
 
 ### Camera Setup
@@ -69,6 +73,14 @@ JiffyCam stores its configuration in `jiffycam.yaml`. The main settings include:
 - `device_aliases`: Named aliases for camera devices
 - `data_dir`: Directory where captures are stored
 
+## Components
+
+JiffyCam consists of several key components:
+
+- **jiffycam.py**: Main application with the Streamlit UI and video processing
+- **jiffydetect.py**: Object detection functionality
+- **jiffyput.py**: Frame processing and storage module that handles saving frames with timestamps
+
 ## Recent Improvements
 
 - **Enhanced status messages**: Clear status indicators for all operations
@@ -76,6 +88,7 @@ JiffyCam stores its configuration in `jiffycam.yaml`. The main settings include:
 - **Live/Pause toggle**: Single button to switch between live and historical viewing
 - **Smart slider behavior**: Time slider now respects manual positioning while still updating with navigation
 - **Save notifications**: Clear notifications when frames are saved
+- **Modular architecture**: New jiffyput module for better separation of concerns
 
 ## Data Storage
 
@@ -87,8 +100,6 @@ JiffyData/
         └── [Timestamp]/
             └── [CameraName].jpg
 ```
-
-## License
 
 ## License
 
