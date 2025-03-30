@@ -527,15 +527,6 @@ def main():
         else:
             st.session_state.video_capture.stop_capture()
     
-    # Function to synchronize time slider with current time values
-    def sync_time_slider():
-        """Synchronize the time slider with the current hour, minute, and second values."""
-        # This function is disabled to prevent the time slider from syncing to actual time
-        pass  # Do nothing to prevent syncing
-    
-    # Call the sync function at startup
-    # sync_time_slider()  # Commented out to prevent automatic syncing to actual time
-    
     # Initialize VideoCapture instance
     if 'video_capture' not in st.session_state:
         st.session_state.video_capture = VideoCapture()
@@ -1684,7 +1675,7 @@ def main():
                     
                     # Update status message for playback mode
                     if hasattr(st.session_state, 'actual_timestamp') and st.session_state.actual_timestamp:
-                        new_status = f"Viewing saved image from: {st.session_state.actual_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+                        new_status = f"Viewing image: {st.session_state.actual_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
                         if st.session_state.status_message != new_status:
                             status_placeholder.text(new_status)
                             st.session_state.status_message = new_status
@@ -1740,7 +1731,7 @@ def main():
                 
                 # Update status message for playback mode
                 if hasattr(st.session_state, 'actual_timestamp') and st.session_state.actual_timestamp:
-                    new_status = f"Viewing saved image from: {st.session_state.actual_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+                    new_status = f"Viewing image: {st.session_state.actual_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
                     if st.session_state.status_message != new_status:
                         status_placeholder.text(new_status)
                         st.session_state.status_message = new_status

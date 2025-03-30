@@ -68,7 +68,8 @@ def jiffyput(cam_name, frame, ftime, save_frame, session, config, state=None):
                 timestamp_readable = datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')
                 
                 # Update save status message with more detailed info
-                state['save_status'] = f"Frame saved at {timestamp_readable} in {os.path.basename(save_path)}"
+                #state['save_status'] = f"Frame saved at {timestamp_readable} in {os.path.basename(save_path)}"
+                state['save_status'] = f"Frame saved: {timestamp_readable}"
 
     except Exception as e:
         error_msg = f"Error sending frame: {str(e)}"
