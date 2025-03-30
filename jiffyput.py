@@ -2,7 +2,6 @@
 jiffyput.py: Helper module for JiffyCam to handle frame processing and storage
 
 This module provides functions to process and save video frames,
-intended to eventually replace the embedded send_frame() method in jiffycam.py.
 """
 
 import cv2

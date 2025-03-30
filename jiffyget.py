@@ -2,7 +2,6 @@
 jiffyget.py: Helper module for JiffyCam to handle image retrieval
 
 This module provides functions to find and load saved camera images,
-intended to replace the embedded jiffyget() function in jiffycam.py.
 """
 
 import cv2
