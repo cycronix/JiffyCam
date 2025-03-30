@@ -3,7 +3,7 @@
 
 A modern Streamlit-based video capture utility for capturing and browsing video from cameras.
 
-[Screenshot](jiffycam.jpg)
+![Screenshot](jiffycam.jpg)
 
 ## Overview
 
