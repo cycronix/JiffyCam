@@ -1271,11 +1271,7 @@ def main():
         # Close the time controls container
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # Add a separator line after the time controls with minimal spacing but enough to prevent clipping
-        #st.markdown("<hr style='margin-top: 2px; margin-bottom: 0px; padding: 0;'>", unsafe_allow_html=True)
-
-    # Add a separator line after the time controls with minimal spacing but enough to prevent clipping
-    #st.markdown("<hr style='margin-top: 2px; margin-bottom: 0px; padding: 0;'>", unsafe_allow_html=True)
+   
 
     # Add functions to convert time to seconds and vice versa
     def time_to_seconds(hours, minutes, seconds):
@@ -1652,7 +1648,6 @@ def main():
     if 'status_message' not in st.session_state:
         st.session_state.status_message = ""
 
-    # Then, modify the main UI loop near the end of the file (around line 2100)
     # Update the UI
     while True:
         # Check for errors and thread state
