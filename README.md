@@ -86,12 +86,7 @@ JiffyCam consists of several key components:
 
 ## Recent Improvements
 
-- **Enhanced status messages**: Clear status indicators for all operations
-- **Improved timeline navigation**: Smoother, more intuitive time-based browsing
-- **Live/Pause toggle**: Single button to switch between live and historical viewing
-- **Smart slider behavior**: Time slider now respects manual positioning while still updating with navigation
-- **Save notifications**: Clear notifications when frames are saved
-- **Modular architecture**: New jiffyput and jiffyget modules for better separation of concerns
+- **State of Flux**: early development with major unpredictable changes
 
 ## Data Storage
 
