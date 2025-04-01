@@ -22,33 +22,14 @@ import streamlit as st
 
 from jiffyput import jiffyput  # Import the jiffyput module
 from jiffyget import jiffyget, get_timestamp_range   # Import the jiffyget functions
-
-# Add a representer for OrderedDict to maintain order in YAML
-yaml.add_representer(OrderedDict, lambda dumper, data: dumper.represent_mapping('tag:yaml.org,2002:map', data.items()))
-
-# Add a constructor to load mappings as OrderedDict
-yaml.add_constructor(yaml.resolver.Resolver.DEFAULT_MAPPING_TAG, 
-                    lambda loader, node: OrderedDict(loader.construct_pairs(node)))
+from jiffyconfig import JiffyConfig, RESOLUTIONS  # Import the new config module
 
 # Configuration flags
 SHOW_RESOLUTION_SETTING = False  # Set to True to show the Resolution setting in the sidebar
 
-# Common camera resolutions
-RESOLUTIONS = {
-    "4K (3840x2160)": (3840, 2160),
-    "1080p (1920x1080)": (1920, 1080),
-    "720p (1280x720)": (1280, 720),
-    "480p (854x480)": (854, 480),
-    "360p (640x360)": (640, 360),
-    "Default (0x0)": (0, 0)
-}
-
-# Add this right after your imports, before any functions are defined
-
 # Initialize session state if running for the first time
 if 'st' in globals() and hasattr(st, 'session_state'):
     # Initialize slider-related state variables
-
     if 'slider_currently_being_dragged' not in st.session_state:
         st.session_state.slider_currently_being_dragged = False
 
@@ -57,8 +38,8 @@ class VideoCapture:
         self.stop_event = threading.Event()
         self.frame_count = 0
         self.capture_thread: Optional[threading.Thread] = None
-        self.yaml_file = 'jiffycam.yaml'
-        self.config = self.load_config()
+        self.config_manager = JiffyConfig()
+        self.config = self.config_manager.config
         self.frame_queue = Queue(maxsize=1)  # Only keep latest frame
         self.last_error = None
         self.error_event = threading.Event()  # Add error event
@@ -72,80 +53,6 @@ class VideoCapture:
         self.image_just_saved = False  # Flag to track when an image was just saved
         self.image_saved_time = 0  # Track when the image was saved
         
-    def load_config(self) -> Dict[str, Any]:
-        """Load configuration from YAML file if it exists."""
-        default_config = {
-            'cam_device': '0',
-            'session': 'Default',  # Default session value, but not saved to YAML anymore
-            'cam_name': 'cam0',
-            'resolution': '1920x1080',  # Combined resolution field
-            'save_interval': 60,  # Changed to integer default
-            'data_dir': 'JiffyData',  # Default data directory
-            'device_aliases': OrderedDict([   # Use OrderedDict for default device aliases
-                ('USB0', '0'),
-                ('USB1', '1'),
-                ('Default', '0')
-            ])
-        }
-        
-        if os.path.exists(self.yaml_file):
-            try:
-                with open(self.yaml_file, 'r') as file:
-                    # Use safe_load which will now use our custom constructor for mappings
-                    config = yaml.safe_load(file)
-                    
-                    # Remove debug output
-                    # print(f"Loaded config from {self.yaml_file}: {config}")
-                    
-                    if config:
-                        # Ensure save_interval is an integer
-                        if 'save_interval' in config:
-                            config['save_interval'] = int(config['save_interval'])
-                        
-                        # Ensure device_aliases exists and is an OrderedDict
-                        if 'device_aliases' not in config:
-                            config['device_aliases'] = default_config['device_aliases']
-                        
-                        # Handle legacy config with separate width and height
-                        if 'cam_width' in config and 'cam_height' in config and 'resolution' not in config:
-                            config['resolution'] = f"{config['cam_width']}x{config['cam_height']}"
-                            # Remove old fields
-                            config.pop('cam_width', None)
-                            config.pop('cam_height', None)
-                            
-                        # Handle legacy cam_path key
-                        if 'cam_path' in config and 'cam_device' not in config:
-                            config['cam_device'] = config.pop('cam_path')
-                        
-                        # Remove debug output
-                        # print(f"Final config: {config}")
-                            
-                        return config
-            except Exception as e:
-                self.last_error = f"Error loading configuration: {str(e)}"
-                # Remove debug output
-                # print(f"Error loading configuration: {str(e)}")
-        return default_config
-
-    def save_config(self, config: Dict[str, Any]):
-        """Save configuration to YAML file."""
-        try:
-            # Create a copy to avoid modifying the original
-            config = config.copy()
-            
-            # Ensure data_dir is preserved if it exists in the current config
-            if 'data_dir' not in config and hasattr(self, 'config') and isinstance(self.config, dict) and 'data_dir' in self.config:
-                config['data_dir'] = self.config['data_dir']
-            
-            # Convert device_aliases to OrderedDict to preserve order
-            if 'device_aliases' in config and isinstance(config['device_aliases'], dict):
-                config['device_aliases'] = OrderedDict(config['device_aliases'])
-            
-            with open(self.yaml_file, 'w') as file:
-                yaml.dump(config, file, default_flow_style=False)
-        except Exception as e:
-            self.last_error = f"Failed to save configuration: {str(e)}"
-
     def handle_error(self, error_msg: str):
         """Handle errors by setting error message and stopping capture"""
         self.last_error = error_msg
@@ -172,7 +79,6 @@ class VideoCapture:
             return None
 
         return result
-
 
     def capture_video_loop(self, source, cam_name: str, cam_width: int, cam_height: int, save_interval: int, session: str):
         """Initialize and run video capture loop."""
@@ -322,7 +228,7 @@ class VideoCapture:
         
         # Save configuration
         st.session_state.video_capture.config = config
-        st.session_state.video_capture.save_config(st.session_state.video_capture.config)
+        st.session_state.video_capture.config_manager.save_config(st.session_state.video_capture.config)
         
         # Parse resolution string for capture thread
         try:
@@ -515,7 +421,7 @@ def main():
         config = st.session_state.video_capture.config.copy()
         config['data_dir'] = st.session_state.data_dir
         st.session_state.video_capture.config = config
-        st.session_state.video_capture.save_config(config)
+        st.session_state.video_capture.config_manager.save_config(config)
     
     # Initialize all session state variables with defaults if they don't exist
     if 'cam_device' not in st.session_state:
