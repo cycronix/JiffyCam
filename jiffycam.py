@@ -5,28 +5,23 @@ A modern version of vidcap that uses Streamlit for the UI to capture video
 from a camera and send it to a CloudTurbine (CT) server.
 """
 
-import cv2
 import time
-import sys
-import urllib3
-import yaml
 import os
-import streamlit as st
 import threading
-from typing import Optional, Dict, Any, Tuple
-from pathlib import Path
+from typing import Optional, Dict, Any
+import gc
+
 from queue import Queue
 from datetime import datetime, timedelta, time as datetime_time
 import glob
 from collections import OrderedDict
-import traceback
 
-from jiffydetect import detect
+import yaml
+import cv2
+import streamlit as st
+
 from jiffyput import jiffyput  # Import the jiffyput module
-from jiffyget import jiffyget as external_jiffyget, get_timestamp_range as external_get_timestamp_range  # Import the jiffyget functions
-
-# Initialize HTTP pool manager
-http = urllib3.PoolManager()
+from jiffyget import jiffyget, get_timestamp_range   # Import the jiffyget functions
 
 # Add a representer for OrderedDict to maintain order in YAML
 yaml.add_representer(OrderedDict, lambda dumper, data: dumper.represent_mapping('tag:yaml.org,2002:map', data.items()))
@@ -157,33 +152,17 @@ class VideoCapture:
         self.error_event.set()
         self.stop_event.set()
 
-    def send_frame(self, cam_name: str, frame, ftime: float, save_frame: bool, session: str):
+    def send_frame(self, cam_name: str, frame, ftime: float, session: str):
         """Send frame to server and optionally save to disk."""
         try:
-            # Create state dictionary to pass to jiffyput
-            state = {
-                'image_just_saved': self.image_just_saved,
-                'image_saved_time': self.image_saved_time,
-                'last_save_time': self.last_save_time,
-                'save_status': self.save_status,
-                'last_error': self.last_error
-            }
-            
             # Call jiffyput function
-            result = jiffyput(cam_name, frame, ftime, save_frame, session, self.config, state)
-            
-            # Update class attributes from state dictionary
-            if result is not None:
-                self.image_just_saved = state.get('image_just_saved', self.image_just_saved)
-                self.image_saved_time = state.get('image_saved_time', self.image_saved_time)
-                self.last_save_time = state.get('last_save_time', self.last_save_time)
-                self.save_status = state.get('save_status', self.save_status)
-                
-                # If there was an error, handle it
-                if 'last_error' in state and state['last_error'] is not None:
-                    self.handle_error(state['last_error'])
-                    return None
-            else:
+            result = jiffyput(cam_name, frame, ftime, session, self.config.get('data_dir', 'JiffyData'))
+            # Update class attributes
+            self.image_just_saved = True
+            self.image_saved_time = self.last_save_time = time.time()
+            self.save_status = f"Frame saved: {datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')}"
+
+            if result is None:
                 # If jiffyput returned None, there was an error
                 self.handle_error("Error in jiffyput processing")
                 return None
@@ -244,7 +223,8 @@ class VideoCapture:
                     frames_this_second = 0
                     last_fps_time = current_time
 
-                frame = self.send_frame(cam_name, frame, time.time(), save_frame, session)
+                if(save_frame):
+                    frame = self.send_frame(cam_name, frame, time.time(), session)
                 if self.error_event.is_set():  # Check if error occurred in send_frame
                     break
                 save_frame = False
@@ -385,7 +365,6 @@ class VideoCapture:
                 self.model = None
                 
             # Force garbage collection
-            import gc
             gc.collect()
             
         except Exception as e:
@@ -425,7 +404,7 @@ class VideoCapture:
         )
         self.capture_thread.start()
 
-def jiffyget(hour: int, minute: int, second: int, cam_name: str, direction: str = "down"):
+def get_frame(hour: int, minute: int, second: int, cam_name: str, direction: str = "down"):
     """Find the closest image to the given time.
     
     Args:
@@ -448,26 +427,7 @@ def jiffyget(hour: int, minute: int, second: int, cam_name: str, direction: str 
     browse_date = st.session_state.browsing_date
     
     # Call the external jiffyget function
-    return external_jiffyget(hour, minute, second, cam_name, session, data_dir, browse_date, direction)
-
-
-def get_timestamp_range(cam_name: str) -> Tuple[Optional[datetime], Optional[datetime]]:
-    """Get the oldest and newest timestamps available for the camera.
-    
-    Args:
-        cam_name: Camera name
-        
-    Returns:
-        Tuple of (oldest_timestamp, newest_timestamp) as datetime objects, or (None, None) if no images
-    """
-    # Safely get session with a fallback to 'Default'
-    session = st.session_state.get('session', 'Default')
-    
-    # Get the data directory directly from the VideoCapture config
-    data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
-    
-    # Call the external get_timestamp_range function
-    return external_get_timestamp_range(cam_name, session, data_dir)
+    return jiffyget(hour, minute, second, cam_name, session, data_dir, browse_date, direction)
 
 def main():
     # Add these at the very beginning of main(), before any other code
@@ -700,65 +660,7 @@ def main():
     with st.sidebar:
         # Add the title at the top of the sidebar
         st.title("JiffyCam")
-        
         st.header("Settings")
-        
-        # Function to get available camera names from JiffyData
-        def get_camera_names():
-            """Get list of available camera names from JiffyData directory."""
-            camera_names = set()
-            session = st.session_state.get('session', 'Default')  # Changed from camera_group
-            
-            # Default camera name if none found
-            default_names = ['cam0']
-            
-            # Get the data directory directly from the VideoCapture config
-            data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
-            
-            # Check if data directory and the selected session exist
-            group_path = os.path.join(data_dir, session)  # Changed from camera_group
-            if not os.path.exists(group_path):
-                return default_names + ['Add New Camera']
-            
-            # Walk through the directory structure to find all jpg files
-            for root, dirs, files in os.walk(group_path):
-                for file in files:
-                    if file.endswith('.jpg'):
-                        # Get the relative path from the group directory
-                        rel_path = os.path.relpath(root, group_path)
-                        if rel_path == '.':  # Files directly in the group directory
-                            camera_name = os.path.splitext(file)[0]
-                        else:
-                            # Extract the parent directory (timestamp directories are the leaf nodes)
-                            parent_dir = os.path.dirname(rel_path)
-                            if parent_dir == '':  # Direct child of group directory
-                                camera_name = os.path.splitext(file)[0]
-                            else:
-                                # Combine parent directory with filename without extension
-                                camera_name = os.path.join(parent_dir, os.path.splitext(file)[0])
-                        
-                        # Add to our set of camera names
-                        camera_names.add(camera_name)
-            
-            # Convert set to list and sort
-            result = sorted(list(camera_names))
-            
-            # If no camera names found, use default
-            if not result:
-                result = default_names
-                
-            # Add default camera name if not in the list
-            if 'cam0' not in result:
-                result.insert(0, 'cam0')
-            else:
-                # Move cam0 to the beginning
-                result.remove('cam0')
-                result.insert(0, 'cam0')
-            
-            # Add option to create new camera
-            result.append('Add New Camera')
-            
-            return result
         
         # Function to handle device alias selection
         def on_device_alias_change():
@@ -779,7 +681,7 @@ def main():
         # Replace text input with selectbox for Device
         device_aliases = list(st.session_state.device_aliases.keys())
         
-        selected_alias = st.selectbox(
+        st.selectbox(
             "Device",
             options=device_aliases,
             key='selected_device_alias',
@@ -823,7 +725,7 @@ def main():
         # Check if capture is currently running to set the initial button state
         is_capturing = st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive()
         st.session_state.rt_active = is_capturing
-        
+
         # Create a toggle button that changes text based on state
         button_text = "Stop Capture" if is_capturing else "Start Capture"
         button_color = "secondary" if is_capturing else "primary"
@@ -945,7 +847,7 @@ def main():
             st.session_state.in_playback_mode = True
             
             # Find the closest image to the requested time using the wrapper function
-            closest_image = jiffyget(
+            closest_image = get_frame(
                 st.session_state.hour,
                 st.session_state.minute,
                 st.session_state.second,
@@ -1032,45 +934,7 @@ def main():
             # Find and display closest image with current time and new date
             update_image_display(direction="down")
 
-        # Function to toggle real-time capture
-        def toggle_rt_capture():
-            """Toggle real-time capture on/off"""
-            # Toggle the rt_capture state
-            #print(f"Toggling rt_capture: {st.session_state.rt_capture}")
-            st.session_state.rt_capture = not st.session_state.rt_capture
-            
-            if st.session_state.rt_capture:     
-                # When starting capture, also exit playback mode
-                st.session_state.in_playback_mode = False
-                # Get resolution
-                resolution = st.session_state.resolution
-                
-                # Check if resolution is a key in RESOLUTIONS dictionary
-                if resolution in RESOLUTIONS:
-                    width, height = RESOLUTIONS[resolution]
-                    resolution_str = f"{width}x{height}"
-                else:
-                    # Assume resolution is already in the format "widthxheight"
-                    resolution_str = resolution
-                    
-                    # Validate format
-                    if not isinstance(resolution_str, str) or 'x' not in resolution_str:
-                        resolution_str = "1920x1080"  # Default if invalid
-                
-                # Reset browsing state
-                st.session_state.browsing_saved_images = False
-                st.session_state.date = datetime.now().date()
-                #print(f"Setting time_slider to 0: {st.session_state.time_slider}")
-                #traceback.print_stack()
-
-                # Set the time slider to 0
-                st.session_state.time_slider = 0
-                
-                # Start capture with the resolution string
-                st.session_state.video_capture.start_capture(resolution_str)
-            else:
-                st.session_state.video_capture.stop_capture()
-
+    
         # Date picker in its own row at the top
         st.markdown('<div class="date-picker-container">', unsafe_allow_html=True)
 
@@ -1080,7 +944,7 @@ def main():
         
         # Update timestamp range if not already set
         if st.session_state.oldest_timestamp is None or st.session_state.newest_timestamp is None:
-            oldest, newest = get_timestamp_range(st.session_state.cam_name)
+            oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
             if oldest and newest:
                 st.session_state.oldest_timestamp = oldest
                 st.session_state.newest_timestamp = newest
@@ -1115,16 +979,6 @@ def main():
 
         # Create a more compact layout for time controls with equal column widths
         time_cols = st.columns([3, 1, 1, 0.2, 1])
-        
-        # Function to handle time changes
-        def on_time_change():
-            """Handle time changes and update the image display."""
-            # Stop capture if running
-            if st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive():
-                st.session_state.video_capture.stop_capture()
-            
-            # Update the image display with the new time
-            update_image_display(direction="down")
         
         # Function to handle previous image button
         def on_prev_button():
@@ -1262,19 +1116,6 @@ def main():
         # Close the time controls container
         st.markdown("</div>", unsafe_allow_html=True)
 
-   
-
-    # Add functions to convert time to seconds and vice versa
-    def time_to_seconds(hours, minutes, seconds):
-        """Convert hours, minutes, seconds to total seconds."""
-        return hours * 3600 + minutes * 60 + seconds
-        
-    def seconds_to_time(total_seconds):
-        """Convert total seconds to hours, minutes, seconds."""
-        hours = total_seconds // 3600
-        minutes = (total_seconds % 3600) // 60
-        seconds = total_seconds % 60
-        return hours, minutes, seconds
         
     # Function to handle time slider change
     def on_time_slider_change():
@@ -1626,8 +1467,6 @@ def main():
         st.session_state.minute = timestamp.minute
         st.session_state.second = timestamp.second
         update_image_display(direction="up")
-        return
-
 
     # Display the most recent image on startup or when camera name changes
     if st.session_state.need_to_display_recent and not is_capturing:
@@ -1742,7 +1581,8 @@ def main():
                         st.session_state.status_message = new_status
 
         # Add a small delay to prevent overwhelming the CPU
-        time.sleep(0.1)
+        time.sleep(0.05)
 
 if __name__ == "__main__":
     main() 
+    
