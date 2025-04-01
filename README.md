@@ -44,11 +44,12 @@ JiffyCam is a portable all-Python webapp that uses Streamlit for the UI to captu
    ```bash
    streamlit run jiffycam.py --server.port 8080
    ```
+Note: install and run in a Python virtual environment.
 
 ## Usage
 
 ### Camera Setup
-1. Select a camera device from the dropdown in the sidebar
+1. Select camera device from dropdown in the sidebar.  See Configuration below.
 2. Configure the save interval (in seconds) to control how often frames are saved
 3. Click "Start Capture" to begin capturing video
 
@@ -79,10 +80,13 @@ JiffyCam stores its configuration in `jiffycam.yaml`. The main settings include:
 
 JiffyCam consists of several key components:
 
-- **jiffycam.py**: Main application with the Streamlit UI and video processing
-- **jiffydetect.py**: Object detection functionality
-- **jiffyput.py**: Frame processing and storage module that handles saving frames with timestamps
-- **jiffyget.py**: Image retrieval module for finding and loading saved images
+- **jiffycam.py**: Main application entry point, session state initialization.
+- **jiffyui.py**: Builds the Streamlit UI components, handles callbacks, and manages the UI update loop.
+- **jiffycapture.py**: Core video capture functionality, runs capture thread, manages frame queue.
+- **jiffyconfig.py**: Handles loading, saving, and managing configuration from `jiffycam.yaml`.
+- **jiffydetect.py**: Object detection functionality (optional).
+- **jiffyput.py**: Frame processing and storage module (saves frames).
+- **jiffyget.py**: Image retrieval module (loads saved frames).
 
 ## Recent Improvements
 
