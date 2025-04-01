@@ -9,19 +9,8 @@ import time
 import os
 import streamlit as st
 
-# Import necessary components from other modules
-# Assuming these modules are in the same directory or accessible via PYTHONPATH
-try:
-    from jiffyconfig import RESOLUTIONS
-    from jiffyget import jiffyget
-    # Avoid importing VideoCapture directly to prevent circular deps if possible
-except ImportError as e:
-    # This error should ideally be handled before calling UI functions
-    print(f"Warning: Failed to import required Jiffy modules in jiffyui: {e}")
-    # If Streamlit is running, display an error
-    if 'st' in globals():
-        st.error(f"Failed to import required Jiffy modules: {e}")
-        st.stop()
+from jiffyconfig import RESOLUTIONS   # Import necessary components from other modules
+from jiffyget import jiffyget
 
 # --- UI Helper Functions ---
 
