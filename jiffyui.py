@@ -4,19 +4,16 @@ jiffyui.py: UI components and logic for JiffyCam
 This module contains functions for building and updating the Streamlit UI.
 """
 
-import streamlit as st
 from datetime import datetime, timedelta, time as datetime_time
 import time
 import os
-import glob
-from collections import OrderedDict
-import cv2
+import streamlit as st
 
 # Import necessary components from other modules
 # Assuming these modules are in the same directory or accessible via PYTHONPATH
 try:
     from jiffyconfig import RESOLUTIONS
-    from jiffyget import jiffyget, get_timestamp_range
+    from jiffyget import jiffyget
     # Avoid importing VideoCapture directly to prevent circular deps if possible
 except ImportError as e:
     # This error should ideally be handled before calling UI functions
@@ -144,7 +141,7 @@ def toggle_live_pause():
         # If last_frame exists, its timestamp should be in actual_timestamp
         # If not, store current time as a fallback?
         if st.session_state.last_frame is None:
-             st.session_state.actual_timestamp = datetime.now() # Fallback
+            st.session_state.actual_timestamp = datetime.now() # Fallback
         # No need to explicitly set hour/min/sec here, they reflect the paused frame
 
 def on_time_slider_change():
@@ -244,10 +241,6 @@ def update_image_display(direction=None):
 
 def display_most_recent_image():
     """Display the most recent image for the current camera."""
-    # Fetch placeholders from session state
-    video_placeholder = st.session_state.video_placeholder
-    status_placeholder = st.session_state.status_placeholder
-    time_display = st.session_state.time_display
 
     # Use current time as starting point
     timestamp = datetime.now()
@@ -327,7 +320,7 @@ def generate_timeline_bar_html():
                     except (ValueError, TypeError):
                         continue # Ignore invalid directory names or date issues
         except FileNotFoundError:
-             pass # Ignore if base_dir disappears
+            pass # Ignore if base_dir disappears
 
     # Base HTML structure (always include CSS)
     html = """
@@ -517,22 +510,22 @@ def run_ui_update_loop():
                 
         else: # Capture Stopped
             if st.session_state.in_playback_mode:
-                 # Playback Mode (Capture Stopped): Show paused frame
-                 if st.session_state.last_frame is not None:
+                # Playback Mode (Capture Stopped): Show paused frame
+                if st.session_state.last_frame is not None:
                     video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
                     ts = st.session_state.actual_timestamp
                     new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback (Stopped)"
-                 else:
+                else:
                     new_status = "Playback (Stopped - No Frame)"
                     video_placeholder.empty()
             else:
                  # Not capturing, not in playback - Show last frame or empty
-                 if st.session_state.last_frame is not None:
-                     video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
-                     new_status = "Capture Stopped"
-                 else:
-                     video_placeholder.info("Capture stopped. Select date/time or Start Capture.")
-                     new_status = "Status: Idle"
+                if st.session_state.last_frame is not None:
+                    video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
+                    new_status = "Capture Stopped"
+                else:
+                    video_placeholder.info("Capture stopped. Select date/time or Start Capture.")
+                    new_status = "Status: Idle"
 
         # Update status placeholder only if message changed
         if new_status != current_status:
