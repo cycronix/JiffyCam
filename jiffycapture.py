@@ -49,16 +49,13 @@ class VideoCapture:
         try:
             # Call jiffyput function
             result = jiffyput(cam_name, frame, ftime, session, self.config.get('data_dir', 'JiffyData'))
+            if result is None:
+                return None
+        
             # Update class attributes
             self.image_just_saved = True
             self.image_saved_time = self.last_save_time = time.time()
-            self.save_status = f"Frame saved: {datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')}"
-
-            if result is None:
-                # If jiffyput returned None, there was an error
-                self.handle_error("Error in jiffyput processing")
-                return None
-                
+            self.save_status = f"Frame saved: {datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')}"  
         except Exception as e:
             self.handle_error(f"Error sending frame: {str(e)}")
             return None

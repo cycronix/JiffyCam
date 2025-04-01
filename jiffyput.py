@@ -9,6 +9,7 @@ import cv2
 
 from jiffydetect import detect
 
+prevframe = None
 def jiffyput(cam_name, frame, ftime, session, data_dir):
     """
     Process and save a video frame.
@@ -23,15 +24,20 @@ def jiffyput(cam_name, frame, ftime, session, data_dir):
     Returns:
         The processed frame (which may be modified by detection)
     """
+
+    global prevframe
+
     try:
         # Set JPEG quality to 95
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
 
         detect_mode = True
         if detect_mode:
-            tryframe = detect(frame, None)
+            tryframe = detect(frame, prevframe)  # pass previous frame to reject no-motion detections
             if tryframe is None:       # ONLY save detections!  (to do: heartbeat saves)
-                return frame
+                return None
+                
+            prevframe = frame
             frame = tryframe
 
         # Create save directory using session and timestamp

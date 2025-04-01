@@ -64,6 +64,7 @@ def toggle_rt_capture():
             device_aliases=st.session_state.device_aliases,
             selected_device_alias=st.session_state.selected_device_alias
         )
+
     else:
         st.session_state.video_capture.stop_capture()
 

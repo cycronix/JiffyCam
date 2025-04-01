@@ -71,6 +71,7 @@ def detect(image, previmage):
                 else:
                     bd = MDET    # fake it
 
+                #print(f"bd: {bd}, MDET: {MDET}")
                 if(bd >= MDET):
                     if(PutDetect):
                         bname = 'vehicle' if(cname in Vehicle) else 'animal' if(cname in Animal) else 'person' if(cname in Person) else cname
@@ -84,10 +85,9 @@ def detect(image, previmage):
                     newimage = box_label(thisimage.copy(), xyxy, label)  	# this clobbers prior box_label if any
                     #cv2.imwrite('jiffycamDetect.jpg', newimage)
                     #print('detect: '+status+', newimage: '+ str(newimage.shape))
-                    return newimage   
-                else:
-                    print('no detection')
-                    return None
+                    return newimage  
+                 
+    return None  
         
     #print('BuhBye')
     
