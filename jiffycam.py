@@ -22,7 +22,8 @@ import streamlit as st
 
 from jiffyput import jiffyput  # Import the jiffyput module
 from jiffyget import jiffyget, get_timestamp_range   # Import the jiffyget functions
-from jiffyconfig import JiffyConfig, RESOLUTIONS  # Import the new config module
+from jiffyconfig import JiffyConfig, RESOLUTIONS  # Import the config module
+from jiffycapture import VideoCapture  # Import the new capture module
 
 # Configuration flags
 SHOW_RESOLUTION_SETTING = False  # Set to True to show the Resolution setting in the sidebar
@@ -32,283 +33,6 @@ if 'st' in globals() and hasattr(st, 'session_state'):
     # Initialize slider-related state variables
     if 'slider_currently_being_dragged' not in st.session_state:
         st.session_state.slider_currently_being_dragged = False
-
-class VideoCapture:
-    def __init__(self):
-        self.stop_event = threading.Event()
-        self.frame_count = 0
-        self.capture_thread: Optional[threading.Thread] = None
-        self.config_manager = JiffyConfig()
-        self.config = self.config_manager.config
-        self.frame_queue = Queue(maxsize=1)  # Only keep latest frame
-        self.last_error = None
-        self.error_event = threading.Event()  # Add error event
-        # Add status tracking variables
-        self.current_fps = 0
-        self.current_width = 0
-        self.current_height = 0
-        self.last_save_time = 0  # Track last save time
-        self.save_status = ""  # Track save status message
-        self.skip_first_save = True  # Flag to skip the first save
-        self.image_just_saved = False  # Flag to track when an image was just saved
-        self.image_saved_time = 0  # Track when the image was saved
-        
-    def handle_error(self, error_msg: str):
-        """Handle errors by setting error message and stopping capture"""
-        self.last_error = error_msg
-        self.error_event.set()
-        self.stop_event.set()
-
-    def send_frame(self, cam_name: str, frame, ftime: float, session: str):
-        """Send frame to server and optionally save to disk."""
-        try:
-            # Call jiffyput function
-            result = jiffyput(cam_name, frame, ftime, session, self.config.get('data_dir', 'JiffyData'))
-            # Update class attributes
-            self.image_just_saved = True
-            self.image_saved_time = self.last_save_time = time.time()
-            self.save_status = f"Frame saved: {datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')}"
-
-            if result is None:
-                # If jiffyput returned None, there was an error
-                self.handle_error("Error in jiffyput processing")
-                return None
-                
-        except Exception as e:
-            self.handle_error(f"Error sending frame: {str(e)}")
-            return None
-
-        return result
-
-    def capture_video_loop(self, source, cam_name: str, cam_width: int, cam_height: int, save_interval: int, session: str):
-        """Initialize and run video capture loop."""
-        
-        if isinstance(source, str) and source.isdigit():
-            source = int(source)
-
-        cap = cv2.VideoCapture(source)
-        if not cap.isOpened():
-            self.handle_error(f"Error: Could not open video source: {source}")
-            return
-
-        # Configure camera
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        if cam_width != 0:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, cam_width)
-        if cam_height != 0:
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_height)
-
-        # Get actual resolution
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        
-        save_frame = False  # Initialize as False to skip first frame
-        last_fps_time = time.time()
-        self.last_save_time = 0  # Initialize last save time
-        frames_this_second = 0
-        current_fps = 0
-        consecutive_failures = 0  # Track consecutive read failures
-        frame_count_since_start = 0  # Counter for frames since starting capture
-
-        while not self.stop_event.is_set():
-            ret, frame = cap.read()
-            if ret:
-                consecutive_failures = 0  # Reset failure counter on success
-                current_time = time.time()
-                frame_count_since_start += 1  # Increment frame counter
-
-                # Regular interval saving for subsequent frames
-                if( save_interval > 0 and (current_time - self.last_save_time) >= save_interval):
-                    save_frame = True
-                    self.last_save_time = current_time
-
-                # Update FPS calculation
-                frames_this_second += 1
-                if current_time - last_fps_time >= 1.0:
-                    current_fps = frames_this_second
-                    frames_this_second = 0
-                    last_fps_time = current_time
-
-                if(save_frame):
-                    frame = self.send_frame(cam_name, frame, time.time(), session)
-                if self.error_event.is_set():  # Check if error occurred in send_frame
-                    break
-                save_frame = False
-                self.frame_count += 1
-
-             # Update frame queue
-                if not self.frame_queue.full():
-                    self.frame_queue.put((frame, current_fps, width, height))
-                else:
-                    try:
-                        self.frame_queue.get_nowait()  # Remove old frame
-                        self.frame_queue.put((frame, current_fps, width, height))
-                    except:
-                        pass
-
-                time.sleep(0.01)  # Small delay to prevent overwhelming the system
-            else:
-                consecutive_failures += 1
-                if consecutive_failures >= 10:  # Stop after 10 consecutive failures
-                    self.handle_error("Video capture failed repeatedly - stopping capture")
-                    break
-                self.last_error = "Video capture read failed"
-                time.sleep(1)
-
-        cap.release()
-
-    def start_capture(self, resolution_str=None):
-        """Start video capture with the given resolution"""
-        # Initialize state variables
-        # st.session_state.rt_capture = True  # This is now handled in toggle_rt_capture
-        #print(f"Starting capture: {st.session_state.rt_capture}")
-        st.session_state.rt_active = True
-        st.session_state.browsing_saved_images = False
-        
-        # Reset date to current date
-        current_time = datetime.now()
-        st.session_state.date = current_time.date()
-        st.session_state.browsing_date = current_time.date()
-        
-        # Set the hour, minute, second values to current time
-        st.session_state.hour = current_time.hour
-        st.session_state.minute = current_time.minute
-        st.session_state.second = current_time.second
-        
-        # Update time_slider to current time
-        st.session_state.time_slider = datetime_time(
-            current_time.hour,
-            current_time.minute,
-            current_time.second
-        )
-        
-        # Get configuration values
-        cam_device = st.session_state.cam_device
-        session = st.session_state.session
-        cam_name = st.session_state.cam_name
-        save_interval = st.session_state.save_interval
-        device_aliases = st.session_state.device_aliases
-        
-        # Get the selected device alias (key) instead of the device path (value)
-        selected_device_alias = st.session_state.selected_device_alias
-        
-        # Process resolution
-        if resolution_str is None:
-            resolution = st.session_state.resolution
-            # Check if resolution is a key in RESOLUTIONS dictionary
-            if resolution in RESOLUTIONS:
-                width, height = RESOLUTIONS[resolution]
-                resolution_str = f"{width}x{height}"
-            else:
-                # Assume resolution is already in the format "widthxheight"
-                resolution_str = resolution
-                
-                # Validate format
-                if not isinstance(resolution_str, str) or 'x' not in resolution_str:
-                    resolution_str = "1920x1080"  # Default if invalid
-        
-        # Create configuration dictionary
-        config = {
-            'cam_device': selected_device_alias,  # Store the alias key instead of the device path
-            'cam_name': cam_name,
-            'save_interval': save_interval,
-            'device_aliases': device_aliases
-        }
-        
-        # Preserve data_dir if it exists in the current config
-        if hasattr(self, 'config') and isinstance(self.config, dict) and 'data_dir' in self.config:
-            config['data_dir'] = self.config['data_dir']
-        
-        # Only update resolution in config if the resolution setting is shown
-        if SHOW_RESOLUTION_SETTING:
-            config['resolution'] = resolution_str
-        else:
-            # Keep the existing resolution from the config
-            config['resolution'] = self.config.get('resolution', resolution_str)
-        
-        # Save configuration
-        st.session_state.video_capture.config = config
-        st.session_state.video_capture.config_manager.save_config(st.session_state.video_capture.config)
-        
-        # Parse resolution string for capture thread
-        try:
-            width, height = map(int, resolution_str.split('x'))
-        except (ValueError, AttributeError, IndexError):
-            # Default to 1080p if parsing fails
-            width, height = 1920, 1080
-        
-        # Start capture thread
-        st.session_state.video_capture.start_capture_thread(
-            cam_device=cam_device,  # Use the actual device path for capture
-            width=width,
-            height=height,
-            session=session,
-            cam_name=cam_name,
-            save_interval=save_interval
-        )
-
-    def stop_capture(self):
-        """Stop the capture thread."""
-        self.stop_event.set()
-        if self.capture_thread:
-            self.capture_thread.join(timeout=1.0)
-        self.capture_thread = None
-        # Clear the frame queue
-        while not self.frame_queue.empty():
-            try:
-                self.frame_queue.get_nowait()
-            except:
-                pass
-        
-        # Update the rt_capture state to match the actual capture state
-        #print(f"Stopping capture: {st.session_state.rt_capture}")
-        #if 'rt_capture' in st.session_state:
-        #    st.session_state.rt_capture = False
-
-        try:
-            # Release PyTorch resources explicitly
-            if hasattr(self, 'model') and self.model is not None:
-                self.model = None
-                
-            # Force garbage collection
-            gc.collect()
-            
-        except Exception as e:
-            print(f"Warning during cleanup: {e}")
-            # Continue shutdown despite errors
-
-    def start_capture_thread(self, cam_device, width, height, session, cam_name, save_interval):
-        """Start video capture in a separate thread."""
-        if self.capture_thread and self.capture_thread.is_alive():
-            return
-
-        self.stop_event.clear()
-        self.error_event.clear()  # Clear error event
-        self.frame_count = 0
-        self.last_error = None
-        self.current_fps = 0
-        self.current_width = 0
-        self.current_height = 0
-        self.last_save_time = 0
-        self.save_status = ""
-        self.skip_first_save = True  # Reset the skip flag when starting capture
-        self.image_just_saved = False  # Reset the image_just_saved flag
-        self.image_saved_time = 0  # Reset the image_saved_time variable
-        
-        # Start capture thread
-        self.capture_thread = threading.Thread(
-            target=self.capture_video_loop,
-            args=(
-                cam_device,
-                cam_name,
-                width,
-                height,
-                int(save_interval),
-                session
-            ),
-            daemon=True
-        )
-        self.capture_thread.start()
 
 def get_frame(hour: int, minute: int, second: int, cam_name: str, direction: str = "down"):
     """Find the closest image to the given time.
@@ -386,10 +110,18 @@ def main():
             st.session_state.date = datetime.now().date()
 
             # Set the time slider to 0
-            st.session_state.time_slider = 0
+            st.session_state.time_slider = datetime_time(0, 0, 0)
             
             # Start capture with the resolution string
-            st.session_state.video_capture.start_capture(resolution_str)
+            st.session_state.video_capture.start_capture(
+                resolution_str=resolution_str,
+                session=st.session_state.session,
+                cam_device=st.session_state.cam_device,
+                cam_name=st.session_state.cam_name,
+                save_interval=st.session_state.save_interval,
+                device_aliases=st.session_state.device_aliases,
+                selected_device_alias=st.session_state.selected_device_alias
+            )
         else:
             st.session_state.video_capture.stop_capture()
     
@@ -629,7 +361,7 @@ def main():
         
         # Add the toggle capture button to the sidebar
         # Check if capture is currently running to set the initial button state
-        is_capturing = st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive()
+        is_capturing = st.session_state.video_capture.is_capturing()
         st.session_state.rt_active = is_capturing
 
         # Create a toggle button that changes text based on state
@@ -975,7 +707,7 @@ def main():
         # Record button - in the last column - always shows Live Display button
         with time_cols[4]:
             # Check if capture is currently running
-            is_capturing = st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive()
+            is_capturing = st.session_state.video_capture.is_capturing()
             
             # Initialize the button state variables if they don't exist
             if 'live_button_clicked' not in st.session_state:
@@ -1332,7 +1064,7 @@ def main():
     )
 
     # Check if capture is currently running to set the initial button state
-    is_capturing = st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive()
+    is_capturing = st.session_state.video_capture.is_capturing()
     st.session_state.rt_active = is_capturing
 
     # Create placeholder for video - MOVED BELOW time controls
@@ -1398,22 +1130,21 @@ def main():
             break
 
         # Update status and video frame
-        is_capturing = st.session_state.video_capture.capture_thread and st.session_state.video_capture.capture_thread.is_alive()
+        is_capturing = st.session_state.video_capture.is_capturing()
         
         if is_capturing:
             # When capture is running
             if st.session_state.in_playback_mode:
                 # In playback mode with active capture:
                 # 1. Empty the queue without updating display
-                while not st.session_state.video_capture.frame_queue.empty():
-                    try:
-                        _, fps, width, height = st.session_state.video_capture.frame_queue.get_nowait()
-                        # Only update stats, don't touch the display
-                        st.session_state.video_capture.current_fps = fps
-                        st.session_state.video_capture.current_width = width
-                        st.session_state.video_capture.current_height = height
-                    except:
-                        pass
+                while True:
+                    frame, fps, width, height = st.session_state.video_capture.get_frame()
+                    if frame is None:
+                        break
+                    # Only update stats, don't touch the display
+                    st.session_state.video_capture.current_fps = fps
+                    st.session_state.video_capture.current_width = width
+                    st.session_state.video_capture.current_height = height
                 # 2. Make sure the playback frame stays visible
                 if st.session_state.last_frame is not None:
                     video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
@@ -1426,48 +1157,44 @@ def main():
                             st.session_state.status_message = new_status
             else:
                 # Normal real-time display mode
-                if not st.session_state.video_capture.frame_queue.empty():
-                    try:
-                        frame, fps, width, height = st.session_state.video_capture.frame_queue.get_nowait()
-                        if frame is not None:
-                            # Update the current time in real-time mode
-                            current_time = datetime.now()
-                            st.session_state.hour = current_time.hour
-                            st.session_state.minute = current_time.minute
-                            st.session_state.second = current_time.second
-                            
-                            # Update the time display
-                            time_display.markdown(
-                                f'<div class="time-display">{format_time_12h(current_time.hour, current_time.minute, current_time.second)}</div>',
-                                unsafe_allow_html=True
-                            )
-                            
-                            # Store and display the frame
-                            st.session_state.last_frame = frame.copy()
-                            video_placeholder.image(frame, channels="BGR", use_container_width=True)
-                            st.session_state.video_capture.current_fps = fps
-                            st.session_state.video_capture.current_width = width
-                            st.session_state.video_capture.current_height = height
-                            
-                            # Check if we have a save status to show
-                            if st.session_state.video_capture.image_just_saved:
-                                new_status = st.session_state.video_capture.save_status
-                                # Only update if the status has changed
-                                if st.session_state.status_message != new_status:
-                                    status_placeholder.text(new_status)
-                                    st.session_state.status_message = new_status
-                                
-                                # Clear the image_just_saved flag after 3 seconds
-                                if time.time() - st.session_state.video_capture.image_saved_time > 3:
-                                    st.session_state.video_capture.image_just_saved = False
-                            else:
-                                # Update status with FPS
-                                new_status = f"Live view - FPS: {fps}"
-                                if st.session_state.status_message != new_status:
-                                    status_placeholder.text(new_status)
-                                    st.session_state.status_message = new_status
-                    except:
-                        pass
+                frame, fps, width, height = st.session_state.video_capture.get_frame()
+                if frame is not None:
+                    # Update the current time in real-time mode
+                    current_time = datetime.now()
+                    st.session_state.hour = current_time.hour
+                    st.session_state.minute = current_time.minute
+                    st.session_state.second = current_time.second
+                    
+                    # Update the time display
+                    time_display.markdown(
+                        f'<div class="time-display">{format_time_12h(current_time.hour, current_time.minute, current_time.second)}</div>',
+                        unsafe_allow_html=True
+                    )
+                    
+                    # Store and display the frame
+                    st.session_state.last_frame = frame.copy()
+                    video_placeholder.image(frame, channels="BGR", use_container_width=True)
+                    st.session_state.video_capture.current_fps = fps
+                    st.session_state.video_capture.current_width = width
+                    st.session_state.video_capture.current_height = height
+                    
+                    # Check if we have a save status to show
+                    if st.session_state.video_capture.image_just_saved:
+                        new_status = st.session_state.video_capture.save_status
+                        # Only update if the status has changed
+                        if st.session_state.status_message != new_status:
+                            status_placeholder.text(new_status)
+                            st.session_state.status_message = new_status
+                        
+                        # Clear the image_just_saved flag after 3 seconds
+                        if time.time() - st.session_state.video_capture.image_saved_time > 3:
+                            st.session_state.video_capture.image_just_saved = False
+                    else:
+                        # Update status with FPS
+                        new_status = f"Live view - FPS: {fps}"
+                        if st.session_state.status_message != new_status:
+                            status_placeholder.text(new_status)
+                            st.session_state.status_message = new_status
         else:
             # When capture is not running - crucial for playback with paused capture
             if st.session_state.in_playback_mode and st.session_state.last_frame is not None:
