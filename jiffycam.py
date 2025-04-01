@@ -5,1217 +5,141 @@ A modern version of vidcap that uses Streamlit for the UI to capture video
 from a camera and send it to a CloudTurbine (CT) server.
 """
 
-import time
 import os
-import threading
+# import threading # Keep only if other non-UI threads are used
 from typing import Optional, Dict, Any
-import gc
 
-from queue import Queue
-from datetime import datetime, timedelta, time as datetime_time
-import glob
+# from queue import Queue # No longer needed here
+from datetime import datetime, time as datetime_time
 from collections import OrderedDict
 
-import yaml
-import cv2
 import streamlit as st
 
-from jiffyput import jiffyput  # Import the jiffyput module
-from jiffyget import jiffyget, get_timestamp_range   # Import the jiffyget functions
-from jiffyconfig import JiffyConfig, RESOLUTIONS  # Import the config module
-from jiffycapture import VideoCapture  # Import the new capture module
+# Import Jiffy modules
+# from jiffyput import jiffyput # Not directly used here
+from jiffyget import get_timestamp_range # get_frame moved to jiffyui 
+from jiffyconfig import RESOLUTIONS  
+from jiffycapture import VideoCapture  
 
-# Configuration flags
-SHOW_RESOLUTION_SETTING = False  # Set to True to show the Resolution setting in the sidebar
+# Import UI functions from the new module
+from jiffyui import (
+    build_sidebar, 
+    build_main_area, 
+    run_ui_update_loop, 
+    display_most_recent_image,
+    # Callbacks and helpers are internal to jiffyui now
+)
 
-# Initialize session state if running for the first time
-if 'st' in globals() and hasattr(st, 'session_state'):
-    # Initialize slider-related state variables
-    if 'slider_currently_being_dragged' not in st.session_state:
-        st.session_state.slider_currently_being_dragged = False
+# Configuration flags (Keep if used outside UI, otherwise move/remove)
+SHOW_RESOLUTION_SETTING = False  
 
-def get_frame(hour: int, minute: int, second: int, cam_name: str, direction: str = "down"):
-    """Find the closest image to the given time.
-    
-    Args:
-        hour: Hour (0-23)
-        minute: Minute (0-59)
-        second: Second (0-59)
-        cam_name: Camera name
-        direction: Direction to search ("up" or "down")
-        
-    Returns:
-        Tuple of (image_path, timestamp) or None if no image found
-    """
-    # Safely get session with a fallback to 'Default'
-    session = st.session_state.get('session', 'Default')
-    
-    # Get the data directory directly from the VideoCapture config
-    data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
-    
-    # Use browsing_date from session state instead of current date
-    browse_date = st.session_state.browsing_date
-    
-    # Call the external jiffyget function
-    return jiffyget(hour, minute, second, cam_name, session, data_dir, browse_date, direction)
+# --- Main Application Logic ---
 
 def main():
-    # Add these at the very beginning of main(), before any other code
-
-    if 'slider_currently_being_dragged' not in st.session_state:
-        st.session_state.slider_currently_being_dragged = False
-
-    
+    # Page Config (Should be first Streamlit command)
     st.set_page_config(
         page_title="JiffyCam",
         page_icon="🎥",
         layout="wide"
     )
     
-    # Function to format time in 12-hour format with AM/PM
-    def format_time_12h(hour, minute, second):
-        """Format time in 12-hour format with AM/PM indicator."""
-        period = "AM" if hour < 12 else "PM"
-        hour_12 = hour % 12
-        if hour_12 == 0:
-            hour_12 = 12
-        return f"{hour_12}:{minute:02d}:{second:02d} {period}"
-    
-    # Function to toggle real-time capture - MOVED HERE before it's referenced in sidebar
-    def toggle_rt_capture():
-        """Toggle real-time capture on/off"""
-        # Toggle the rt_capture state
-        st.session_state.rt_capture = not st.session_state.rt_capture
-        
-        if st.session_state.rt_capture:     
-            # When starting capture, also exit playback mode
-            st.session_state.in_playback_mode = False
-            # Get resolution
-            resolution = st.session_state.resolution
-            
-            # Check if resolution is a key in RESOLUTIONS dictionary
-            if resolution in RESOLUTIONS:
-                width, height = RESOLUTIONS[resolution]
-                resolution_str = f"{width}x{height}"
-            else:
-                # Assume resolution is already in the format "widthxheight"
-                resolution_str = resolution
-                
-                # Validate format
-                if not isinstance(resolution_str, str) or 'x' not in resolution_str:
-                    resolution_str = "1920x1080"  # Default if invalid
-            
-            # Reset browsing state
-            st.session_state.browsing_saved_images = False
-            st.session_state.date = datetime.now().date()
+    # --- Initialize Session State --- 
+    # Needs to happen *before* accessing state in UI build or logic
 
-            # Set the time slider to 0
-            st.session_state.time_slider = datetime_time(0, 0, 0)
-            
-            # Start capture with the resolution string
-            st.session_state.video_capture.start_capture(
-                resolution_str=resolution_str,
-                session=st.session_state.session,
-                cam_device=st.session_state.cam_device,
-                cam_name=st.session_state.cam_name,
-                save_interval=st.session_state.save_interval,
-                device_aliases=st.session_state.device_aliases,
-                selected_device_alias=st.session_state.selected_device_alias
-            )
-        else:
-            st.session_state.video_capture.stop_capture()
-    
-    # Initialize VideoCapture instance
+    # Core components
     if 'video_capture' not in st.session_state:
         st.session_state.video_capture = VideoCapture()
     
-    # Initialize in_playback_mode first, before any other code tries to use it
-    if 'in_playback_mode' not in st.session_state:
-        st.session_state.in_playback_mode = False
-    
-    # Initialize session state from config
-    if 'cam_name' not in st.session_state:
-        st.session_state.cam_name = st.session_state.video_capture.config.get('cam_name', 'cam0')
-    if 'previous_cam_name' not in st.session_state:
-        st.session_state.previous_cam_name = st.session_state.cam_name
-    if 'device_aliases' not in st.session_state:
-        st.session_state.device_aliases = st.session_state.video_capture.config.get('device_aliases', {'USB0': '0', 'USB1': '1', 'Default': '0'})
-    
-    # Always ensure data_dir is set in session state
-    # This is critical as it's used in multiple places
-    st.session_state.data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
-    
-    # Ensure the data directory exists
-    os.makedirs(st.session_state.data_dir, exist_ok=True)
-    
-    # If data_dir is not in the config but we're using a custom value, add it to the config
-    if 'data_dir' not in st.session_state.video_capture.config and st.session_state.data_dir != 'JiffyData':
-        config = st.session_state.video_capture.config.copy()
-        config['data_dir'] = st.session_state.data_dir
-        st.session_state.video_capture.config = config
-        st.session_state.video_capture.config_manager.save_config(config)
-    
-    # Initialize all session state variables with defaults if they don't exist
-    if 'cam_device' not in st.session_state:
-        # Get the cam_device from config - this might be an alias key now
-        config_cam_device = st.session_state.video_capture.config.get('cam_device', '0')
-        
-        # Check if the cam_device is an alias key in device_aliases
-        device_aliases = st.session_state.video_capture.config.get('device_aliases', {'USB0': '0', 'USB1': '1', 'Default': '0'})
-        if config_cam_device in device_aliases:
-            # If it's an alias key, use its value as the actual device path
-            st.session_state.cam_device = device_aliases[config_cam_device]
-        else:
-            # If it's not an alias key, use it directly (backward compatibility)
-            st.session_state.cam_device = config_cam_device
-    
-    # Add device_aliases to session state
-    if 'device_aliases' not in st.session_state:
-        st.session_state.device_aliases = st.session_state.video_capture.config.get('device_aliases', {'USB0': '0', 'USB1': '1', 'Default': '0'})
-    
-    # Add selected device alias to session state
-    if 'selected_device_alias' not in st.session_state:
-        # First check if cam_device in config is already an alias key
-        config_cam_device = st.session_state.video_capture.config.get('cam_device', '0')
-        if config_cam_device in st.session_state.device_aliases:
-            # If it's an alias key, use it directly
-            found_alias = config_cam_device
-        else:
-            # Otherwise, find the alias that corresponds to the current cam_device
-            current_path = st.session_state.cam_device
-            found_alias = None
-            for alias, path in st.session_state.device_aliases.items():
-                if path == current_path:
-                    found_alias = alias
-                    break
-            
-            # If no matching alias found, use the first one or 'Default'
-            if not found_alias:
-                if 'Default' in st.session_state.device_aliases:
-                    found_alias = 'Default'
-                elif st.session_state.device_aliases:
-                    found_alias = list(st.session_state.device_aliases.keys())[0]
-                else:
-                    found_alias = 'Default'
-                    st.session_state.device_aliases = {'Default': '0'}
-        
-        st.session_state.selected_device_alias = found_alias
-    
-    # Set session based on the selected device alias
-    if 'session' not in st.session_state or st.session_state.session == 'Default':
-        # Always set session to match the selected device alias
-        # Note: 'session' is no longer saved to YAML as it's automatically derived from selected_device_alias
-        st.session_state.session = st.session_state.selected_device_alias
+    # UI interaction state flags
+    if 'slider_currently_being_dragged' not in st.session_state: st.session_state.slider_currently_being_dragged = False
+    if 'in_playback_mode' not in st.session_state: st.session_state.in_playback_mode = False
+    if 'rt_capture' not in st.session_state: st.session_state.rt_capture = False
+    if 'need_to_display_recent' not in st.session_state: st.session_state.need_to_display_recent = True
+    if 'live_button_clicked' not in st.session_state: st.session_state.live_button_clicked = False
+    if 'status_message' not in st.session_state: st.session_state.status_message = "Initializing..."
 
-    # Add a variable to track the previous camera name for change detection
-    if 'previous_cam_name' not in st.session_state:
-        st.session_state.previous_cam_name = st.session_state.cam_name
+    # Configuration related state (derived from video_capture.config)
+    # Ensure device_aliases is OrderedDict
+    aliases = st.session_state.video_capture.config.get('device_aliases', {'Default': '0'})
+    if 'device_aliases' not in st.session_state: st.session_state.device_aliases = OrderedDict(aliases) 
+    else: st.session_state.device_aliases = OrderedDict(st.session_state.device_aliases) # Ensure type
 
-    # Store last frame to keep it visible when stopped
-    if 'last_frame' not in st.session_state:
-        st.session_state.last_frame = None
-        
-    # Add a flag to track when we're browsing saved images
-    if 'browsing_saved_images' not in st.session_state:
-        st.session_state.browsing_saved_images = False
-        
-    # Initialize resolution from config
+    if 'cam_name' not in st.session_state: st.session_state.cam_name = st.session_state.video_capture.config.get('cam_name', 'cam0')
+    if 'data_dir' not in st.session_state:
+        st.session_state.data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
+        os.makedirs(st.session_state.data_dir, exist_ok=True)
     if 'resolution' not in st.session_state:
-        # Ensure resolution is treated as a string before splitting
-        config_resolution = st.session_state.video_capture.config.get('resolution', '1920x1080')
-        if not isinstance(config_resolution, str):
-            config_resolution = str(config_resolution)
+        config_res = st.session_state.video_capture.config.get('resolution', '1080p (1920x1080)')
+        matched_key = None
+        if isinstance(config_res, str) and 'x' in config_res:
+            for key, (w,h) in RESOLUTIONS.items():
+                if f"{w}x{h}" == config_res: matched_key = key; break
+        st.session_state.resolution = matched_key or config_res # Use key if found, else config value
+    if 'save_interval' not in st.session_state: st.session_state.save_interval = int(st.session_state.video_capture.config.get('save_interval', 60))
+    
+    # Determine initial cam_device (path/ID) and selected_device_alias (UI key)
+    if 'selected_device_alias' not in st.session_state or 'cam_device' not in st.session_state:
+        config_device_val = st.session_state.video_capture.config.get('cam_device', 'Default') # This is likely the alias key
+        available_aliases = st.session_state.device_aliases
         
-        # Check if the resolution is already in the format "widthxheight"
-        if 'x' in config_resolution:
-            # Try to find a matching resolution in the RESOLUTIONS dictionary
-            resolution_found = False
-            for res_name, (width, height) in RESOLUTIONS.items():
-                if f"{width}x{height}" == config_resolution:
-                    st.session_state.resolution = res_name
-                    resolution_found = True
+        if config_device_val in available_aliases:
+            st.session_state.selected_device_alias = config_device_val
+            st.session_state.cam_device = available_aliases[config_device_val]
+        else: # Config value might be a direct path/ID (legacy or manual edit)
+            st.session_state.cam_device = config_device_val 
+            # Find the alias key that matches this path/ID
+            matching_alias = None
+            for alias, path in available_aliases.items():
+                if path == config_device_val:
+                    matching_alias = alias
                     break
-            
-            # If no matching resolution found in the dictionary, use the string directly
-            if not resolution_found:
-                # Store the resolution string directly
-                st.session_state.resolution = config_resolution
-        else:
-            # Default to 1080p if no valid format
-            st.session_state.resolution = "1080p (1920x1080)"
+            # Set selected alias to the match, or fallback to first available alias
+            st.session_state.selected_device_alias = matching_alias or list(available_aliases.keys())[0] 
+
+    if 'session' not in st.session_state: st.session_state.session = st.session_state.selected_device_alias
     
-    # Initialize save_interval from config
-    if 'save_interval' not in st.session_state:
-        st.session_state.save_interval = int(st.session_state.video_capture.config.get('save_interval', 60))
-    
-    # Get current time for initializing time values
+    # Time/Date related state
     current_time = datetime.now()
+    if 'hour' not in st.session_state: st.session_state.hour = current_time.hour
+    if 'minute' not in st.session_state: st.session_state.minute = current_time.minute
+    if 'second' not in st.session_state: st.session_state.second = current_time.second
+    if 'date' not in st.session_state: st.session_state.date = current_time.date()
+    if 'browsing_date' not in st.session_state: st.session_state.browsing_date = st.session_state.date
+    if 'time_slider' not in st.session_state: 
+         st.session_state.time_slider = datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second)
     
-    # Initialize session state for time values if not present
-    if 'hour' not in st.session_state:
-        st.session_state.hour = current_time.hour
-    if 'minute' not in st.session_state:
-        st.session_state.minute = current_time.minute
-    if 'second' not in st.session_state:
-        st.session_state.second = current_time.second
-    # Add back the date initialization
-    if 'date' not in st.session_state:
-        st.session_state.date = current_time.date()
-    
-    # Initialize additional session state variables for browsing
-    if 'browsing_hour' not in st.session_state:
-        st.session_state.browsing_hour = st.session_state.hour
-    if 'browsing_minute' not in st.session_state:
-        st.session_state.browsing_minute = st.session_state.minute
-    if 'browsing_second' not in st.session_state:
-        st.session_state.browsing_second = st.session_state.second
-    if 'browsing_date' not in st.session_state:
-        st.session_state.browsing_date = st.session_state.date
-    if 'time_display_html' not in st.session_state:
-        st.session_state.time_display_html = None
-    if 'actual_timestamp' not in st.session_state:
-        st.session_state.actual_timestamp = None
-    if 'oldest_timestamp' not in st.session_state:
-        st.session_state.oldest_timestamp = None
-    if 'newest_timestamp' not in st.session_state:
-        st.session_state.newest_timestamp = None
-    
-    # Add a toggle state for the RT button
-    if 'rt_active' not in st.session_state:
-        st.session_state.rt_active = False
-    
-    # Add rt_capture state variable
-    if 'rt_capture' not in st.session_state:
-        st.session_state.rt_capture = False
-    #print(f"add to session state rt_capture: {st.session_state.rt_capture}")
+    # Image/Timestamp state
+    if 'last_frame' not in st.session_state: st.session_state.last_frame = None
+    if 'actual_timestamp' not in st.session_state: st.session_state.actual_timestamp = None
+    if 'oldest_timestamp' not in st.session_state: st.session_state.oldest_timestamp = None
+    if 'newest_timestamp' not in st.session_state: st.session_state.newest_timestamp = None
 
-    # Add a flag to indicate that we need to display the most recent image on startup
-    if 'need_to_display_recent' not in st.session_state:
-        st.session_state.need_to_display_recent = True
-    
-    
-    # Create sidebar for settings
-    with st.sidebar:
-        # Add the title at the top of the sidebar
-        st.title("JiffyCam")
-        st.header("Settings")
-        
-        # Function to handle device alias selection
-        def on_device_alias_change():
-            """Update cam_device when device alias is changed"""
-            selected_alias = st.session_state.selected_device_alias
-            if selected_alias in st.session_state.device_aliases:
-                st.session_state.cam_device = st.session_state.device_aliases[selected_alias]
-                # Automatically set the session to match the selected device alias
-                st.session_state.session = selected_alias
-                
-                # Reset timestamp range to force recalculation for the new device/session
-                st.session_state.oldest_timestamp = None
-                st.session_state.newest_timestamp = None
-                
-                # Set flag to display most recent image
-                st.session_state.need_to_display_recent = True
-        
-        # Replace text input with selectbox for Device
-        device_aliases = list(st.session_state.device_aliases.keys())
-        
-        st.selectbox(
-            "Device",
-            options=device_aliases,
-            key='selected_device_alias',
-            on_change=on_device_alias_change,
-            help="Select camera device"
-        )
-        
-        # Session is now automatically set based on the selected device alias
-        # No need for a separate Session selectbox
-        
-        # Create a list of options that includes both RESOLUTIONS keys and any custom resolution
-        resolution_options = list(RESOLUTIONS.keys())
-        
-        # If the current resolution is not in RESOLUTIONS, add it to the options
-        if st.session_state.resolution not in RESOLUTIONS:
-            if st.session_state.resolution not in resolution_options:
-                resolution_options.append(st.session_state.resolution)
-        
-        # Only show the Resolution selectbox if the flag is True
-        if SHOW_RESOLUTION_SETTING:
-            st.selectbox(
-                "Resolution",
-                resolution_options,
-                key="resolution",
-                help="Select camera resolution"
-            )
-        else:
-            # Instead of showing a hidden selectbox, we'll completely remove it
-            # The session state for resolution will still be maintained
-            # We don't need any placeholder here
-            pass
+    # Get initial timestamp range
+    if st.session_state.oldest_timestamp is None or st.session_state.newest_timestamp is None:
+        oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
+        st.session_state.oldest_timestamp = oldest
+        st.session_state.newest_timestamp = newest
 
-        st.number_input(
-            "Save Interval (seconds)",
-            key='save_interval',
-            min_value=0,
-            help="Interval between saved frames (0 to disable periodic saves)"
-        )
-        
-        # Add the toggle capture button to the sidebar
-        # Check if capture is currently running to set the initial button state
-        is_capturing = st.session_state.video_capture.is_capturing()
-        st.session_state.rt_active = is_capturing
+    # --- Build UI --- 
+    # Call UI builders and store returned placeholders in session_state
+    # These keys ('status_placeholder', etc.) must match those used in jiffyui callbacks
+    st.session_state.status_placeholder, st.session_state.error_placeholder = build_sidebar(SHOW_RESOLUTION_SETTING)
+    st.session_state.video_placeholder, st.session_state.time_display = build_main_area()
 
-        # Create a toggle button that changes text based on state
-        button_text = "Stop Capture" if is_capturing else "Start Capture"
-        button_color = "secondary" if is_capturing else "primary"
-        
-        # Add a separator before the capture button
-        st.markdown("---")
-        
-        # Create the button with the appropriate text and styling
-        st.button(button_text, key="rt_toggle", on_click=toggle_rt_capture, 
-                  help="Toggle real-time capture", type=button_color)
-        
-        if is_capturing:
-            st.success("Capture is active and running")
-        
-        # Move status and error placeholders to sidebar
-        st.header("Status")
-        status_placeholder = st.empty()
-        error_placeholder = st.empty()
-
-    # CSS for better styling
-    st.markdown("""
-    <style>
-    /* Reduce spacing in Streamlit containers but keep enough to prevent clipping */
-    .block-container {
-        padding-top: 0.7rem !important;
-        padding-bottom: 0.7rem !important;
-    }
-    
-    /* Remove extra padding from main elements but keep minimal spacing */
-    div[data-testid="stVerticalBlock"] > div {
-        padding-top: 1px !important;
-        padding-bottom: 1px !important;
-    }
-    
-    /* Reduce spacing between elements but maintain enough to prevent clipping */
-    div[data-testid="element-container"] {
-        margin-top: 1px !important;
-        margin-bottom: 1px !important;
-    }
-    
-    /* Compact time display */
-    .time-display {
-        font-size: 1.6rem;
-        font-weight: 400;
-        text-align: center;
-        font-family: "Source Sans Pro", sans-serif;
-        background-color: transparent;
-        color: #333333;
-        border-radius: 5px;
-        padding: 2px;
-        margin: 2px 0;
-    }
-    
-    /* Make time display lighter in dark mode */
-    @media (prefers-color-scheme: dark) {
-        .time-display {
-            color: #e0e0e0 !important;
-        }
-    }
-    
-    /* Streamlit-specific dark mode detection */
-    [data-testid="stAppViewContainer"][data-theme="dark"] .time-display {
-        color: #e0e0e0 !important;
-    }
-    
-    .time-label {
-        text-align: center;
-        font-weight: normal;
-        margin-bottom: 2px;
-        margin-top: 0;
-        font-size: 0.8rem;
-        line-height: 1;
-    }
-    
-    .time-button {
-        text-align: center;
-        font-size: 1.2rem;
-    }
-    
-    .time-separator {
-        font-size: 1.6rem;
-        font-weight: bold;
-        text-align: center;
-        margin-top: 12px;
-    }
-    
-    /* Make video container more compact but prevent clipping */
-    div[data-testid="stImage"] {
-        margin-top: 2px !important;
-        margin-bottom: 2px !important;
-    }
-    
-    /* Reduce spacing in sidebar */
-    section[data-testid="stSidebar"] .block-container {
-        padding-top: 1rem !important;
-    }
-    
-    /* Reduce spacing for headers */
-    h1, h2, h3 {
-        margin-top: 0.3rem !important;
-        margin-bottom: 0.3rem !important;
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # Create time display and progress containers - MOVED ABOVE video placeholder
-    time_container = st.container()
-    with time_container:   
-        
-        def update_image_display(direction=None):
-            """Update the image display based on the current date and time."""
-            # Ensure necessary session state variables exist         
-            if 'slider_currently_being_dragged' not in st.session_state:
-                st.session_state.slider_currently_being_dragged = False
-            
-            # Always set playback mode to True when browsing images
-            st.session_state.in_playback_mode = True
-            
-            # Find the closest image to the requested time using the wrapper function
-            closest_image = get_frame(
-                st.session_state.hour,
-                st.session_state.minute,
-                st.session_state.second,
-                st.session_state.cam_name,
-                direction
-            )
-            
-            if closest_image:
-                frame, timestamp = closest_image
-                try:
-                    #frame = cv2.imread(image_path)
-                    if frame is not None:
-                        # Store the frame in session state and timestamp
-                        st.session_state.last_frame = frame.copy()
-                        st.session_state.actual_timestamp = timestamp
-                        
-                        # Update the display
-                        video_placeholder.image(frame, channels="BGR", use_container_width=True)
-                        
-                        # Update time values with the timestamp
-                        st.session_state.hour = timestamp.hour
-                        st.session_state.minute = timestamp.minute
-                        st.session_state.second = timestamp.second
-                        
-                        # Update the time display
-                        time_display.markdown(
-                            f'<div class="time-display">{format_time_12h(timestamp.hour, timestamp.minute, timestamp.second)}</div>',
-                            unsafe_allow_html=True
-                        )
-                        
-                        # Only update the slider position programmatically if this wasn't triggered by a manual slider adjustment
-                        if not st.session_state.slider_currently_being_dragged:
-                            st.session_state.time_slider = datetime_time(
-                                timestamp.hour,
-                                timestamp.minute,
-                                timestamp.second
-                            )
-                        
-                        # Update status with timestamp info
-                        status_placeholder.text(f"Displaying image from: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
-                        return True
-                        
-                except Exception as e:
-                    status_placeholder.text(f"Error loading image: {str(e)}")
-                    # Keep showing the last frame if there's an error
-                    if st.session_state.last_frame is not None:
-                        video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
-            else:
-                # No image found for the selected time
-                status_placeholder.text(f"No images found for the selected time")
-                # Keep showing the last frame
-                if st.session_state.last_frame is not None:
-                    video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
-            
-            # Stay in playback mode regardless of result
-            st.session_state.in_playback_mode = True
-            return False
-
-        # Create placeholder for video - MOVED INSIDE time_container
-        video_placeholder = st.empty()
-
-        # Create a more compact container for time controls
-        st.markdown("<div style='margin-bottom: 5px;'></div>", unsafe_allow_html=True)
-        
-        # Create a container with fixed width for time controls to ensure proper centering
-        st.markdown("<div class='time-controls-container' style='max-width: 600px; margin: 0 auto;'>", unsafe_allow_html=True)
-        
-        # Function to handle date change
-        def on_date_change():
-            # Update browsing date
-            st.session_state.browsing_date = st.session_state.date
-            
-            # Set flag to indicate we're in playback mode instead of stopping capture
-            st.session_state.in_playback_mode = True
-                        
-            # Update the time slider to match the current time values
-            if 'time_slider' in st.session_state:
-                st.session_state.time_slider = datetime_time(
-                    st.session_state.hour,
-                    st.session_state.minute,
-                    st.session_state.second
-                )
-            
-            # Find and display closest image with current time and new date
-            update_image_display(direction="down")
-
-    
-        # Date picker in its own row at the top
-        st.markdown('<div class="date-picker-container">', unsafe_allow_html=True)
-
-        # Get min and max dates from timestamp range if available
-        min_date = None
-        max_date = None
-        
-        # Update timestamp range if not already set
-        if st.session_state.oldest_timestamp is None or st.session_state.newest_timestamp is None:
-            oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
-            if oldest and newest:
-                st.session_state.oldest_timestamp = oldest
-                st.session_state.newest_timestamp = newest
-        
-        # Set min and max dates from session state
-        if st.session_state.oldest_timestamp:
-            min_date = st.session_state.oldest_timestamp.date()
-        if st.session_state.newest_timestamp:
-            max_date = st.session_state.newest_timestamp.date()
-            
-        # Ensure max_date includes the current date
-        today = datetime.now().date()
-        if max_date is None or max_date < today:
-            max_date = today
-
-        # Add the date picker with min and max dates
-        st.date_input(
-            "Date",  # Provide a proper label
-            key="date",
-            on_change=on_date_change,
-            help="Select date to view images from",
-            label_visibility="collapsed",  # Collapse the label to add it manually below
-            min_value=min_date,
-            max_value=max_date
-        )
-
-        # Close the container
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # Add a separator line after the date picker
-       #st.markdown("<hr style='margin-top: 2px; margin-bottom: 0px; padding: 0;'>", unsafe_allow_html=True)
-
-        # Create a more compact layout for time controls with equal column widths
-        time_cols = st.columns([3, 1, 1, 0.2, 1])
-        
-        # Function to handle previous image button
-        def on_prev_button():
-            """Handle previous image button click."""
-            
-            # Rest of the function remains the same
-            st.session_state.in_playback_mode = True
-            st.session_state.slider_currently_being_dragged = False
-            
-            # Decrement time logic...
-            current_second = st.session_state.second
-            if current_second == 0:
-                # Handle rollover
-                current_minute = st.session_state.minute
-                if current_minute == 0:
-                    st.session_state.hour = (st.session_state.hour - 1) % 24
-                    st.session_state.minute = 59
-                else:
-                    st.session_state.minute = current_minute - 1
-                st.session_state.second = 59
-            else:
-                st.session_state.second = current_second - 1
-            
-            # Update the time slider and display
-            if 'time_slider' in st.session_state:
-                st.session_state.time_slider = datetime_time(
-                    st.session_state.hour,
-                    st.session_state.minute,
-                    st.session_state.second
-                )
-            
-            # Find and display the previous image
-            update_image_display(direction="down")
-            st.session_state.slider_currently_being_dragged = True   # mjm
-
-        # Function to handle next image button
-        def on_next_button():
-            """Handle next image button click."""
-            
-            # Rest of the function remains the same
-            st.session_state.in_playback_mode = True
-            st.session_state.slider_currently_being_dragged = False
-            
-            # Increment time logic
-            current_second = st.session_state.second
-            if current_second == 59:
-                # Handle rollover
-                current_minute = st.session_state.minute
-                if current_minute == 59:
-                    st.session_state.hour = (st.session_state.hour + 1) % 24
-                    st.session_state.minute = 0
-                else:
-                    st.session_state.minute = current_minute + 1
-                st.session_state.second = 0
-            else:
-                st.session_state.second = current_second + 1
-            
-            # Update the time slider and display
-            if 'time_slider' in st.session_state:
-                st.session_state.time_slider = datetime_time(
-                    st.session_state.hour,
-                    st.session_state.minute,
-                    st.session_state.second
-                )
-            
-            # Find and display the next image
-            update_image_display(direction="up")
-            st.session_state.slider_currently_being_dragged = True   # mjm
-
-        # Time display (combined H:M:S format)
-        with time_cols[0]:
-            time_display = st.empty()
-            time_display.markdown(f'<div class="time-display">{format_time_12h(st.session_state.hour, st.session_state.minute, st.session_state.second)}</div>', unsafe_allow_html=True)
-            #st.markdown('<div class="time-label">Time (H:M:S)</div>', unsafe_allow_html=True)
-            
-        # Prev button
-        with time_cols[1]:
-            st.button(" ◀ ", key="prev_button", on_click=on_prev_button, help="Previous image", use_container_width=True)
-            
-        # Next button
-        with time_cols[2]:
-            st.button(" ▶ ", key="next_button", on_click=on_next_button, help="Next image", use_container_width=True)
-            
-        # Vertical separator
-        with time_cols[3]:
-            st.markdown('<div style="width:1px; background-color:#555555; height:32px; margin:0 auto;"></div>', unsafe_allow_html=True)
-            
-        # Record button - in the last column - always shows Live Display button
-        with time_cols[4]:
-            # Check if capture is currently running
-            is_capturing = st.session_state.video_capture.is_capturing()
-            
-            # Initialize the button state variables if they don't exist
-            if 'live_button_clicked' not in st.session_state:
-                st.session_state.live_button_clicked = False
-            
-            # Determine if we're in playback mode
-            in_playback = st.session_state.in_playback_mode
-            
-            # Set button text based on current state - use pause icon instead of text
-            button_text = "Live" if in_playback else "⏸"
-            button_help = "Return to live view" if in_playback else "Pause on current frame"
-            
-            # Define helper function for button action
-            def toggle_live_pause():
-                # If in playback mode, go to live mode
-                if st.session_state.in_playback_mode:
-                    st.session_state.in_playback_mode = False
-                    st.session_state.live_button_clicked = True  # Track that button was clicked
-                    
-                    # Update browsing date and time to current
-                    current_time = datetime.now()
-                    st.session_state.browsing_date = current_time.date()
-                    st.session_state.hour = current_time.hour
-                    st.session_state.minute = current_time.minute
-                    st.session_state.second = current_time.second
-                else:
-                    # If in live mode, pause by entering playback mode
-                    # The current frame is already stored in st.session_state.last_frame
-                    st.session_state.in_playback_mode = True
-                    # Store the current time
-                    current_time = datetime.now()
-                    st.session_state.actual_timestamp = current_time
-            
-            if not is_capturing:
-                # Capture not running - show disabled button
-                st.button("Live", key="live_btn", use_container_width=True, 
-                          help="Start capture to enable live display", disabled=True)
-            else:
-                # Display the button with text based on current state
-                st.button(button_text, key="live_btn", use_container_width=True,
-                          help=button_help, on_click=toggle_live_pause)
-
-        
-        # Close the time controls container
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        
-    # Function to handle time slider change
-    def on_time_slider_change():
-        """Handle time slider change."""
-        # Ensure necessary session state variables exist
-        if 'slider_currently_being_dragged' not in st.session_state:
-            st.session_state.slider_currently_being_dragged = False
-        
-        # Get the time object from the slider
-        time_obj = st.session_state.time_slider
-        
-        # Extract hours, minutes, seconds
-        hours = time_obj.hour
-        minutes = time_obj.minute
-        seconds = time_obj.second
-        
-        # Only update if the values have actually changed
-        if (hours != st.session_state.hour or 
-            minutes != st.session_state.minute or 
-            seconds != st.session_state.second):
-            
-            # Update the time state variables
-            st.session_state.hour = hours
-            st.session_state.minute = minutes
-            st.session_state.second = seconds
-            
-            # Mark that a manual adjustment is currently active (prevents immediate jumps)
-            st.session_state.slider_currently_being_dragged = True
-            
-            # Set flag to indicate we're in playback mode instead of stopping capture
-            st.session_state.in_playback_mode = True
-            
-            # Update the image display with the new time
-            update_image_display(direction="down")
-
-    # Add CSS for the time slider
-    st.markdown("""
-    <style>
-    /* Style for time slider */
-    div[data-testid="stSlider"] {
-        padding-top: 0px !important;
-        padding-bottom: 0px !important;
-        margin-top: -10px !important;
-        margin-bottom: 0px !important;
-    }
-    
-    /* Center the slider label */
-    div[data-testid="stSlider"] > label {
-        text-align: center !important;
-        width: 100% !important;
-        display: block !important;
-        font-weight: bold !important;
-        margin-bottom: 0px !important;
-        height: 0px !important;  /* Reduce height to minimum */
-        overflow: hidden !important;  /* Hide any overflow */
-    }
-    
-    /* Style for slider track */
-    div[data-testid="stSlider"] > div > div > div {
-        background-color: #555555 !important;
-    }
-    
-    /* Style for slider thumb */
-    div[data-testid="stSlider"] > div > div > div > div {
-        background-color: #0f0f0f !important;
-        border-color: #ffffff !important;
-    }
-    
-    /* Hide the min/max labels on the slider */
-    div[data-testid="stSliderTickBarMin"],
-    div[data-testid="stSliderTickBarMax"] {
-        display: none !important;
-    }
-    
-    /* Reduce spacing for markdown elements */
-    div[data-testid="stMarkdown"] {
-        margin-top: 0px !important;
-        margin-bottom: 0px !important;
-        padding-top: 0px !important;
-        padding-bottom: 0px !important;
-    }
-    
-    /* Tighten spacing for horizontal rules */
-    hr {
-        margin-top: 0px !important;
-        margin-bottom: 0px !important;
-        padding: 0 !important;
-    }
-    
-    /* Remove space above slider container */
-    div[data-testid="stSlider"] > div {
-        padding-top: 0px !important;
-        margin-top: -5px !important;
-    }
-    
-    /* Target the element container for the slider */
-    div[data-testid="element-container"]:has(div[data-testid="stSlider"]) {
-        margin-top: -5px !important;
-        padding-top: 0px !important;
-    }
-
-    /* Style the centered date picker */
-    div[data-testid="column"]:nth-child(2):has(div[data-testid="stDateInput"]) {
-        display: flex !important;
-        justify-content: center !important;
-        align-items: center !important;
-        margin-bottom: -10px !important; /* Reduce space between date picker and slider */
-    }
-
-    div[data-testid="stDateInput"] {
-        margin-bottom: 0px !important;
-        padding-bottom: 1px !important;
-        padding-top: 1px !important;
-        display: flex !important;
-        flex-direction: column !important;
-        justify-content: center !important;
-        margin-top: -5px !important; /* Move the date picker up to align with time buttons */
-    }
-
-    div[data-testid="stDateInput"] > div {
-        margin-bottom: 0px !important;
-        display: flex !important;
-        align-items: center !important;
-        height: 32px !important; /* Match the height of the time buttons */
-    }
-
-    div[data-testid="stDateInput"] input {
-        padding: 2px 8px !important;
-        height: 32px !important;
-        font-size: 14px !important;
-        background-color: #2e2e2e !important; /* Dark background for dark mode */
-        color: #ffffff !important; /* White text for contrast */
-        border: 1px solid #555555 !important; /* Darker border */
-        border-radius: 5px !important;
-        text-align: center !important;
-        font-weight: bold !important;
-        margin-top: 0px !important;
-        margin-bottom: 0px !important;
-    }
-
-    /* Style the date picker icon for dark mode */
-    div[data-testid="stDateInput"] svg {
-        fill: #ffffff !important;
-    }
-
-    /* Center the date picker container */
-    div.row-widget.stHorizontal:has(div[data-testid="stDateInput"]) {
-        display: flex !important;
-        justify-content: center !important;
-        width: 100% !important;
-    }
-
-    /* Ensure the middle column with date picker is properly centered */
-    div.row-widget.stHorizontal:has(div[data-testid="stDateInput"]) > div:nth-child(2) {
-        display: flex !important;
-        justify-content: center !important;
-        align-items: center !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Initialize the time_slider with a datetime.time object if not already set
-    if 'time_slider' not in st.session_state or not st.session_state.slider_currently_being_dragged:
-        st.session_state.time_slider = datetime_time(
-            st.session_state.hour,
-            st.session_state.minute,
-            st.session_state.second
-        )
-    
-    # Format the date for display in the slider label
-    # Ensure date is a datetime.date object before calling strftime
-    if isinstance(st.session_state.date, str):
-        # If it's a string, try to parse it to a date object
-        try:
-            date_obj = datetime.strptime(st.session_state.date, "%Y-%m-%d").date()
-            date_str = date_obj.strftime("%Y-%m-%d")
-        except ValueError:
-            # If parsing fails, use today's date
-            date_str = datetime.now().date().strftime("%Y-%m-%d")
+    # --- Initial Image Display --- 
+    if st.session_state.need_to_display_recent and not st.session_state.video_capture.is_capturing():
+        display_most_recent_image() # Fetches placeholders from session_state
+    elif st.session_state.last_frame is not None:
+        st.session_state.video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
     else:
-        # It's already a date object
-        date_str = st.session_state.date.strftime("%Y-%m-%d")
-    
-    # Function to generate timeline bar with marks for available captures
-    def generate_timeline_bar():
-        """Generate a timeline bar with marks for available capture times."""
-        # Get all available timestamps for the current camera and date
-        # Safely get session with a fallback to 'Default'
-        session = st.session_state.get('session', 'Default')  # Changed from camera_group
-        
-        # Get the data directory directly from the VideoCapture config
-        data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
-        
-        # Construct the base directory path
-        base_dir = os.path.join(data_dir, session, os.path.dirname(st.session_state.cam_name))  # Changed from camera_group
-        
-        if not os.path.exists(base_dir):
-            return None  # No data available
-            
-        # Get all timestamp directories
-        timestamp_dirs = glob.glob(os.path.join(base_dir, "*"))
-        
-        if not timestamp_dirs:
-            return None  # No data available
-            
-        # Convert directory names to timestamps and filter by current date
-        timestamps = []
-        current_date = st.session_state.date
-        
-        for dir_path in timestamp_dirs:
-            try:
-                dir_name = os.path.basename(dir_path)
-                timestamp_ms = int(dir_name)
-                dt = datetime.fromtimestamp(timestamp_ms / 1000)
-                
-                # Only include timestamps from the current date
-                if dt.date() == current_date:
-                    # Calculate position as percentage of day (0-100%)
-                    seconds_in_day = 24 * 60 * 60
-                    seconds_since_midnight = dt.hour * 3600 + dt.minute * 60 + dt.second
-                    position = (seconds_since_midnight / seconds_in_day) * 100
-                    timestamps.append((dt, position))
-            except ValueError:
-                continue
-                
-        if not timestamps:
-            return None  # No data available for current date
-            
-        # Build the complete HTML for the timeline bar in one string
-        html = """
-        <style>
-        .timeline-container {
-            width: 100%;
-            padding: 0;
-            margin: 0;
-            margin-top: -5px;
-            margin-bottom: 2px;
-        }
-        .timeline-bar {
-            position: relative;
-            width: 100%;
-            height: 8px;
-            background-color: #333333;
-            border-radius: 2px;
-        }
-        .timeline-mark {
-            position: absolute;
-            width: 2px;
-            height: 8px;
-            background-color: #ffffff;
-            opacity: 0.7;
-        }
-        </style>
-        <div class="timeline-container">
-            <div class="timeline-bar">
-        """
-        
-        # Add marks for each timestamp
-        for dt, position in timestamps:
-            html += f'<div class="timeline-mark" style="left: {position}%;"></div>'
-        
-        # Close the HTML
-        html += """
-            </div>
-        </div>
-        """
-        
-        return html
-    
-    # Display the timeline bar above the time slider
-    timeline_html = generate_timeline_bar()
-    if timeline_html:
-        st.markdown(timeline_html, unsafe_allow_html=True)
-    else:
-        # Display an empty timeline bar as a placeholder
-        empty_timeline_html = """
-        <style>
-        .timeline-container {
-            width: 100%;
-            padding: 0;
-            margin: 0;
-            margin-top: -5px;
-            margin-bottom: 2px;
-        }
-        .timeline-bar {
-            position: relative;
-            width: 100%;
-            height: 8px;
-            background-color: #333333;
-            border-radius: 2px;
-        }
-        </style>
-        <div class="timeline-container">
-            <div class="timeline-bar"></div>
-        </div>
-        """
-        st.markdown(empty_timeline_html, unsafe_allow_html=True)
-    
-    # Create the time slider with time objects
-    st.slider(
-        date_str,  # Use the date as the label
-        min_value=datetime_time(0, 0, 0),
-        max_value=datetime_time(23, 59, 59),
-        key="time_slider",
-        on_change=on_time_slider_change,
-        step=timedelta(seconds=1),
-        label_visibility="hidden"  # Make the label visible
-    )
+        st.session_state.video_placeholder.info("Initialize capture or select time.")
+        st.session_state.status_placeholder.text("Status: Idle")
+        st.session_state.status_message = "Status: Idle"
 
-    # Check if capture is currently running to set the initial button state
-    is_capturing = st.session_state.video_capture.is_capturing()
-    st.session_state.rt_active = is_capturing
+    # --- Run Main UI Update Loop --- 
+    run_ui_update_loop() # Loop fetches placeholders from session_state
 
-    # Create placeholder for video - MOVED BELOW time controls
-    # Add CSS to make the video container more compact but prevent clipping
-    st.markdown("""
-    <style>
-    /* Make video container more compact but prevent clipping */
-    div[data-testid="stImage"] > img {
-        margin-top: 2px !important;
-        margin-bottom: 2px !important;
-        padding-top: 2px !important;
-        padding-bottom: 2px !important;
-    }
-    
-    /* Remove extra padding from the main container but keep minimal spacing */
-    .main .block-container {
-        padding-top: 2px !important;
-        padding-bottom: 2px !important;
-        margin-top: 2px !important;
-        margin-bottom: 2px !important;
-    }
-    
-    /* Make all elements in the main area more compact but prevent clipping */
-    .main [data-testid="stVerticalBlock"] {
-        gap: 2px !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    video_placeholder = st.empty()
-
-   
-    # Function to display the most recent image for the current camera
-    def display_most_recent_image():
-        """Display the most recent image for the current camera."""
-        timestamp = datetime.now()
-        st.session_state.hour = timestamp.hour
-        st.session_state.minute = timestamp.minute
-        st.session_state.second = timestamp.second
-        update_image_display(direction="up")
-
-    # Display the most recent image on startup or when camera name changes
-    if st.session_state.need_to_display_recent and not is_capturing:
-        display_most_recent_image()
-        st.session_state.need_to_display_recent = False
-
-    # First, add this after initializing session state variables (around line 325-350)
-    # Add a session state variable for status message
-    if 'status_message' not in st.session_state:
-        st.session_state.status_message = ""
-
-    # Update the UI
-    while True:
-        # Check for errors and thread state
-        if st.session_state.video_capture.error_event.is_set():
-            # Force cleanup on error
-            st.session_state.video_capture.stop_capture()
-            error_placeholder.error(st.session_state.video_capture.last_error)
-            status_placeholder.text("Status: Stopped")
-            st.session_state.status_message = "Status: Stopped"
-            if st.session_state.last_frame is not None:
-                video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
-            break
-
-        # Update status and video frame
-        is_capturing = st.session_state.video_capture.is_capturing()
-        
-        if is_capturing:
-            # When capture is running
-            if st.session_state.in_playback_mode:
-                # In playback mode with active capture:
-                # 1. Empty the queue without updating display
-                while True:
-                    frame, fps, width, height = st.session_state.video_capture.get_frame()
-                    if frame is None:
-                        break
-                    # Only update stats, don't touch the display
-                    st.session_state.video_capture.current_fps = fps
-                    st.session_state.video_capture.current_width = width
-                    st.session_state.video_capture.current_height = height
-                # 2. Make sure the playback frame stays visible
-                if st.session_state.last_frame is not None:
-                    video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
-                    
-                    # Update status message for playback mode
-                    if hasattr(st.session_state, 'actual_timestamp') and st.session_state.actual_timestamp:
-                        new_status = f"Viewing image: {st.session_state.actual_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
-                        if st.session_state.status_message != new_status:
-                            status_placeholder.text(new_status)
-                            st.session_state.status_message = new_status
-            else:
-                # Normal real-time display mode
-                frame, fps, width, height = st.session_state.video_capture.get_frame()
-                if frame is not None:
-                    # Update the current time in real-time mode
-                    current_time = datetime.now()
-                    st.session_state.hour = current_time.hour
-                    st.session_state.minute = current_time.minute
-                    st.session_state.second = current_time.second
-                    
-                    # Update the time display
-                    time_display.markdown(
-                        f'<div class="time-display">{format_time_12h(current_time.hour, current_time.minute, current_time.second)}</div>',
-                        unsafe_allow_html=True
-                    )
-                    
-                    # Store and display the frame
-                    st.session_state.last_frame = frame.copy()
-                    video_placeholder.image(frame, channels="BGR", use_container_width=True)
-                    st.session_state.video_capture.current_fps = fps
-                    st.session_state.video_capture.current_width = width
-                    st.session_state.video_capture.current_height = height
-                    
-                    # Check if we have a save status to show
-                    if st.session_state.video_capture.image_just_saved:
-                        new_status = st.session_state.video_capture.save_status
-                        # Only update if the status has changed
-                        if st.session_state.status_message != new_status:
-                            status_placeholder.text(new_status)
-                            st.session_state.status_message = new_status
-                        
-                        # Clear the image_just_saved flag after 3 seconds
-                        if time.time() - st.session_state.video_capture.image_saved_time > 3:
-                            st.session_state.video_capture.image_just_saved = False
-                    else:
-                        # Update status with FPS
-                        new_status = f"Live view - FPS: {fps}"
-                        if st.session_state.status_message != new_status:
-                            status_placeholder.text(new_status)
-                            st.session_state.status_message = new_status
-        else:
-            # When capture is not running - crucial for playback with paused capture
-            if st.session_state.in_playback_mode and st.session_state.last_frame is not None:
-                # Keep showing the playback frame continuously
-                video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
-                
-                # Update status message for playback mode
-                if hasattr(st.session_state, 'actual_timestamp') and st.session_state.actual_timestamp:
-                    new_status = f"Viewing image: {st.session_state.actual_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
-                    if st.session_state.status_message != new_status:
-                        status_placeholder.text(new_status)
-                        st.session_state.status_message = new_status
-                else:
-                    new_status = "Viewing saved image"
-                    if st.session_state.status_message != new_status:
-                        status_placeholder.text(new_status)
-                        st.session_state.status_message = new_status
-
-        # Add a small delay to prevent overwhelming the CPU
-        time.sleep(0.05)
-
+# --- Entry Point --- 
 if __name__ == "__main__":
     main() 
     
