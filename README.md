@@ -117,6 +117,7 @@ For any inquiries or issues, please contact:
 
 ## Acknowledgements
 
+- Coded with AI help using [Cursor](https://cursor.com)
 - Built with [Streamlit](https://streamlit.io/)
 - Uses [OpenCV](https://opencv.org/) for video capture
 - Uses [Ultralytics](https://ultralytics.com) for object detection
