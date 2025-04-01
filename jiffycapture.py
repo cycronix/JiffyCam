@@ -5,12 +5,11 @@ This module provides the core video capture functionality for the JiffyCam appli
 """
 
 import time
-import os
 import threading
 import gc
 from queue import Queue
 from datetime import datetime
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Tuple
 
 import cv2
 

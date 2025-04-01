@@ -4,11 +4,11 @@ jiffyget.py: Helper module for JiffyCam to handle image retrieval
 This module provides functions to find and load saved camera images,
 """
 
-import cv2
 import os
 import glob
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
+import cv2
 
 def jiffyget(hour: int, minute: int, second: int, cam_name: str, 
              session: str, data_dir: str, browse_date, 
