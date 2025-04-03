@@ -10,15 +10,13 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple
 import cv2
 
-def jiffyget(hour: int, minute: int, second: int, cam_name: str, 
+def jiffyget(time_posix: float, cam_name: str, 
              session: str, data_dir: str, browse_date, 
              direction: str = "down"):
     """Find the closest image to the given time.
     
     Args:
-        hour: Hour (0-23)
-        minute: Minute (0-59)
-        second: Second (0-59)
+        time_posix: POSIX timestamp (float)
         cam_name: Camera name
         session: Session name
         data_dir: Data directory path
@@ -35,9 +33,8 @@ def jiffyget(hour: int, minute: int, second: int, cam_name: str,
         return None
     
     # Create target datetime for the selected time
-    target_time = datetime.combine(browse_date, datetime.min.time()) + timedelta(hours=hour, minutes=minute, seconds=second)
-    target_timestamp = int(target_time.timestamp() * 1000)  # Convert to milliseconds
-    
+    target_timestamp = time_posix * 1000.
+
     # Get all timestamp directories
     timestamp_dirs = glob.glob(os.path.join(base_dir, "*"))
     if not timestamp_dirs:

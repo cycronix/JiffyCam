@@ -176,8 +176,11 @@ def update_image_display(direction=None):
     # --- End state retrieval ---
 
     # Find the closest image using jiffyget directly
+    time_posix = datetime.combine(browse_date, datetime.min.time()) + timedelta(hours=st.session_state.hour, minutes=st.session_state.minute, seconds=st.session_state.second)
+    time_posix = float(time_posix.timestamp())
+    
     closest_image = jiffyget(
-        st.session_state.hour, st.session_state.minute, st.session_state.second,
+        time_posix,
         st.session_state.cam_name,
         session,       # Pass session variable
         data_dir,      # Pass data_dir variable
