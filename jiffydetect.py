@@ -202,8 +202,8 @@ def box_label(im=None, box=None, label='', mycolor=(0,0,255), txt_color=(0,0,0),
     return im
 
 # ---------------------------------------------------------------------------------------------------------------------
-if __name__ == "__main__":
+#if __name__ == "__main__":
     #detected = detect(cv2.imread("jiffycam.jpg"))
 
-    igot = detect(cv2.imread("jiffycam.jpg"), None)
-    print(str(igot.shape))
+#    igot = detect(cv2.imread("jiffycam.jpg"), None)
+#    print(str(igot.shape))

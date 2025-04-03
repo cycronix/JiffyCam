@@ -10,7 +10,7 @@ import os
 import streamlit as st
 
 from jiffyconfig import RESOLUTIONS   # Import necessary components from other modules
-from jiffyget import jiffyget
+from jiffyget import jiffyget, detect_locations
 
 # --- UI Helper Functions ---
 
@@ -184,7 +184,6 @@ def update_image_display(direction=None):
         st.session_state.cam_name,
         session,       # Pass session variable
         data_dir,      # Pass data_dir variable
-        browse_date,   # Pass browse_date variable
         direction
     )
 
@@ -297,40 +296,22 @@ def generate_timeline_bar_html():
     data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
 
     # Construct base path safely
-    cam_name_parent = os.path.dirname(st.session_state.cam_name)
-    base_dir = os.path.join(data_dir, session, cam_name_parent) if cam_name_parent else os.path.join(data_dir, session)
-
-    timestamps = []
-    if os.path.exists(base_dir):
-        try:
-            current_date = st.session_state.date # Assumes it's a date object
-            for dir_name in os.listdir(base_dir):
-                if os.path.isdir(os.path.join(base_dir, dir_name)):
-                    try:
-                        timestamp_ms = int(dir_name)
-                        dt = datetime.fromtimestamp(timestamp_ms / 1000)
-                        if dt.date() == current_date:
-                            seconds_since_midnight = dt.hour * 3600 + dt.minute * 60 + dt.second
-                            position = (seconds_since_midnight / (24 * 60 * 60)) * 100
-                            timestamps.append(position)
-                    except (ValueError, TypeError):
-                        continue # Ignore invalid directory names or date issues
-        except FileNotFoundError:
-            pass # Ignore if base_dir disappears
-
+    browse_date_posix = time.mktime(st.session_state.date.timetuple())
+    timestamps = detect_locations(st.session_state.cam_name, session, data_dir, browse_date_posix)
+    
     # Base HTML structure (always include CSS)
     html = """
     <style>
     .timeline-container{width:100%;padding:0;margin:0;margin-top:-5px;margin-bottom:2px;}
-    .timeline-bar{position:relative;width:100%;height:8px;background-color:#333333;border-radius:2px;}
-    .timeline-mark{position:absolute;width:2px;height:8px;background-color:#ffffff;opacity:0.7;}
+    .timeline-bar{position:relative;width:100%;height:12px;background-color:#333333;border-radius:2px;}
+    .timeline-mark{position:absolute;width:2px;height:12px;background-color:#ffffff;opacity:0.7;}
     </style>
     <div class="timeline-container"><div class="timeline-bar">
     """
     # Add marks if timestamps were found
     if timestamps:
         for position in timestamps:
-            html += f'<div class="timeline-mark" style="left: {position}%;"></div>'
+            html += f'<div class="timeline-mark" style="left: {position*100}%;"></div>'
     # Close HTML
     html += "</div></div>"
     return html

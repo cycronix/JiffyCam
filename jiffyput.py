@@ -6,11 +6,13 @@ This module provides functions to process and save video frames,
 
 import os
 import cv2
+import time
+from datetime import datetime, timedelta
 
 from jiffydetect import detect
 
 prevframe = None
-def jiffyput(cam_name, frame, ftime, session, data_dir):
+def jiffyput(cam_name, frame, time_posix: float, session, data_dir):
     """
     Process and save a video frame.
 
@@ -45,13 +47,19 @@ def jiffyput(cam_name, frame, ftime, session, data_dir):
         os.makedirs(save_dir, exist_ok=True)
 
         # Save frame as JPEG
-        timestamp_ms = int(ftime * 1000)
-        save_path = os.path.join(save_dir, str(timestamp_ms))
+        timestamp_ms = int(time_posix * 1000)
+        browse_date = datetime.fromtimestamp(time_posix).date()
+        browse_date_ms = int(time.mktime(browse_date.timetuple()) * 1000)
+        browse_delta_ms = int(time_posix * 1000 - browse_date_ms)
+
+        #save_path = os.path.join(save_dir, str(timestamp_ms))
+        save_path = os.path.join(save_dir, str(browse_date_ms), str(browse_delta_ms))
         os.makedirs(save_path, exist_ok=True)
 
         # Save the image
         image_path = os.path.join(save_path, os.path.basename(cam_name) + '.jpg')
         cv2.imwrite(image_path, frame, encode_param)
+        #print(f"save to image_path: {image_path}")
 
     except Exception as e:
         error_msg = f"Error sending frame: {str(e)}"
