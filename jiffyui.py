@@ -8,11 +8,30 @@ from datetime import datetime, timedelta, time as datetime_time
 import time
 import os
 import streamlit as st
+from streamlit_image_coordinates import streamlit_image_coordinates
 
 from jiffyconfig import RESOLUTIONS   # Import necessary components from other modules
 from jiffyget import jiffyget, detect_locations
 
 # --- UI Helper Functions ---
+def heartbeat():
+    """Heartbeat to check if the UI is still running."""
+    #print(f"1in_playback_mode: {st.session_state.in_playback_mode}")
+    #on_prev_button()
+
+def sync_time_slider():
+    """Sync the time slider to the current time."""
+    #print(f"sync_time_slider: {st.session_state.hour}, {st.session_state.minute}, {st.session_state.second}")
+    st.session_state.time_slider = datetime_time(
+        st.session_state.hour,
+        st.session_state.minute,
+        st.session_state.second
+    )
+    st.session_state.date = st.session_state.browsing_date
+
+def rt_time_slider():
+    """Update the time slider to the current time."""
+    st.session_state.time_slider = datetime_time(datetime.now().hour, datetime.now().minute, datetime.now().second) # Reset slider to current time
 
 def format_time_12h(hour, minute, second):
     """Format time in 12-hour format with AM/PM indicator."""
@@ -39,7 +58,10 @@ def toggle_rt_capture():
     st.session_state.rt_capture = not st.session_state.rt_capture
 
     if st.session_state.rt_capture:
+        rt_time_slider()
+
         st.session_state.in_playback_mode = False
+
         resolution = st.session_state.resolution
 
         if resolution in RESOLUTIONS:
@@ -52,7 +74,7 @@ def toggle_rt_capture():
 
         st.session_state.browsing_saved_images = False
         st.session_state.date = datetime.now().date()
-        st.session_state.time_slider = datetime_time(0, 0, 0) # Reset slider to midnight
+        #st.session_state.time_slider = datetime_time(0, 0, 0) # Reset slider to midnight
 
         # Call start_capture on the video_capture object stored in session state
         st.session_state.video_capture.start_capture(
@@ -64,30 +86,30 @@ def toggle_rt_capture():
             device_aliases=st.session_state.device_aliases,
             selected_device_alias=st.session_state.selected_device_alias
         )
-
     else:
         st.session_state.video_capture.stop_capture()
+        st.session_state.in_playback_mode = True   
+        print(f"3toggle_rt_capture: {st.session_state.in_playback_mode}")
 
     # Fetch placeholders from session_state inside the update function
-    update_image_display(direction="down")
+    #update_image_display(direction="down")
 
 def on_date_change():
     """Handle date picker change."""
     st.session_state.browsing_date = st.session_state.date
-    st.session_state.in_playback_mode = True
+    st.session_state.in_playback_mode = True 
 
     # Sync slider to current time state
-    st.session_state.time_slider = datetime_time(
-        st.session_state.hour,
-        st.session_state.minute,
-        st.session_state.second
-    )
+    #sync_time_slider()
+ #   toggle_live_pause()
+
     # Fetch placeholders from session_state inside the update function
     update_image_display(direction="down")
 
 def on_prev_button():
     """Handle previous image button click."""
     st.session_state.in_playback_mode = True
+
     st.session_state.slider_currently_being_dragged = False
 
     # Decrement time logic
@@ -100,10 +122,12 @@ def on_prev_button():
 
     # Fetch placeholders from session_state inside the update function
     update_image_display(direction="down")
+    sync_time_slider()
 
 def on_next_button():
     """Handle next image button click."""
     st.session_state.in_playback_mode = True
+
     st.session_state.slider_currently_being_dragged = False
 
     # Increment time logic
@@ -116,20 +140,24 @@ def on_next_button():
 
     # Fetch placeholders from session_state inside the update function
     update_image_display(direction="up")
+    sync_time_slider()
 
 def toggle_live_pause():
     """Handle Live/Pause button click."""
     if st.session_state.in_playback_mode:
         # Go Live
-        st.session_state.in_playback_mode = False
         st.session_state.live_button_clicked = True
         # Update browsing date/time to current (will be reflected in loop)
         current_time = datetime.now()
         st.session_state.browsing_date = current_time.date()
+        rt_time_slider()
+
+        st.session_state.in_playback_mode = False
         # Let the main loop update hour/min/sec/slider when live
     else:
         # Pause
-        st.session_state.in_playback_mode = True
+        st.session_state.live_button_clicked = False
+
         # Store the timestamp of the *currently displayed* frame if available
         # If last_frame exists, its timestamp should be in actual_timestamp
         # If not, store current time as a fallback?
@@ -137,8 +165,19 @@ def toggle_live_pause():
             st.session_state.actual_timestamp = datetime.now() # Fallback
         # No need to explicitly set hour/min/sec here, they reflect the paused frame
 
+        st.session_state.in_playback_mode = True
+
+def on_time_slider_click():
+    """Handle time slider click."""
+    on_time_slider_change()
+    st.session_state.in_playback_mode = True
+
 def on_time_slider_change():
     """Handle time slider change."""
+    if(st.session_state.live_button_clicked):
+        st.session_state.live_button_clicked = False
+        return
+    
     time_obj = st.session_state.time_slider
     hours, minutes, seconds = time_obj.hour, time_obj.minute, time_obj.second
 
@@ -151,14 +190,20 @@ def on_time_slider_change():
         st.session_state.minute = minutes
         st.session_state.second = seconds
         st.session_state.slider_currently_being_dragged = True
-        st.session_state.in_playback_mode = True
 
         # Fetch placeholders from session_state inside the update function
         update_image_display(direction="down")
-
         st.session_state.slider_currently_being_dragged = False
 
+        st.session_state.in_playback_mode = True
+
 # --- UI Update Functions ---
+def new_image_display(frame):
+    """Display a new image based on the current date and time."""
+    video_placeholder = st.session_state.video_placeholder
+    video_placeholder.image(frame, channels="BGR", use_container_width=True)
+    #video_placeholder.image(streamlit_image_coordinates(frame, key="image_display"), channels="BGR", use_container_width=True)
+    #print(f"video_placeholder.coords: {video_placeholder.coords}")
 
 def update_image_display(direction=None):
     """Update the image display based on the current date and time."""
@@ -167,7 +212,7 @@ def update_image_display(direction=None):
     status_placeholder = st.session_state.status_placeholder
     time_display = st.session_state.time_display
 
-    st.session_state.in_playback_mode = True
+    #st.session_state.in_playback_mode = True
 
     # --- Get necessary state for jiffyget ---
     session = st.session_state.get('session', 'Default') # Safely get session
@@ -178,7 +223,7 @@ def update_image_display(direction=None):
     # Find the closest image using jiffyget directly
     time_posix = datetime.combine(browse_date, datetime.min.time()) + timedelta(hours=st.session_state.hour, minutes=st.session_state.minute, seconds=st.session_state.second)
     time_posix = float(time_posix.timestamp())
-    
+
     closest_image = jiffyget(
         time_posix,
         st.session_state.cam_name,
@@ -197,7 +242,8 @@ def update_image_display(direction=None):
                 st.session_state.actual_timestamp = timestamp
 
                 # Update UI placeholders
-                video_placeholder.image(frame, channels="BGR", use_container_width=True)
+                #video_placeholder.image(frame, channels="BGR", use_container_width=True)
+                new_image_display(frame)
 
                 # Update time state to match the found image
                 st.session_state.hour = timestamp.hour
@@ -226,12 +272,13 @@ def update_image_display(direction=None):
         st.session_state.status_message = f"No image found near specified time"
         # Keep showing the last valid frame if one exists
         if st.session_state.last_frame is not None:
-            video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
+            #video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
+            new_image_display(st.session_state.last_frame)
         else: # No previous frame, clear the placeholder
             video_placeholder.empty()
 
     # Ensure playback mode remains true
-    st.session_state.in_playback_mode = True
+    #st.session_state.in_playback_mode = True
     return success
 
 def display_most_recent_image():
@@ -248,6 +295,7 @@ def display_most_recent_image():
     # Search backwards ("down") for the latest image before now
     update_image_display(direction="down")
     st.session_state.need_to_display_recent = False # Mark as done
+    #sync_time_slider()
 
 # --- UI Building Functions ---
 
@@ -405,7 +453,7 @@ def build_main_area():
     st.markdown("</div>", unsafe_allow_html=True) # Close centered container
 
     # Create Video Placeholder *after* the controls container
-    video_placeholder = st.empty()
+    video_placeholder = st.empty() 
 
     # Return placeholders needed outside this build function (by callbacks and main loop)
     return video_placeholder, time_display
@@ -422,6 +470,8 @@ def run_ui_update_loop():
     time_display = st.session_state.time_display
 
     while True:
+        heartbeat()
+
         # Check for errors first
         if st.session_state.video_capture.error_event.is_set():
             st.session_state.video_capture.stop_capture() # Ensure cleanup
@@ -430,7 +480,8 @@ def run_ui_update_loop():
             st.session_state.status_message = "Status: Error"
             # Keep last frame visible on error if possible
             if st.session_state.last_frame is not None:
-                video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
+                #video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
+                new_image_display(st.session_state.last_frame)
             break # Exit loop
 
         is_capturing = st.session_state.video_capture.is_capturing()
@@ -449,7 +500,8 @@ def run_ui_update_loop():
 
                 # Ensure paused frame is displayed
                 if st.session_state.last_frame is not None:
-                    video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
+                    #video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
+                    new_image_display(st.session_state.last_frame)
                     ts = st.session_state.actual_timestamp
                     new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback Mode"
                 else:
@@ -469,12 +521,13 @@ def run_ui_update_loop():
 
                     # Store & display live frame
                     st.session_state.last_frame = frame.copy()
-                    video_placeholder.image(frame, channels="BGR", use_container_width=True)
+                    #video_placeholder.image(frame, channels="BGR", use_container_width=True)
+                    new_image_display(frame)
                     # Update internal stats
                     st.session_state.video_capture.current_fps = fps
                     st.session_state.video_capture.current_width = width
                     st.session_state.video_capture.current_height = height
-
+                    
                     # Update status (Save msg or FPS)
                     if st.session_state.video_capture.image_just_saved:
                         new_status = st.session_state.video_capture.save_status
@@ -489,7 +542,9 @@ def run_ui_update_loop():
             if st.session_state.in_playback_mode:
                 # Playback Mode (Capture Stopped): Show paused frame
                 if st.session_state.last_frame is not None:
-                    video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
+                    #video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
+                    new_image_display(st.session_state.last_frame)
+
                     ts = st.session_state.actual_timestamp
                     new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback (Stopped)"
                 else:
@@ -498,14 +553,15 @@ def run_ui_update_loop():
             else:
                  # Not capturing, not in playback - Show last frame or empty
                 if st.session_state.last_frame is not None:
-                    video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
+                    #video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
+                    new_image_display(st.session_state.last_frame)
                     new_status = "Capture Stopped"
                 else:
                     video_placeholder.info("Capture stopped. Select date/time or Start Capture.")
                     new_status = "Status: Idle"
 
         # Update status placeholder only if message changed
-        if new_status != current_status:
+        if True: #new_status != current_status:
             status_placeholder.text(new_status)
             st.session_state.status_message = new_status # Store new status
 
