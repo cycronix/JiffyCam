@@ -162,10 +162,10 @@ def on_next_button(stopAuto=True):
 def toggle_live_pause():
     """Handle Live/Pause button click."""
     global autoplay_direction
-    autoplay_direction = "None"
     
     if st.session_state.in_playback_mode:
         # Go Live
+        autoplay_direction = "None"
         st.session_state.live_button_clicked = True
         # Update browsing date/time to current (will be reflected in loop)
         current_time = datetime.now()
