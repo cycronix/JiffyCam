@@ -57,7 +57,7 @@ def main():
     if 'need_to_display_recent' not in st.session_state: st.session_state.need_to_display_recent = True
     if 'live_button_clicked' not in st.session_state: st.session_state.live_button_clicked = False
     if 'status_message' not in st.session_state: st.session_state.status_message = "Initializing..."
-
+    
     # Configuration related state (derived from video_capture.config)
     # Ensure device_aliases is OrderedDict
     aliases = st.session_state.video_capture.config.get('device_aliases', {'Default': '0'})

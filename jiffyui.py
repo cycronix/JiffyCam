@@ -11,23 +11,36 @@ import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
 
 from jiffyconfig import RESOLUTIONS   # Import necessary components from other modules
-from jiffyget import jiffyget, detect_locations
+from jiffyget import jiffyget, get_locations
+
+# globals within jiffyui.py
+autoplay_direction = "None"
 
 # --- UI Helper Functions ---
 def heartbeat():
-    """Heartbeat to check if the UI is still running."""
-    #print(f"1in_playback_mode: {st.session_state.in_playback_mode}")
-    #on_prev_button()
+    """Heartbeat to check if the UI is still running.""" 
+    #print(f"autoplay_direction: {autoplay_direction}")
+    if(autoplay_direction == "forward"):
+        on_next_button()
+    elif(autoplay_direction == "reverse"):
+        on_prev_button()    
 
 def sync_time_slider():
-    """Sync the time slider to the current time."""
-    #print(f"sync_time_slider: {st.session_state.hour}, {st.session_state.minute}, {st.session_state.second}")
-    st.session_state.time_slider = datetime_time(
-        st.session_state.hour,
-        st.session_state.minute,
-        st.session_state.second
-    )
-    st.session_state.date = st.session_state.browsing_date
+    """Sync the time slider to the current time."""  
+    if(autoplay_direction != "None"):
+        return
+    
+    try:    #some async issues with time slider
+        #print(f"sync_time_slider: {st.session_state.hour}, {st.session_state.minute}, {st.session_state.second}")
+        st.session_state.time_slider = datetime_time(
+            st.session_state.hour,
+            st.session_state.minute,
+            st.session_state.second
+        )  
+        st.session_state.date = st.session_state.browsing_date
+    except Exception as e:
+        # print(f"Error syncing time slider: {e}")
+        pass
 
 def rt_time_slider():
     """Update the time slider to the current time."""
@@ -109,7 +122,6 @@ def on_date_change():
 def on_prev_button():
     """Handle previous image button click."""
     st.session_state.in_playback_mode = True
-
     st.session_state.slider_currently_being_dragged = False
 
     # Decrement time logic
@@ -127,7 +139,6 @@ def on_prev_button():
 def on_next_button():
     """Handle next image button click."""
     st.session_state.in_playback_mode = True
-
     st.session_state.slider_currently_being_dragged = False
 
     # Increment time logic
@@ -167,10 +178,10 @@ def toggle_live_pause():
 
         st.session_state.in_playback_mode = True
 
-def on_time_slider_click():
-    """Handle time slider click."""
-    on_time_slider_change()
-    st.session_state.in_playback_mode = True
+def on_pause_button():
+    """Handle pause button click."""
+    global autoplay_direction
+    autoplay_direction = "None"
 
 def on_time_slider_change():
     """Handle time slider change."""
@@ -197,6 +208,22 @@ def on_time_slider_change():
 
         st.session_state.in_playback_mode = True
 
+def on_fast_reverse_button():
+    global autoplay_direction
+    """Handle fast reverse button click."""
+    if(autoplay_direction == "reverse"):
+        autoplay_direction = "None"
+    else:
+        autoplay_direction = "reverse"
+
+def on_fast_forward_button():
+    global autoplay_direction
+    """Handle fast forward button click."""
+    if(autoplay_direction == "forward"):
+        autoplay_direction = "None"
+    else:
+        autoplay_direction = "forward"
+
 # --- UI Update Functions ---
 def new_image_display(frame):
     """Display a new image based on the current date and time."""
@@ -207,6 +234,8 @@ def new_image_display(frame):
 
 def update_image_display(direction=None):
     """Update the image display based on the current date and time."""
+    global autoplay_direction
+
     # Fetch placeholders from session state
     video_placeholder = st.session_state.video_placeholder
     status_placeholder = st.session_state.status_placeholder
@@ -224,7 +253,7 @@ def update_image_display(direction=None):
     time_posix = datetime.combine(browse_date, datetime.min.time()) + timedelta(hours=st.session_state.hour, minutes=st.session_state.minute, seconds=st.session_state.second)
     time_posix = float(time_posix.timestamp())
 
-    closest_image = jiffyget(
+    closest_image, timestamp = jiffyget(
         time_posix,
         st.session_state.cam_name,
         session,       # Pass session variable
@@ -233,40 +262,42 @@ def update_image_display(direction=None):
     )
 
     success = False
-    if closest_image:
-        frame, timestamp = closest_image
-        if frame is not None:
-            try:
-                # Store frame and actual timestamp
-                st.session_state.last_frame = frame.copy()
-                st.session_state.actual_timestamp = timestamp
+    if closest_image is not None:
+        try:
+            # Store frame and actual timestamp
+            st.session_state.last_frame = closest_image.copy()
+            dts = datetime.fromtimestamp(timestamp/1000)
+            st.session_state.actual_timestamp = dts
 
-                # Update UI placeholders
-                #video_placeholder.image(frame, channels="BGR", use_container_width=True)
-                new_image_display(frame)
+            # Update UI placeholders
+            #video_placeholder.image(frame, channels="BGR", use_container_width=True)
+            new_image_display(closest_image)
 
-                # Update time state to match the found image
-                st.session_state.hour = timestamp.hour
-                st.session_state.minute = timestamp.minute
-                st.session_state.second = timestamp.second
-                st.session_state.browsing_date = timestamp.date() # Keep browsing date in sync with found image
+            # Update time state to match the found image
+            st.session_state.hour = dts.hour
+            st.session_state.minute = dts.minute
+            st.session_state.second = dts.second
+            st.session_state.browsing_date = dts.date() # Keep browsing date in sync with found image
 
-                # Update time display text
-                time_display.markdown(
-                    f'<div class="time-display">{format_time_12h(timestamp.hour, timestamp.minute, timestamp.second)}</div>',
-                    unsafe_allow_html=True
-                )
+            # Update time display text
+            time_display.markdown(
+                f'<div class="time-display">{format_time_12h(dts.hour, dts.minute, dts.second)}</div>',
+                unsafe_allow_html=True
+            )
 
-                # Update status text
-                status_placeholder.text(f"Viewing: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
-                st.session_state.status_message = f"Viewing: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}" # Update internal status too
-                success = True
+            # Update status text
+            status_placeholder.text(f"Viewing: {dts.strftime('%Y-%m-%d %H:%M:%S')}")
+            st.session_state.status_message = f"Viewing: {dts.strftime('%Y-%m-%d %H:%M:%S')}" # Update internal status too
+            success = True
 
-            except Exception as e:
-                status_placeholder.error(f"Error displaying image: {str(e)}")
-                st.session_state.status_message = f"Error displaying image: {str(e)}"
-
+        except Exception as e:
+            print(f"Error displaying image: {str(e)}")
+            status_placeholder.error(f"Error displaying image: {str(e)}")
+            st.session_state.status_message = f"Error displaying image: {str(e)}"
+    
     if not success:
+        autoplay_direction = "None"
+
         # No image found or error displaying
         status_placeholder.text(f"No image found near specified time")
         st.session_state.status_message = f"No image found near specified time"
@@ -344,9 +375,10 @@ def generate_timeline_bar_html():
     data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
 
     # Construct base path safely
-    browse_date_posix = time.mktime(st.session_state.date.timetuple())
-    timestamps = detect_locations(st.session_state.cam_name, session, data_dir, browse_date_posix)
-    
+    browse_date_posix = int(time.mktime(st.session_state.date.timetuple()))
+    timestamps = get_locations(st.session_state.cam_name, session, data_dir, browse_date_posix*1000)
+    #print(f"detect timestamps: {timestamps}")
+
     # Base HTML structure (always include CSS)
     html = """
     <style>
@@ -416,22 +448,31 @@ def build_main_area():
                    min_value=min_date, max_value=max_date)
 
     # Time controls row
-    time_cols = st.columns([3, 1, 1, 0.2, 1])
+    time_cols = st.columns([3, 1, 1, 1, 1, 1, 0.2, 1])
     with time_cols[0]: # Time Display Placeholder
         time_display = st.empty()
         # Set initial display value
         time_display.markdown(f'<div class="time-display">{format_time_12h(st.session_state.hour, st.session_state.minute, st.session_state.second)}</div>', unsafe_allow_html=True)
-    with time_cols[1]: # Prev Button
-        st.button("◀", key="prev_button", use_container_width=True, help="Previous",
+    with time_cols[1]: # Fast Reverse Button
+        st.button("⏪", key="fast_reverse_button", use_container_width=True, help="Fast Reverse",
+                  on_click=on_fast_reverse_button)
+    with time_cols[2]: # Prev Button
+        st.button("◀️", key="prev_button", use_container_width=True, help="Previous",
                   # Callback no longer needs args
                   on_click=on_prev_button)
-    with time_cols[2]: # Next Button
-        st.button("▶", key="next_button", use_container_width=True, help="Next",
+    with time_cols[3]: # Pause Button
+        st.button("⏸️", key="pause_button", use_container_width=True, help="Pause",
+                  on_click=on_pause_button)
+    with time_cols[4]: # Next Button
+        st.button("▶️", key="next_button", use_container_width=True, help="Next",
                   # Callback no longer needs args
                   on_click=on_next_button)
-    with time_cols[3]: # Separator
+    with time_cols[5]: # Fast Forward Button
+        st.button("⏩", key="fast_forward_button", use_container_width=True, help="Fast Forward",
+                  on_click=on_fast_forward_button)
+    with time_cols[6]: # Separator
         st.markdown('<div style="width:1px;background-color:#555;height:32px;margin:0 auto;"></div>', unsafe_allow_html=True)
-    with time_cols[4]: # Live/Pause Button
+    with time_cols[7]: # Live/Pause Button
         is_capturing = st.session_state.video_capture.is_capturing()
         in_playback = st.session_state.in_playback_mode
         button_text = "Live" if in_playback else "⏸"
@@ -566,4 +607,4 @@ def run_ui_update_loop():
             st.session_state.status_message = new_status # Store new status
 
         # Main loop delay
-        time.sleep(0.05)
+        time.sleep(0.01)
