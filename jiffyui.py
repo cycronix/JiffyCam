@@ -21,9 +21,9 @@ def heartbeat():
     """Heartbeat to check if the UI is still running.""" 
     #print(f"autoplay_direction: {autoplay_direction}")
     if(autoplay_direction == "forward"):
-        on_next_button()
+        on_next_button(False)
     elif(autoplay_direction == "reverse"):
-        on_prev_button()    
+        on_prev_button(False)    
 
 def sync_time_slider():
     """Sync the time slider to the current time."""  
@@ -119,8 +119,11 @@ def on_date_change():
     # Fetch placeholders from session_state inside the update function
     update_image_display(direction="down")
 
-def on_prev_button():
+def on_prev_button(stopAuto=True):
     """Handle previous image button click."""
+    global autoplay_direction
+    if(stopAuto):
+        autoplay_direction = "None"
     st.session_state.in_playback_mode = True
     st.session_state.slider_currently_being_dragged = False
 
@@ -136,8 +139,11 @@ def on_prev_button():
     update_image_display(direction="down")
     sync_time_slider()
 
-def on_next_button():
+def on_next_button(stopAuto=True):
     """Handle next image button click."""
+    global autoplay_direction  
+    if(stopAuto):
+        autoplay_direction = "None"
     st.session_state.in_playback_mode = True
     st.session_state.slider_currently_being_dragged = False
 
@@ -155,6 +161,9 @@ def on_next_button():
 
 def toggle_live_pause():
     """Handle Live/Pause button click."""
+    global autoplay_direction
+    autoplay_direction = "None"
+    
     if st.session_state.in_playback_mode:
         # Go Live
         st.session_state.live_button_clicked = True
