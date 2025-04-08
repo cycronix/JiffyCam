@@ -392,25 +392,28 @@ def generate_timeline_image(width=800, height=32):
     special_marker_color = (255, 255, 0)  # Yellow in BGR format
     text_color = (220, 220, 220)  # Brighter light gray for text
     
-    # Add padding for text labels - increase to accommodate descenders
-    text_padding = 20  # Pixels below timeline for text (increased from 15)
-    label_height = height + text_padding
+    # Add equal padding for top and bottom margins
+    text_padding = 20  # Pixels below timeline for text
+    top_margin = 20  # Match top margin to text padding (was 12)
+    timeline_y_start = top_margin  # Timeline now starts below top margin
+    timeline_y_end = timeline_y_start + height
+    total_height = timeline_y_end + text_padding  # Total image height
     
-    # Start with a blank transparent image (including space for labels)
-    rounded_img = np.zeros((label_height, width, 3), dtype=np.uint8)
+    # Start with a blank transparent image (including space for labels and top margin)
+    rounded_img = np.zeros((total_height, width, 3), dtype=np.uint8)
     
     # Add radius for rounded corner effect (small radius)
     radius = int(height/2)
     
     # Draw a rounded rectangle for the timeline (top portion only)
-    cv2.rectangle(rounded_img, (radius, 0), (width-radius, height), background_color, -1)
-    cv2.rectangle(rounded_img, (0, radius), (width, height-radius), background_color, -1)
+    cv2.rectangle(rounded_img, (radius, timeline_y_start), (width-radius, timeline_y_end), background_color, -1)
+    cv2.rectangle(rounded_img, (0, timeline_y_start+radius), (width, timeline_y_end-radius), background_color, -1)
     
     # Draw the four corners
-    cv2.circle(rounded_img, (radius, radius), radius, background_color, -1)
-    cv2.circle(rounded_img, (width-radius, radius), radius, background_color, -1)
-    cv2.circle(rounded_img, (radius, height-radius), radius, background_color, -1)
-    cv2.circle(rounded_img, (width-radius, height-radius), radius, background_color, -1)
+    cv2.circle(rounded_img, (radius, timeline_y_start+radius), radius, background_color, -1)
+    cv2.circle(rounded_img, (width-radius, timeline_y_start+radius), radius, background_color, -1)
+    cv2.circle(rounded_img, (radius, timeline_y_end-radius), radius, background_color, -1)
+    cv2.circle(rounded_img, (width-radius, timeline_y_end-radius), radius, background_color, -1)
     
     timeline_img = rounded_img
     
@@ -449,7 +452,7 @@ def generate_timeline_image(width=800, height=32):
                 # Center text below marker
                 text_x = x_pos - text_size[0] // 2
                 # Position text below timeline with enough room for descenders
-                text_y = height + baseline + 8  # Adjusted positioning to avoid clipping descenders
+                text_y = timeline_y_end + baseline + 8  # Adjusted positioning to avoid clipping descenders
                 
                 # Handle edge cases
                 if hour == 0:  # Leftmost label (12am)
@@ -476,8 +479,8 @@ def generate_timeline_image(width=800, height=32):
             continue
             
         # Draw line from bottom
-        start_y = height - 1
-        end_y = height - marker_height
+        start_y = timeline_y_end - 1
+        end_y = timeline_y_end - marker_height
         
         # Draw semi-transparent hour marker lines
         overlay = timeline_img.copy()
@@ -496,21 +499,21 @@ def generate_timeline_image(width=800, height=32):
             # Draw special marker (thicker line with yellow color)
             cv_thickness = max(2, int(width/800))  # Thicker than regular markers
             
-            # Draw semi-transparent triangle at top of timeline
-            triangle_height = int(height * 0.6)
-            triangle_width = int(height * 0.4)
+            # Draw semi-transparent triangle ABOVE timeline (pointing down)
+            triangle_height = int(top_margin * 0.75)  # Adjusted to 75% of top margin height
+            triangle_width = int(height * 0.5)  # Slightly wider triangle
             
-            # Triangle points
-            top_point = (x_pos, 0)
-            left_point = (x_pos - triangle_width//2, triangle_height)
-            right_point = (x_pos + triangle_width//2, triangle_height)
+            # Triangle points (pointing down)
+            bottom_point = (x_pos, timeline_y_start - 1)  # Just above timeline
+            left_point = (x_pos - triangle_width//2, timeline_y_start - triangle_height)
+            right_point = (x_pos + triangle_width//2, timeline_y_start - triangle_height)
             
             # Draw the triangle
-            triangle_pts = np.array([top_point, left_point, right_point], np.int32)
+            triangle_pts = np.array([bottom_point, left_point, right_point], np.int32)
             triangle_pts = triangle_pts.reshape((-1, 1, 2))
             overlay = timeline_img.copy()
             cv2.fillPoly(overlay, [triangle_pts], special_marker_color)
-            cv2.addWeighted(overlay, 0.7, timeline_img, 0.3, 0, timeline_img)
+            cv2.addWeighted(overlay, 0.8, timeline_img, 0.2, 0, timeline_img)
 
     # Add marks for timestamps
     if timestamps:
@@ -523,7 +526,7 @@ def generate_timeline_image(width=800, height=32):
             
             # Draw semi-transparent line
             overlay = timeline_img.copy()
-            cv2.line(overlay, (x_pos, 0), (x_pos, height), mark_color, cv_thickness)
+            cv2.line(overlay, (x_pos, timeline_y_start), (x_pos, timeline_y_end), mark_color, cv_thickness)
             cv2.addWeighted(overlay, alpha, timeline_img, 1-alpha, 0, timeline_img)
 
     return timeline_img
@@ -653,8 +656,8 @@ def build_main_area():
     # Timeline Bar - Replace HTML approach with image
     st.markdown('<div style="margin-top:-5px; margin-bottom:2px;">', unsafe_allow_html=True)
     
-    # Generate timeline image with appropriate width and increased height for time labels
-    timeline_img = generate_timeline_image(width=1200, height=40)
+    # Generate timeline image with appropriate width and increased height (50% taller)
+    timeline_img = generate_timeline_image(width=1200, height=60)  # Increased from 40 to 60
     
     # Store previous click coordinates to avoid duplicate processing
     prev_coords = st.session_state.get('prev_timeline_coords', None)
