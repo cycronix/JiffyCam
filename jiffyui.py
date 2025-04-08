@@ -34,7 +34,9 @@ def set_autoplay(direction):
     autoplay_direction = direction
 
 def sync_time_slider():
-    """Sync the time slider to the current time."""  
+    """Sync the time slider to the current time.""" 
+    return
+ 
     if(autoplay_direction != "None"):
           return
     
@@ -374,7 +376,7 @@ def build_sidebar(show_resolution_setting):
 
     return status_placeholder, error_placeholder
 
-def generate_timeline_image(width=800, height=20):
+def generate_timeline_image(width=800, height=32):
     """Generate an image for the timeline bar based on available data."""
     session = st.session_state.get('session', 'Default')
     data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
@@ -385,16 +387,22 @@ def generate_timeline_image(width=800, height=20):
 
     # Create a blank image (dark gray background)
     background_color = (51, 51, 51)  # Dark gray
-    mark_color = (255, 0, 0)  # Red in BGR format
-    hour_marker_color = (150, 150, 150)  # Light gray for hour markers
+    mark_color = (255, 0, 0)  # Red in BGR format (Blue = 0, Green = 0, Red = 255) 
+    hour_marker_color = (180, 180, 180)  # Light gray for hour markers
+    special_marker_color = (255, 255, 0)  # Yellow in BGR format
+    text_color = (220, 220, 220)  # Brighter light gray for text
+    
+    # Add padding for text labels - increase to accommodate descenders
+    text_padding = 20  # Pixels below timeline for text (increased from 15)
+    label_height = height + text_padding
+    
+    # Start with a blank transparent image (including space for labels)
+    rounded_img = np.zeros((label_height, width, 3), dtype=np.uint8)
     
     # Add radius for rounded corner effect (small radius)
     radius = int(height/2)
     
-    # Start with a blank transparent image
-    rounded_img = np.zeros((height, width, 3), dtype=np.uint8)
-    
-    # Draw a rounded rectangle
+    # Draw a rounded rectangle for the timeline (top portion only)
     cv2.rectangle(rounded_img, (radius, 0), (width-radius, height), background_color, -1)
     cv2.rectangle(rounded_img, (0, radius), (width, height-radius), background_color, -1)
     
@@ -406,24 +414,66 @@ def generate_timeline_image(width=800, height=20):
     
     timeline_img = rounded_img
     
-    # Add hour markers (24 hours)
+    # Define label positions in advance
+    label_positions = {
+        0: "12am",
+        6: "6am",
+        12: "12pm",
+        18: "6pm",
+        24: "12am"
+    }
+    
+    # Set font properties
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = max(0.33, min(0.5, width / 2000))  # Scale text based on timeline width
+    font_thickness = 1
+    
+    # Add hour markers and time labels (24 hours)
     for hour in range(25):  # 0 to 24 hours (include 24 for end of day)
         position = hour / 24.0  # Convert hour to percentage of day
         x_pos = int(position * width)
         
-        # Skip markers at the very edges
-        if x_pos < radius or x_pos > width - radius:
-            continue
-            
         # Adjust thickness and height based on marker type
         if hour % 6 == 0:  # More prominent markers at 6-hour intervals
             marker_height = int(height * 0.7)  # 70% of total height
             thickness = max(1, int(width/1200))
             alpha = 0.5  # 50% opacity
+            
+            # Get time label for this hour
+            time_label = label_positions.get(hour, "")
+                
+            if time_label:
+                # Calculate text size to center it
+                text_size, baseline = cv2.getTextSize(time_label, font, font_scale, font_thickness)
+                
+                # Center text below marker
+                text_x = x_pos - text_size[0] // 2
+                # Position text below timeline with enough room for descenders
+                text_y = height + baseline + 8  # Adjusted positioning to avoid clipping descenders
+                
+                # Handle edge cases
+                if hour == 0:  # Leftmost label (12am)
+                    text_x = max(text_x, 2)  # Keep a minimum of 2px from left edge
+                elif hour == 24:  # Rightmost label (12am)
+                    text_x = min(text_x, width - text_size[0] - 2)  # Keep from right edge
+                
+                # Draw a slightly darker rectangle behind the text
+                # Make the background rectangle taller to accommodate descenders
+                cv2.rectangle(timeline_img, 
+                            (text_x - 2, text_y - text_size[1] - 2),
+                            (text_x + text_size[0] + 2, text_y + baseline + 2),
+                            (30, 30, 30), -1)
+                
+                # Draw the text
+                cv2.putText(timeline_img, time_label, (text_x, text_y), font, font_scale, text_color, font_thickness, cv2.LINE_AA)
         else:
             marker_height = int(height * 0.4)  # 40% of total height
             thickness = max(1, int(width/1500))
             alpha = 0.3  # 30% opacity
+            
+        # Skip markers at the very edges but still draw text
+        if x_pos < radius or x_pos > width - radius:
+            continue
             
         # Draw line from bottom
         start_y = height - 1
@@ -433,6 +483,34 @@ def generate_timeline_image(width=800, height=20):
         overlay = timeline_img.copy()
         cv2.line(overlay, (x_pos, start_y), (x_pos, end_y), hour_marker_color, thickness)
         cv2.addWeighted(overlay, alpha, timeline_img, 1-alpha, 0, timeline_img)
+
+    # Add special timestamp marker for current time
+    if hasattr(st.session_state, 'hour') and hasattr(st.session_state, 'minute') and hasattr(st.session_state, 'second'):
+        # Calculate position as percentage of day
+        current_seconds = st.session_state.hour * 3600 + st.session_state.minute * 60 + st.session_state.second
+        day_percentage = current_seconds / (24 * 60 * 60)
+        x_pos = int(day_percentage * width)
+        
+        # Skip if too close to edges
+        if x_pos >= radius and x_pos <= width - radius:
+            # Draw special marker (thicker line with yellow color)
+            cv_thickness = max(2, int(width/800))  # Thicker than regular markers
+            
+            # Draw semi-transparent triangle at top of timeline
+            triangle_height = int(height * 0.6)
+            triangle_width = int(height * 0.4)
+            
+            # Triangle points
+            top_point = (x_pos, 0)
+            left_point = (x_pos - triangle_width//2, triangle_height)
+            right_point = (x_pos + triangle_width//2, triangle_height)
+            
+            # Draw the triangle
+            triangle_pts = np.array([top_point, left_point, right_point], np.int32)
+            triangle_pts = triangle_pts.reshape((-1, 1, 2))
+            overlay = timeline_img.copy()
+            cv2.fillPoly(overlay, [triangle_pts], special_marker_color)
+            cv2.addWeighted(overlay, 0.7, timeline_img, 0.3, 0, timeline_img)
 
     # Add marks for timestamps
     if timestamps:
@@ -575,8 +653,8 @@ def build_main_area():
     # Timeline Bar - Replace HTML approach with image
     st.markdown('<div style="margin-top:-5px; margin-bottom:2px;">', unsafe_allow_html=True)
     
-    # Generate timeline image with appropriate width and 20% taller height
-    timeline_img = generate_timeline_image(width=1200, height=29)
+    # Generate timeline image with appropriate width and increased height for time labels
+    timeline_img = generate_timeline_image(width=1200, height=40)
     
     # Store previous click coordinates to avoid duplicate processing
     prev_coords = st.session_state.get('prev_timeline_coords', None)
@@ -602,11 +680,11 @@ def build_main_area():
             st.session_state.prev_timeline_coords = current_click
 
     # Time Slider
-    date_str = st.session_state.date.strftime("%Y-%m-%d")
-    st.slider(date_str, min_value=datetime_time(0,0,0), max_value=datetime_time(23,59,59),
-              key="time_slider", step=timedelta(seconds=1), label_visibility="hidden",
-              # Callback no longer needs args
-              on_change=on_time_slider_change)
+    #date_str = st.session_state.date.strftime("%Y-%m-%d")
+    #st.slider(date_str, min_value=datetime_time(0,0,0), max_value=datetime_time(23,59,59),
+    #          key="time_slider", step=timedelta(seconds=1), label_visibility="hidden",
+    #          # Callback no longer needs args
+    #          on_change=on_time_slider_change)
 
     st.markdown("</div>", unsafe_allow_html=True) # Close centered container
 
