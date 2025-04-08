@@ -9,6 +9,8 @@ import time
 import os
 import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
+import numpy as np  # Add this import for image creation
+import cv2  # Add this import for image processing
 
 from jiffyconfig import RESOLUTIONS   # Import necessary components from other modules
 from jiffyget import jiffyget, get_locations
@@ -19,16 +21,22 @@ autoplay_direction = "None"
 # --- UI Helper Functions ---
 def heartbeat():
     """Heartbeat to check if the UI is still running.""" 
+    global autoplay_direction
     #print(f"autoplay_direction: {autoplay_direction}")
     if(autoplay_direction == "forward"):
         on_next_button(False)
     elif(autoplay_direction == "reverse"):
         on_prev_button(False)    
 
+def set_autoplay(direction):
+    """Set autoplay direction."""
+    global autoplay_direction
+    autoplay_direction = direction
+
 def sync_time_slider():
     """Sync the time slider to the current time."""  
     if(autoplay_direction != "None"):
-        return
+          return
     
     try:    #some async issues with time slider
         #print(f"sync_time_slider: {st.session_state.hour}, {st.session_state.minute}, {st.session_state.second}")
@@ -39,7 +47,7 @@ def sync_time_slider():
         )  
         st.session_state.date = st.session_state.browsing_date
     except Exception as e:
-        # print(f"Error syncing time slider: {e}")
+        #print(f"Error syncing time slider: {e}")
         pass
 
 def rt_time_slider():
@@ -102,13 +110,14 @@ def toggle_rt_capture():
     else:
         st.session_state.video_capture.stop_capture()
         st.session_state.in_playback_mode = True   
-        print(f"3toggle_rt_capture: {st.session_state.in_playback_mode}")
 
     # Fetch placeholders from session_state inside the update function
     #update_image_display(direction="down")
 
 def on_date_change():
     """Handle date picker change."""
+    set_autoplay("None")
+
     st.session_state.browsing_date = st.session_state.date
     st.session_state.in_playback_mode = True 
 
@@ -121,9 +130,8 @@ def on_date_change():
 
 def on_prev_button(stopAuto=True):
     """Handle previous image button click."""
-    global autoplay_direction
     if(stopAuto):
-        autoplay_direction = "None"
+        set_autoplay("None")
     st.session_state.in_playback_mode = True
     st.session_state.slider_currently_being_dragged = False
 
@@ -141,9 +149,8 @@ def on_prev_button(stopAuto=True):
 
 def on_next_button(stopAuto=True):
     """Handle next image button click."""
-    global autoplay_direction  
     if(stopAuto):
-        autoplay_direction = "None"
+        set_autoplay("None")
     st.session_state.in_playback_mode = True
     st.session_state.slider_currently_being_dragged = False
 
@@ -160,12 +167,10 @@ def on_next_button(stopAuto=True):
     sync_time_slider()
 
 def toggle_live_pause():
-    """Handle Live/Pause button click."""
-    global autoplay_direction
-    
+    """Handle Live/Pause button click."""    
     if st.session_state.in_playback_mode:
         # Go Live
-        autoplay_direction = "None"
+        set_autoplay("None")
         st.session_state.live_button_clicked = True
         # Update browsing date/time to current (will be reflected in loop)
         current_time = datetime.now()
@@ -184,16 +189,17 @@ def toggle_live_pause():
         if st.session_state.last_frame is None:
             st.session_state.actual_timestamp = datetime.now() # Fallback
         # No need to explicitly set hour/min/sec here, they reflect the paused frame
-
         st.session_state.in_playback_mode = True
 
 def on_pause_button():
     """Handle pause button click."""
-    global autoplay_direction
-    autoplay_direction = "None"
-
+    set_autoplay("None")
+    st.session_state.in_playback_mode = True
+    
 def on_time_slider_change():
     """Handle time slider change."""
+    set_autoplay("None")
+
     if(st.session_state.live_button_clicked):
         st.session_state.live_button_clicked = False
         return
@@ -212,26 +218,18 @@ def on_time_slider_change():
         st.session_state.slider_currently_being_dragged = True
 
         # Fetch placeholders from session_state inside the update function
-        update_image_display(direction="down")
+        update_image_display(direction="closest")
         st.session_state.slider_currently_being_dragged = False
 
         st.session_state.in_playback_mode = True
 
 def on_fast_reverse_button():
-    global autoplay_direction
     """Handle fast reverse button click."""
-    if(autoplay_direction == "reverse"):
-        autoplay_direction = "None"
-    else:
-        autoplay_direction = "reverse"
+    set_autoplay("reverse")
 
 def on_fast_forward_button():
-    global autoplay_direction
     """Handle fast forward button click."""
-    if(autoplay_direction == "forward"):
-        autoplay_direction = "None"
-    else:
-        autoplay_direction = "forward"
+    set_autoplay("forward")
 
 # --- UI Update Functions ---
 def new_image_display(frame):
@@ -243,8 +241,6 @@ def new_image_display(frame):
 
 def update_image_display(direction=None):
     """Update the image display based on the current date and time."""
-    global autoplay_direction
-
     # Fetch placeholders from session state
     video_placeholder = st.session_state.video_placeholder
     status_placeholder = st.session_state.status_placeholder
@@ -305,7 +301,7 @@ def update_image_display(direction=None):
             st.session_state.status_message = f"Error displaying image: {str(e)}"
     
     if not success:
-        autoplay_direction = "None"
+        set_autoplay("None")
 
         # No image found or error displaying
         status_placeholder.text(f"No image found near specified time")
@@ -378,32 +374,119 @@ def build_sidebar(show_resolution_setting):
 
     return status_placeholder, error_placeholder
 
-def generate_timeline_bar_html():
-    """Generate HTML for the timeline bar based on available data."""
+def generate_timeline_image(width=800, height=20):
+    """Generate an image for the timeline bar based on available data."""
     session = st.session_state.get('session', 'Default')
     data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
 
     # Construct base path safely
     browse_date_posix = int(time.mktime(st.session_state.date.timetuple()))
     timestamps = get_locations(st.session_state.cam_name, session, data_dir, browse_date_posix*1000)
-    #print(f"detect timestamps: {timestamps}")
 
-    # Base HTML structure (always include CSS)
-    html = """
-    <style>
-    .timeline-container{width:100%;padding:0;margin:0;margin-top:-5px;margin-bottom:2px;}
-    .timeline-bar{position:relative;width:100%;height:12px;background-color:#333333;border-radius:2px;}
-    .timeline-mark{position:absolute;width:2px;height:12px;background-color:#ffffff;opacity:0.7;}
-    </style>
-    <div class="timeline-container"><div class="timeline-bar">
-    """
-    # Add marks if timestamps were found
+    # Create a blank image (dark gray background)
+    background_color = (51, 51, 51)  # Dark gray
+    mark_color = (255, 0, 0)  # Red in BGR format
+    hour_marker_color = (150, 150, 150)  # Light gray for hour markers
+    
+    # Add radius for rounded corner effect (small radius)
+    radius = int(height/2)
+    
+    # Start with a blank transparent image
+    rounded_img = np.zeros((height, width, 3), dtype=np.uint8)
+    
+    # Draw a rounded rectangle
+    cv2.rectangle(rounded_img, (radius, 0), (width-radius, height), background_color, -1)
+    cv2.rectangle(rounded_img, (0, radius), (width, height-radius), background_color, -1)
+    
+    # Draw the four corners
+    cv2.circle(rounded_img, (radius, radius), radius, background_color, -1)
+    cv2.circle(rounded_img, (width-radius, radius), radius, background_color, -1)
+    cv2.circle(rounded_img, (radius, height-radius), radius, background_color, -1)
+    cv2.circle(rounded_img, (width-radius, height-radius), radius, background_color, -1)
+    
+    timeline_img = rounded_img
+    
+    # Add hour markers (24 hours)
+    for hour in range(25):  # 0 to 24 hours (include 24 for end of day)
+        position = hour / 24.0  # Convert hour to percentage of day
+        x_pos = int(position * width)
+        
+        # Skip markers at the very edges
+        if x_pos < radius or x_pos > width - radius:
+            continue
+            
+        # Adjust thickness and height based on marker type
+        if hour % 6 == 0:  # More prominent markers at 6-hour intervals
+            marker_height = int(height * 0.7)  # 70% of total height
+            thickness = max(1, int(width/1200))
+            alpha = 0.5  # 50% opacity
+        else:
+            marker_height = int(height * 0.4)  # 40% of total height
+            thickness = max(1, int(width/1500))
+            alpha = 0.3  # 30% opacity
+            
+        # Draw line from bottom
+        start_y = height - 1
+        end_y = height - marker_height
+        
+        # Draw semi-transparent hour marker lines
+        overlay = timeline_img.copy()
+        cv2.line(overlay, (x_pos, start_y), (x_pos, end_y), hour_marker_color, thickness)
+        cv2.addWeighted(overlay, alpha, timeline_img, 1-alpha, 0, timeline_img)
+
+    # Add marks for timestamps
     if timestamps:
         for position in timestamps:
-            html += f'<div class="timeline-mark" style="left: {position*100}%;"></div>'
-    # Close HTML
-    html += "</div></div>"
-    return html
+            # Calculate pixel position
+            x_pos = int(position * width)
+            # Draw a red vertical line with alpha blending
+            cv_thickness = max(1, int(width/1000))  # Scale thickness with width
+            alpha = 0.8  # 80% opacity (slightly more visible than before)
+            
+            # Draw semi-transparent line
+            overlay = timeline_img.copy()
+            cv2.line(overlay, (x_pos, 0), (x_pos, height), mark_color, cv_thickness)
+            cv2.addWeighted(overlay, alpha, timeline_img, 1-alpha, 0, timeline_img)
+
+    return timeline_img
+
+def on_timeline_click(coords):
+    """Handle clicks on the timeline image."""
+    set_autoplay("None")
+    
+    if coords is None or 'x' not in coords:
+        return
+    
+    # Calculate the time position based on click position
+    x = coords['x']
+    width = coords.get('width', 1)
+    
+    # Calculate the position as a percentage of the day
+    if width <= 0:
+        return  # Avoid division by zero
+        
+    day_percentage = x / width
+    
+    # Clamp percentage to valid range [0,1]
+    day_percentage = max(0, min(1, day_percentage))
+    
+    # Convert to hours, minutes, seconds
+    total_seconds = int(day_percentage * 24 * 60 * 60)
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    
+    # Update state
+    st.session_state.hour = hours
+    st.session_state.minute = minutes
+    st.session_state.second = seconds
+    st.session_state.in_playback_mode = True
+
+    # Update display and mark that a new time was selected
+    update_image_display(direction="closest")
+    sync_time_slider()
+
+    #set_autoplay("None")
 
 def build_main_area():
     """Create the main UI area elements and return placeholders."""
@@ -489,9 +572,34 @@ def build_main_area():
         st.button(button_text, key="live_btn", use_container_width=True, help=button_help,
                   on_click=toggle_live_pause, disabled=not is_capturing)
 
-    # Timeline Bar
-    timeline_html = generate_timeline_bar_html()
-    st.markdown(timeline_html, unsafe_allow_html=True)
+    # Timeline Bar - Replace HTML approach with image
+    st.markdown('<div style="margin-top:-5px; margin-bottom:2px;">', unsafe_allow_html=True)
+    
+    # Generate timeline image with appropriate width and 20% taller height
+    timeline_img = generate_timeline_image(width=1200, height=29)
+    
+    # Store previous click coordinates to avoid duplicate processing
+    prev_coords = st.session_state.get('prev_timeline_coords', None)
+    
+    # Display the clickable image
+    clicked_coords = streamlit_image_coordinates(
+        timeline_img, 
+        key="timeline_bar",
+        use_column_width=True
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Handle timeline click only if it's a new click (different from previous)
+    if clicked_coords and 'x' in clicked_coords:
+        # Convert to tuple for comparison (dictionaries aren't hashable)
+        current_click = (clicked_coords.get('x'), clicked_coords.get('y'))
+        previous_click = prev_coords if prev_coords else (-1, -1)
+        
+        if current_click != previous_click:
+            # This is a new click
+            on_timeline_click(clicked_coords)
+            # Save current click to avoid reprocessing
+            st.session_state.prev_timeline_coords = current_click
 
     # Time Slider
     date_str = st.session_state.date.strftime("%Y-%m-%d")
@@ -511,6 +619,7 @@ def build_main_area():
 
 # --- Main UI Update Loop (runs in jiffycam.py) ---
 # This function is moved from jiffycam.py
+#@st.fragment(run_every=0.1)
 def run_ui_update_loop():
     """The main loop to update the UI based on capture state and interactions."""
     # Fetch placeholders from session state at the start of the loop
@@ -544,9 +653,6 @@ def run_ui_update_loop():
                 while True:
                     frame_data = st.session_state.video_capture.get_frame()
                     if frame_data[0] is None: break
-                    # Update stats silently (optional)
-                    # _, fps, width, height = frame_data
-                    # st.session_state.video_capture.current_fps = fps ... etc
 
                 # Ensure paused frame is displayed
                 if st.session_state.last_frame is not None:

@@ -50,8 +50,11 @@ def jiffyget(time_posix: float, cam_name: str,
     
     # Find the closest timestamp based on direction
     timestamps.sort()
+    oldest_timestamp = timestamps[0][0]
+    newest_timestamp = timestamps[-1][0]   
     closest_dir = None
-    closest_timestamp = None
+    closest_timestamp = None 
+
     if direction == "up":  # Find at-or-after for increasing time
         for timestamp, dir_path in timestamps:
             if timestamp >= target_timestamp:
@@ -65,10 +68,26 @@ def jiffyget(time_posix: float, cam_name: str,
                 closest_timestamp = timestamp
             else:
                 break
-    
+   
     if closest_dir is None:
-        return None, None  # return None if no match found
-    
+        if(direction == "up"):
+            closest_dir = timestamps[-1][1]
+            closest_timestamp = timestamps[-1][0]
+        else:
+            closest_dir = timestamps[0][1]
+            closest_timestamp = timestamps[0][0]
+
+    #    return None, None  # return None if no match found
+
+    # If closest timestamp is outside range of timestamps, use oldest or newest
+    #print(f"closest_dir: {closest_dir}, closest_timestamp: {closest_timestamp}, oldest_timestamp: {oldest_timestamp}, newest_timestamp: {newest_timestamp}")
+    if(closest_timestamp < oldest_timestamp):
+        closest_dir = timestamps[0][1]
+        closest_timestamp = timestamps[0][0]
+    elif(closest_timestamp > newest_timestamp):
+        closest_dir = timestamps[-1][1]
+        closest_timestamp = newest_timestamp
+
     # Get the image file in the closest directory
     base_name = os.path.basename(cam_name)
     image_path = os.path.join(closest_dir, f"{base_name}.jpg")
