@@ -27,34 +27,12 @@ def heartbeat():
         on_next_button(False)
     elif(autoplay_direction == "reverse"):
         on_prev_button(False)    
+        #st.rerun()   # want to refresh timeline position pointer, maybe in a st.fragment?
 
 def set_autoplay(direction):
     """Set autoplay direction."""
     global autoplay_direction
     autoplay_direction = direction
-
-def sync_time_slider():
-    """Sync the time slider to the current time.""" 
-    return
- 
-    if(autoplay_direction != "None"):
-          return
-    
-    try:    #some async issues with time slider
-        #print(f"sync_time_slider: {st.session_state.hour}, {st.session_state.minute}, {st.session_state.second}")
-        st.session_state.time_slider = datetime_time(
-            st.session_state.hour,
-            st.session_state.minute,
-            st.session_state.second
-        )  
-        st.session_state.date = st.session_state.browsing_date
-    except Exception as e:
-        #print(f"Error syncing time slider: {e}")
-        pass
-
-def rt_time_slider():
-    """Update the time slider to the current time."""
-    st.session_state.time_slider = datetime_time(datetime.now().hour, datetime.now().minute, datetime.now().second) # Reset slider to current time
 
 def format_time_12h(hour, minute, second):
     """Format time in 12-hour format with AM/PM indicator."""
@@ -81,8 +59,6 @@ def toggle_rt_capture():
     st.session_state.rt_capture = not st.session_state.rt_capture
 
     if st.session_state.rt_capture:
-        rt_time_slider()
-
         st.session_state.in_playback_mode = False
 
         resolution = st.session_state.resolution
@@ -97,7 +73,6 @@ def toggle_rt_capture():
 
         st.session_state.browsing_saved_images = False
         st.session_state.date = datetime.now().date()
-        #st.session_state.time_slider = datetime_time(0, 0, 0) # Reset slider to midnight
 
         # Call start_capture on the video_capture object stored in session state
         st.session_state.video_capture.start_capture(
@@ -123,10 +98,6 @@ def on_date_change():
     st.session_state.browsing_date = st.session_state.date
     st.session_state.in_playback_mode = True 
 
-    # Sync slider to current time state
-    #sync_time_slider()
- #   toggle_live_pause()
-
     # Fetch placeholders from session_state inside the update function
     update_image_display(direction="down")
 
@@ -147,7 +118,6 @@ def on_prev_button(stopAuto=True):
 
     # Fetch placeholders from session_state inside the update function
     update_image_display(direction="down")
-    sync_time_slider()
 
 def on_next_button(stopAuto=True):
     """Handle next image button click."""
@@ -166,7 +136,6 @@ def on_next_button(stopAuto=True):
 
     # Fetch placeholders from session_state inside the update function
     update_image_display(direction="up")
-    sync_time_slider()
 
 def toggle_live_pause():
     """Handle Live/Pause button click."""    
@@ -177,7 +146,6 @@ def toggle_live_pause():
         # Update browsing date/time to current (will be reflected in loop)
         current_time = datetime.now()
         st.session_state.browsing_date = current_time.date()
-        rt_time_slider()
 
         st.session_state.in_playback_mode = False
         # Let the main loop update hour/min/sec/slider when live
@@ -198,33 +166,6 @@ def on_pause_button():
     set_autoplay("None")
     st.session_state.in_playback_mode = True
     
-def on_time_slider_change():
-    """Handle time slider change."""
-    set_autoplay("None")
-
-    if(st.session_state.live_button_clicked):
-        st.session_state.live_button_clicked = False
-        return
-    
-    time_obj = st.session_state.time_slider
-    hours, minutes, seconds = time_obj.hour, time_obj.minute, time_obj.second
-
-    # Check if time actually changed
-    if (hours != st.session_state.hour or
-        minutes != st.session_state.minute or
-        seconds != st.session_state.second):
-
-        st.session_state.hour = hours
-        st.session_state.minute = minutes
-        st.session_state.second = seconds
-        st.session_state.slider_currently_being_dragged = True
-
-        # Fetch placeholders from session_state inside the update function
-        update_image_display(direction="closest")
-        st.session_state.slider_currently_being_dragged = False
-
-        st.session_state.in_playback_mode = True
-
 def on_fast_reverse_button():
     """Handle fast reverse button click."""
     set_autoplay("reverse")
@@ -333,7 +274,6 @@ def display_most_recent_image():
     # Search backwards ("down") for the latest image before now
     update_image_display(direction="down")
     st.session_state.need_to_display_recent = False # Mark as done
-    #sync_time_slider()
 
 # --- UI Building Functions ---
 
@@ -378,6 +318,7 @@ def build_sidebar(show_resolution_setting):
 
 def generate_timeline_image(width=800, height=32):
     """Generate an image for the timeline bar based on available data."""
+    #print(f"generate_timeline_image: {width}, {height}")
     session = st.session_state.get('session', 'Default')
     data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
 
@@ -541,14 +482,11 @@ def on_timeline_click(coords):
     # Calculate the time position based on click position
     x = coords['x']
     width = coords.get('width', 1)
-    
-    # Calculate the position as a percentage of the day
     if width <= 0:
         return  # Avoid division by zero
-        
-    day_percentage = x / width
     
-    # Clamp percentage to valid range [0,1]
+    # Calculate the position as a percentage of the day
+    day_percentage = x / width
     day_percentage = max(0, min(1, day_percentage))
     
     # Convert to hours, minutes, seconds
@@ -565,9 +503,6 @@ def on_timeline_click(coords):
 
     # Update display and mark that a new time was selected
     update_image_display(direction="closest")
-    sync_time_slider()
-
-    #set_autoplay("None")
 
 def build_main_area():
     """Create the main UI area elements and return placeholders."""
