@@ -112,13 +112,6 @@ def on_prev_button(stopAuto=True):
     st.session_state.in_playback_mode = True
     # Decrement time logic
     tweek_time('down')
-    # Decrement time logic
-    #dt = datetime.combine(st.session_state.date, datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second))
-    #dt -= timedelta(seconds=1)
-    #st.session_state.browsing_date = dt.date()
-    #st.session_state.hour = dt.hour
-    #st.session_state.minute = dt.minute
-    #st.session_state.second = dt.second
 
     # Fetch placeholders from session_state inside the update function
     if(stopAuto):
@@ -150,33 +143,25 @@ def tweek_time(direction):
     st.session_state.second = dt.second
 
 def toggle_live_pause():
-    """Handle Live/Pause button click."""    
+    """Handle Live/Pause button click."""
+    set_autoplay("None")
+    
     if st.session_state.in_playback_mode:
         # Go Live
-        set_autoplay("None")
-        st.session_state.live_button_clicked = True
         # Update browsing date/time to current (will be reflected in loop)
         current_time = datetime.now()
         st.session_state.browsing_date = current_time.date()
-
         st.session_state.in_playback_mode = False
         # Let the main loop update hour/min/sec/slider when live
     else:
         # Pause
-        st.session_state.live_button_clicked = False
-
-        # Store the timestamp of the *currently displayed* frame if available
-        # If last_frame exists, its timestamp should be in actual_timestamp
-        # If not, store current time as a fallback?
-        if st.session_state.last_frame is None:
-            st.session_state.actual_timestamp = datetime.now() # Fallback
-        # No need to explicitly set hour/min/sec here, they reflect the paused frame
         st.session_state.in_playback_mode = True
 
 def on_pause_button():
     """Handle pause button click."""
     set_autoplay("None")
     st.session_state.in_playback_mode = True
+    st.session_state.step_direction = "None"
     
 def on_fast_reverse_button():
     """Handle fast reverse button click."""
@@ -204,6 +189,8 @@ def new_image_display(frame):
 
 def update_image_display(direction=None):
     """Update the image display based on the current date and time."""
+    #print(f"update_image_display: {direction}")
+
     # Fetch placeholders from session state
     video_placeholder = st.session_state.video_placeholder
     status_placeholder = st.session_state.status_placeholder
@@ -464,7 +451,7 @@ def generate_timeline_image(width=1200, height=60):
 
     return timeline_img
 
-def generate_timeline_arrow(width=1200, height=20):
+def generate_timeline_arrow(width=1200, height=24):
     # Add special timestamp marker for current time
     if hasattr(st.session_state, 'hour') and hasattr(st.session_state, 'minute') and hasattr(st.session_state, 'second'):
         # Calculate position as percentage of day
@@ -541,6 +528,7 @@ def build_main_area():
     st.markdown("""
     <style>
     /* General layout */
+
     .block-container { padding-top: 0.7rem !important; padding-bottom: 0.7rem !important; }
     div[data-testid="stVerticalBlock"] > div { padding-top: 1px !important; padding-bottom: 1px !important; }
     div[data-testid="element-container"] { margin-top: 1px !important; margin-bottom: 1px !important; }
@@ -559,13 +547,14 @@ def build_main_area():
     div[data-testid="stDateInput"] input { padding: 2px 8px !important; height: 32px !important; font-size: 14px !important; background-color: #2e2e2e !important; color: #fff !important; border: 1px solid #555 !important; border-radius: 5px !important; text-align: center !important; font-weight: bold !important; margin: 0 !important; }
     div[data-testid="stDateInput"] svg { fill: #fff !important; }
     /* Slider */
-    div[data-testid="stSlider"] { padding: 0 !important; margin: -10px 0 0 0 !important; }
-    div[data-testid="stSlider"] > label { text-align: center !important; width: 100% !important; display: block !important; font-weight: bold !important; margin-bottom: 0 !important; height: 0 !important; overflow: hidden !important; }
-    div[data-testid="stSlider"] > div > div > div { background-color: #555 !important; } /* Track */
-    div[data-testid="stSlider"] > div > div > div > div { background-color: #0f0f0f !important; border-color: #fff !important; } /* Thumb */
-    div[data-testid="stSliderTickBarMin"], div[data-testid="stSliderTickBarMax"] { display: none !important; }
-    div[data-testid="stSlider"] > div { padding-top: 0 !important; margin-top: -5px !important; }
-    div[data-testid="element-container"]:has(div[data-testid="stSlider"]) { margin-top: -5px !important; padding-top: 0 !important; }
+    #div[data-testid="stSlider"] { padding: 0 !important; margin: -10px 0 0 0 !important; }
+    #div[data-testid="stSlider"] > label { text-align: center !important; width: 100% !important; display: block !important; font-weight: bold !important; margin-bottom: 0 !important; height: 0 !important; overflow: hidden !important; }
+    #div[data-testid="stSlider"] > div > div > div { background-color: #555 !important; } /* Track */
+    #div[data-testid="stSlider"] > div > div > div > div { background-color: #0f0f0f !important; border-color: #fff !important; } /* Thumb */
+    #div[data-testid="stSliderTickBarMin"], #div[data-testid="stSliderTickBarMax"] { display: none !important; }
+    #div[data-testid="stSlider"] > div { padding-top: 0 !important; margin-top: -5px !important; }
+    #div[data-testid="element-container"]:has(div[data-testid="stSlider"]) { margin-top: -5px !important; padding-top: 0 !important; }
+
     /* Live button styling */
     button[data-testid="baseButton-primary"]:has(div:contains("Live")) {
         background-color: #ff4b4b !important;
@@ -637,12 +626,12 @@ def build_main_area():
                   on_click=toggle_live_pause, disabled=not is_capturing, type=button_type)
 
     # Timeline Bar - Replace HTML approach with image
-    st.markdown('<div style="margin-top:-5px; margin-bottom:2px;">', unsafe_allow_html=True)
+    #st.markdown('<div style="margin-top:-5px; margin-bottom:-2px;">', unsafe_allow_html=True)
     
     # Time Arrow above timeline
     timearrow_placeholder = st.empty()
     #timearrow_img = generate_timeline_arrow()
-    timearrow_img = np.zeros((20, 1200, 3), dtype=np.uint8)
+    timearrow_img = np.zeros((24, 1200, 3), dtype=np.uint8)
     timearrow_placeholder.image(timearrow_img, channels="RGB", use_container_width=True)
 
     # Generate timeline image with appropriate width and increased height (50% taller)
@@ -657,7 +646,7 @@ def build_main_area():
         key="timeline_bar",
         use_column_width=True
     )
-    st.markdown('</div>', unsafe_allow_html=True)
+    #st.markdown('</div>', unsafe_allow_html=True)
     
     # Handle timeline click only if it's a new click (different from previous)
     if clicked_coords and 'x' in clicked_coords:
@@ -675,6 +664,10 @@ def build_main_area():
 
     # Create Video Placeholder *after* the controls container
     video_placeholder = st.empty() 
+    #if st.session_state.last_frame is not None:
+    #    new_image_display(st.session_state.last_frame)
+    #    st.session_state.video_capture.image_just_saved = False
+
     # Return placeholders needed outside this build function (by callbacks and main loop)
     return video_placeholder, time_display, timearrow_placeholder
 
@@ -688,6 +681,10 @@ def run_ui_update_loop():
     status_placeholder = st.session_state.status_placeholder
     error_placeholder = st.session_state.error_placeholder
     time_display = st.session_state.time_display
+
+    if st.session_state.last_frame is not None:
+        #print(f"last_frame is not None: {st.session_state.step_direction}")
+        update_image_display(st.session_state.step_direction)
 
     while True:
         heartbeat()
@@ -726,6 +723,13 @@ def run_ui_update_loop():
 
             else: # Live View Mode (Capture Running)
                 frame, fps, width, height = st.session_state.video_capture.get_frame()
+                if(False and st.session_state.video_capture.image_just_saved):
+                    st.session_state.video_capture.image_just_saved = False
+                    status_placeholder.text(st.session_state.video_capture.save_status)
+                    st.session_state.last_frame = frame.copy()
+                    print("just_saved")
+                    st.rerun()          # rebuild timeline
+
                 if frame is not None:
                     # Update time display and slider for live view
                     current_time = datetime.now()
@@ -735,12 +739,7 @@ def run_ui_update_loop():
                     st.session_state.second = current_time.second
                     # Store & display live frame
                     st.session_state.last_frame = frame.copy()
-                    #video_placeholder.image(frame, channels="BGR", use_container_width=True)
-                    #new_image_display(frame)
-                    if(st.session_state.image_just_saved):
-                        update_image_display('up')
-                    else:
-                        new_image_display(frame)
+                    new_image_display(frame)
 
                     # Update internal stats
                     st.session_state.video_capture.current_fps = fps
@@ -751,10 +750,11 @@ def run_ui_update_loop():
                     if st.session_state.video_capture.image_just_saved:
                         new_status = st.session_state.video_capture.save_status
                         # Clear flag after timeout
-                        if True or (time.time() - st.session_state.video_capture.image_saved_time > 3):
-                            st.session_state.video_capture.image_just_saved = False
+                        #if True or (time.time() - st.session_state.video_capture.image_saved_time > 3):
+                         #   st.session_state.video_capture.image_just_saved = False
                     else:
                         new_status = f"Live View - FPS: {fps}"
+
                 # else: Keep last frame if get_frame returns None briefly?
 
         else: # Capture Stopped
@@ -785,5 +785,8 @@ def run_ui_update_loop():
             status_placeholder.text(new_status)
             st.session_state.status_message = new_status # Store new status
 
+
         # Main loop delay
         time.sleep(0.01)
+
+    print("exit run_ui_update_loop!")
