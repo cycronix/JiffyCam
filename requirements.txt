@@ -1,4 +1,4 @@
-streamlit>=1.42.0
+streamlit>=1.44.0
 opencv-python>=4.8.0
 PyYAML>=6.0.0
 numpy<=2.1.1,>=1.23.0

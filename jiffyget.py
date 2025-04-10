@@ -30,7 +30,7 @@ def jiffyget(time_posix: float, cam_name: str,
         Tuple of (frame, timestamp) or None if no image found
     """
     global timestamps
-
+    #print(f"jiffyget: time_posix: {time_posix}, cam_name: {cam_name}, session: {session}, data_dir: {data_dir}, direction: {direction}")
     # Create target datetime for the selected time
     target_timestamp = time_posix * 1000.
     browse_date = datetime.fromtimestamp(time_posix).date()
@@ -51,42 +51,37 @@ def jiffyget(time_posix: float, cam_name: str,
     # Find the closest timestamp based on direction
     timestamps.sort()
     oldest_timestamp = timestamps[0][0]
-    newest_timestamp = timestamps[-1][0]   
-    closest_dir = None
-    closest_timestamp = None 
-
-    if direction == "up":  # Find at-or-after for increasing time
-        for timestamp, dir_path in timestamps:
-            if timestamp >= target_timestamp:
-                closest_dir = dir_path
-                closest_timestamp = timestamp
-                break
-    else:  # Find at-or-before for decreasing time (default behavior)
-        for timestamp, dir_path in timestamps:
-            if timestamp <= target_timestamp:
-                closest_dir = dir_path
-                closest_timestamp = timestamp
-            else:
-                break
-   
-    if closest_dir is None:
-        if(direction == "up"):
-            closest_dir = timestamps[-1][1]
-            closest_timestamp = timestamps[-1][0]
-        else:
-            closest_dir = timestamps[0][1]
-            closest_timestamp = timestamps[0][0]
-
-    #    return None, None  # return None if no match found
-
+    newest_timestamp = timestamps[-1][0] 
+    #print(f"oldest_timestamp: {oldest_timestamp}, newest_timestamp: {newest_timestamp}, target_timestamp: {target_timestamp}")
     # If closest timestamp is outside range of timestamps, use oldest or newest
-    #print(f"closest_dir: {closest_dir}, closest_timestamp: {closest_timestamp}, oldest_timestamp: {oldest_timestamp}, newest_timestamp: {newest_timestamp}")
-    if(closest_timestamp < oldest_timestamp):
+    if(target_timestamp <= oldest_timestamp):
         closest_dir = timestamps[0][1]
         closest_timestamp = timestamps[0][0]
-    elif(closest_timestamp > newest_timestamp):
+        eof = True
+    elif(target_timestamp >= newest_timestamp):
         closest_dir = timestamps[-1][1]
         closest_timestamp = newest_timestamp
+        eof = True
+    else:
+        eof = False
+        closest_dir = None
+        closest_timestamp = None 
+        if direction == "up":  # Find at-or-after for increasing time
+            for timestamp, dir_path in timestamps:
+                if timestamp >= target_timestamp:
+                    closest_dir = dir_path
+                    closest_timestamp = timestamp
+                    break
+        else:  # Find at-or-before for decreasing time (default behavior)
+            for timestamp, dir_path in timestamps:
+                if timestamp <= target_timestamp:
+                    closest_dir = dir_path
+                    closest_timestamp = timestamp
+                else:
+                    break
+    
+    if closest_dir is None:
+        return None, None, eof
 
     # Get the image file in the closest directory
     base_name = os.path.basename(cam_name)
@@ -96,9 +91,9 @@ def jiffyget(time_posix: float, cam_name: str,
         # Read the image and convert timestamp to datetime for display
         frame = cv2.imread(image_path)
         #closest_datetime = datetime.fromtimestamp(closest_timestamp / 1000)
-        return frame, closest_timestamp
+        return frame, closest_timestamp, eof
     
-    return None, None
+    return None, None, eof
 
 def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Optional[datetime], Optional[datetime]]:
     """Get the oldest and newest timestamps available for the camera across all dates.

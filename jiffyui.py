@@ -17,17 +17,21 @@ from jiffyget import jiffyget, get_locations
 
 # globals within jiffyui.py
 autoplay_direction = "None"
+need_to_rerun = False
 
 # --- UI Helper Functions ---
 def heartbeat():
     """Heartbeat to check if the UI is still running.""" 
-    global autoplay_direction
+    global autoplay_direction, need_to_rerun
+
     #print(f"autoplay_direction: {autoplay_direction}")
     if(autoplay_direction == "forward"):
         on_next_button(False)
     elif(autoplay_direction == "reverse"):
-        on_prev_button(False)    
-        #st.rerun()   # want to refresh timeline position pointer, maybe in a st.fragment?
+        on_prev_button(False)   
+
+    if need_to_rerun:
+        st.rerun()   # refresh timeline position pointer
 
 def set_autoplay(direction):
     """Set autoplay direction."""
@@ -106,36 +110,44 @@ def on_prev_button(stopAuto=True):
     if(stopAuto):
         set_autoplay("None")
     st.session_state.in_playback_mode = True
-    st.session_state.slider_currently_being_dragged = False
-
     # Decrement time logic
-    dt = datetime.combine(st.session_state.date, datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second))
-    dt -= timedelta(seconds=1)
-    st.session_state.browsing_date = dt.date()
-    st.session_state.hour = dt.hour
-    st.session_state.minute = dt.minute
-    st.session_state.second = dt.second
+    tweek_time('down')
+    # Decrement time logic
+    #dt = datetime.combine(st.session_state.date, datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second))
+    #dt -= timedelta(seconds=1)
+    #st.session_state.browsing_date = dt.date()
+    #st.session_state.hour = dt.hour
+    #st.session_state.minute = dt.minute
+    #st.session_state.second = dt.second
 
     # Fetch placeholders from session_state inside the update function
-    update_image_display(direction="down")
+    if(stopAuto):
+        st.session_state.step_direction = "down"    # let rerun handle the update  
+    else:
+        update_image_display(direction="down")
 
 def on_next_button(stopAuto=True):
     """Handle next image button click."""
     if(stopAuto):
         set_autoplay("None")
     st.session_state.in_playback_mode = True
-    st.session_state.slider_currently_being_dragged = False
-
     # Increment time logic
+    tweek_time('up')
+
+    # Fetch placeholders from session_state inside the update function
+    if(stopAuto):
+        st.session_state.step_direction = "up"      # let rerun handle the update
+    else:
+        update_image_display(direction="up")
+
+def tweek_time(direction):
+    """Tweek the time by 1 second in the given direction."""
     dt = datetime.combine(st.session_state.date, datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second))
-    dt += timedelta(seconds=1)
+    dt += timedelta(seconds=1) if direction == "up" else -timedelta(seconds=1)
     st.session_state.browsing_date = dt.date()
     st.session_state.hour = dt.hour
     st.session_state.minute = dt.minute
     st.session_state.second = dt.second
-
-    # Fetch placeholders from session_state inside the update function
-    update_image_display(direction="up")
 
 def toggle_live_pause():
     """Handle Live/Pause button click."""    
@@ -169,18 +181,26 @@ def on_pause_button():
 def on_fast_reverse_button():
     """Handle fast reverse button click."""
     set_autoplay("reverse")
+    tweek_time('down')
+    # Set to playback mode like other buttons do
+    st.session_state.in_playback_mode = True
 
 def on_fast_forward_button():
     """Handle fast forward button click."""
     set_autoplay("forward")
+    tweek_time('up')
+    # Set to playback mode like other buttons do
+    st.session_state.in_playback_mode = True
 
 # --- UI Update Functions ---
 def new_image_display(frame):
     """Display a new image based on the current date and time."""
     video_placeholder = st.session_state.video_placeholder
     video_placeholder.image(frame, channels="BGR", use_container_width=True)
-    #video_placeholder.image(streamlit_image_coordinates(frame, key="image_display"), channels="BGR", use_container_width=True)
-    #print(f"video_placeholder.coords: {video_placeholder.coords}")
+
+    timearrow_placeholder = st.session_state.timearrow_placeholder
+    ta_img = generate_timeline_arrow()
+    timearrow_placeholder.image(ta_img, channels="RGB", use_container_width=True)
 
 def update_image_display(direction=None):
     """Update the image display based on the current date and time."""
@@ -188,8 +208,6 @@ def update_image_display(direction=None):
     video_placeholder = st.session_state.video_placeholder
     status_placeholder = st.session_state.status_placeholder
     time_display = st.session_state.time_display
-
-    #st.session_state.in_playback_mode = True
 
     # --- Get necessary state for jiffyget ---
     session = st.session_state.get('session', 'Default') # Safely get session
@@ -201,13 +219,15 @@ def update_image_display(direction=None):
     time_posix = datetime.combine(browse_date, datetime.min.time()) + timedelta(hours=st.session_state.hour, minutes=st.session_state.minute, seconds=st.session_state.second)
     time_posix = float(time_posix.timestamp())
 
-    closest_image, timestamp = jiffyget(
+    closest_image, timestamp, eof = jiffyget(
         time_posix,
         st.session_state.cam_name,
         session,       # Pass session variable
         data_dir,      # Pass data_dir variable
         direction
     )
+    if(eof):
+        set_autoplay("None")
 
     success = False
     if closest_image is not None:
@@ -217,15 +237,15 @@ def update_image_display(direction=None):
             dts = datetime.fromtimestamp(timestamp/1000)
             st.session_state.actual_timestamp = dts
 
-            # Update UI placeholders
-            #video_placeholder.image(frame, channels="BGR", use_container_width=True)
-            new_image_display(closest_image)
-
             # Update time state to match the found image
             st.session_state.hour = dts.hour
             st.session_state.minute = dts.minute
             st.session_state.second = dts.second
             st.session_state.browsing_date = dts.date() # Keep browsing date in sync with found image
+
+            # Update UI placeholders
+            #video_placeholder.image(frame, channels="BGR", use_container_width=True)
+            new_image_display(closest_image)
 
             # Update time display text
             time_display.markdown(
@@ -316,7 +336,7 @@ def build_sidebar(show_resolution_setting):
 
     return status_placeholder, error_placeholder
 
-def generate_timeline_image(width=800, height=32):
+def generate_timeline_image(width=1200, height=60):
     """Generate an image for the timeline bar based on available data."""
     #print(f"generate_timeline_image: {width}, {height}")
     session = st.session_state.get('session', 'Default')
@@ -335,7 +355,7 @@ def generate_timeline_image(width=800, height=32):
     
     # Add equal padding for top and bottom margins
     text_padding = 20  # Pixels below timeline for text
-    top_margin = 20  # Match top margin to text padding (was 12)
+    top_margin = 0  # Match top margin to text padding (was 12)
     timeline_y_start = top_margin  # Timeline now starts below top margin
     timeline_y_end = timeline_y_start + height
     total_height = timeline_y_end + text_padding  # Total image height
@@ -428,34 +448,6 @@ def generate_timeline_image(width=800, height=32):
         cv2.line(overlay, (x_pos, start_y), (x_pos, end_y), hour_marker_color, thickness)
         cv2.addWeighted(overlay, alpha, timeline_img, 1-alpha, 0, timeline_img)
 
-    # Add special timestamp marker for current time
-    if hasattr(st.session_state, 'hour') and hasattr(st.session_state, 'minute') and hasattr(st.session_state, 'second'):
-        # Calculate position as percentage of day
-        current_seconds = st.session_state.hour * 3600 + st.session_state.minute * 60 + st.session_state.second
-        day_percentage = current_seconds / (24 * 60 * 60)
-        x_pos = int(day_percentage * width)
-        
-        # Skip if too close to edges
-        if x_pos >= radius and x_pos <= width - radius:
-            # Draw special marker (thicker line with yellow color)
-            cv_thickness = max(2, int(width/800))  # Thicker than regular markers
-            
-            # Draw semi-transparent triangle ABOVE timeline (pointing down)
-            triangle_height = int(top_margin * 0.75)  # Adjusted to 75% of top margin height
-            triangle_width = int(height * 0.5)  # Slightly wider triangle
-            
-            # Triangle points (pointing down)
-            bottom_point = (x_pos, timeline_y_start - 1)  # Just above timeline
-            left_point = (x_pos - triangle_width//2, timeline_y_start - triangle_height)
-            right_point = (x_pos + triangle_width//2, timeline_y_start - triangle_height)
-            
-            # Draw the triangle
-            triangle_pts = np.array([bottom_point, left_point, right_point], np.int32)
-            triangle_pts = triangle_pts.reshape((-1, 1, 2))
-            overlay = timeline_img.copy()
-            cv2.fillPoly(overlay, [triangle_pts], special_marker_color)
-            cv2.addWeighted(overlay, 0.8, timeline_img, 0.2, 0, timeline_img)
-
     # Add marks for timestamps
     if timestamps:
         for position in timestamps:
@@ -472,10 +464,46 @@ def generate_timeline_image(width=800, height=32):
 
     return timeline_img
 
+def generate_timeline_arrow(width=1200, height=20):
+    # Add special timestamp marker for current time
+    if hasattr(st.session_state, 'hour') and hasattr(st.session_state, 'minute') and hasattr(st.session_state, 'second'):
+        # Calculate position as percentage of day
+        current_seconds = st.session_state.hour * 3600 + st.session_state.minute * 60 + st.session_state.second
+        day_percentage = current_seconds / (24 * 60 * 60)
+        #print(f"day_percentage: {day_percentage}")
+        x_pos = int(day_percentage * width)
+        radius = int(height/2)
+        timeline_y_start = height -1
+        timeline_y_end = 1
+        timeline_img = np.zeros((height, width, 3), dtype=np.uint8)
+        special_marker_color = (255, 255, 0)  # Yellow in BGR format
+
+        # Skip if too close to edges
+        if x_pos >= radius and x_pos <= width - radius:
+            # Draw special marker (thicker line with yellow color)
+            cv_thickness = max(2, int(width/800))  # Thicker than regular markers
+            
+            # Draw semi-transparent triangle ABOVE timeline (pointing down)
+            triangle_height = int(height * 0.75)  # Adjusted to 75% of top margin height
+            triangle_width = int(height * 0.75)  # Slightly wider triangle
+            
+            # Triangle points (pointing down)
+            bottom_point = (x_pos, timeline_y_start - 1)  # Just above timeline
+            left_point = (x_pos - triangle_width//2, timeline_y_start - triangle_height)
+            right_point = (x_pos + triangle_width//2, timeline_y_start - triangle_height)
+            
+            # Draw the triangle
+            triangle_pts = np.array([bottom_point, left_point, right_point], np.int32)
+            triangle_pts = triangle_pts.reshape((-1, 1, 2))
+            overlay = timeline_img.copy()
+            cv2.fillPoly(overlay, [triangle_pts], special_marker_color)
+            cv2.addWeighted(overlay, 0.8, timeline_img, 0.2, 0, timeline_img)
+
+    return timeline_img
+
 def on_timeline_click(coords):
     """Handle clicks on the timeline image."""
     set_autoplay("None")
-    
     if coords is None or 'x' not in coords:
         return
     
@@ -500,12 +528,15 @@ def on_timeline_click(coords):
     st.session_state.minute = minutes
     st.session_state.second = seconds
     st.session_state.in_playback_mode = True
-
+    
+    #print("st.session_state.hour", st.session_state.hour, "st.session_state.minute", st.session_state.minute, "st.session_state.second", st.session_state.second)
     # Update display and mark that a new time was selected
-    update_image_display(direction="closest")
+    #update_image_display(direction="closest")
+    #st.rerun()
 
 def build_main_area():
     """Create the main UI area elements and return placeholders."""
+    #print("build_main_area")
     # Apply CSS for main area styling
     st.markdown("""
     <style>
@@ -535,6 +566,12 @@ def build_main_area():
     div[data-testid="stSliderTickBarMin"], div[data-testid="stSliderTickBarMax"] { display: none !important; }
     div[data-testid="stSlider"] > div { padding-top: 0 !important; margin-top: -5px !important; }
     div[data-testid="element-container"]:has(div[data-testid="stSlider"]) { margin-top: -5px !important; padding-top: 0 !important; }
+    /* Live button styling */
+    button[data-testid="baseButton-primary"]:has(div:contains("Live")) {
+        background-color: #ff4b4b !important;
+        border-color: #ff4b4b !important;
+        color: white !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -560,7 +597,7 @@ def build_main_area():
     with time_cols[0]: # Time Display Placeholder
         time_display = st.empty()
         # Set initial display value
-        time_display.markdown(f'<div class="time-display">{format_time_12h(st.session_state.hour, st.session_state.minute, st.session_state.second)}</div>', unsafe_allow_html=True)
+        #time_display.markdown(f'<div class="time-display">{format_time_12h(st.session_state.hour, st.session_state.minute, st.session_state.second)}</div>', unsafe_allow_html=True)
     with time_cols[1]: # Fast Reverse Button
         st.button("⏪", key="fast_reverse_button", use_container_width=True, help="Fast Reverse",
                   on_click=on_fast_reverse_button)
@@ -583,14 +620,31 @@ def build_main_area():
     with time_cols[7]: # Live/Pause Button
         is_capturing = st.session_state.video_capture.is_capturing()
         in_playback = st.session_state.in_playback_mode
-        button_text = "Live" if in_playback else "⏸"
-        button_help = "Go Live" if in_playback else "Pause"
+        
+        # Always display "Live" text, but with different styles
+        button_text = "Live"
+        
+        if in_playback:
+            # Not in live mode - unfilled button
+            button_help = "Switch to live view"
+            button_type = "secondary"  # Gray (unfilled) button
+        else:
+            # In live mode - filled red button
+            button_help = "Pause live view"
+            button_type = "primary"    # Red (filled) button via CSS
+        
         st.button(button_text, key="live_btn", use_container_width=True, help=button_help,
-                  on_click=toggle_live_pause, disabled=not is_capturing)
+                  on_click=toggle_live_pause, disabled=not is_capturing, type=button_type)
 
     # Timeline Bar - Replace HTML approach with image
     st.markdown('<div style="margin-top:-5px; margin-bottom:2px;">', unsafe_allow_html=True)
     
+    # Time Arrow above timeline
+    timearrow_placeholder = st.empty()
+    #timearrow_img = generate_timeline_arrow()
+    timearrow_img = np.zeros((20, 1200, 3), dtype=np.uint8)
+    timearrow_placeholder.image(timearrow_img, channels="RGB", use_container_width=True)
+
     # Generate timeline image with appropriate width and increased height (50% taller)
     timeline_img = generate_timeline_image(width=1200, height=60)  # Increased from 40 to 60
     
@@ -617,21 +671,12 @@ def build_main_area():
             # Save current click to avoid reprocessing
             st.session_state.prev_timeline_coords = current_click
 
-    # Time Slider
-    #date_str = st.session_state.date.strftime("%Y-%m-%d")
-    #st.slider(date_str, min_value=datetime_time(0,0,0), max_value=datetime_time(23,59,59),
-    #          key="time_slider", step=timedelta(seconds=1), label_visibility="hidden",
-    #          # Callback no longer needs args
-    #          on_change=on_time_slider_change)
-
     st.markdown("</div>", unsafe_allow_html=True) # Close centered container
 
     # Create Video Placeholder *after* the controls container
     video_placeholder = st.empty() 
-
     # Return placeholders needed outside this build function (by callbacks and main loop)
-    return video_placeholder, time_display
-
+    return video_placeholder, time_display, timearrow_placeholder
 
 # --- Main UI Update Loop (runs in jiffycam.py) ---
 # This function is moved from jiffycam.py
@@ -654,9 +699,8 @@ def run_ui_update_loop():
             status_placeholder.text("Status: Error")
             st.session_state.status_message = "Status: Error"
             # Keep last frame visible on error if possible
-            if st.session_state.last_frame is not None:
-                #video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
-                new_image_display(st.session_state.last_frame)
+            #if st.session_state.last_frame is not None:
+            #      new_image_display(st.session_state.last_frame)
             break # Exit loop
 
         is_capturing = st.session_state.video_capture.is_capturing()
@@ -673,7 +717,7 @@ def run_ui_update_loop():
                 # Ensure paused frame is displayed
                 if st.session_state.last_frame is not None:
                     #video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
-                    new_image_display(st.session_state.last_frame)
+                    #new_image_display(st.session_state.last_frame)
                     ts = st.session_state.actual_timestamp
                     new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback Mode"
                 else:
@@ -686,15 +730,18 @@ def run_ui_update_loop():
                     # Update time display and slider for live view
                     current_time = datetime.now()
                     time_display.markdown(f'<div class="time-display">{format_time_12h(current_time.hour, current_time.minute, current_time.second)}</div>', unsafe_allow_html=True)
-                    if not st.session_state.get('slider_currently_being_dragged', False):
-                        st.session_state.hour = current_time.hour
-                        st.session_state.minute = current_time.minute
-                        st.session_state.second = current_time.second
-
+                    st.session_state.hour = current_time.hour
+                    st.session_state.minute = current_time.minute
+                    st.session_state.second = current_time.second
                     # Store & display live frame
                     st.session_state.last_frame = frame.copy()
                     #video_placeholder.image(frame, channels="BGR", use_container_width=True)
-                    new_image_display(frame)
+                    #new_image_display(frame)
+                    if(st.session_state.image_just_saved):
+                        update_image_display('up')
+                    else:
+                        new_image_display(frame)
+
                     # Update internal stats
                     st.session_state.video_capture.current_fps = fps
                     st.session_state.video_capture.current_width = width
@@ -704,7 +751,7 @@ def run_ui_update_loop():
                     if st.session_state.video_capture.image_just_saved:
                         new_status = st.session_state.video_capture.save_status
                         # Clear flag after timeout
-                        if time.time() - st.session_state.video_capture.image_saved_time > 3:
+                        if True or (time.time() - st.session_state.video_capture.image_saved_time > 3):
                             st.session_state.video_capture.image_just_saved = False
                     else:
                         new_status = f"Live View - FPS: {fps}"
@@ -715,10 +762,11 @@ def run_ui_update_loop():
                 # Playback Mode (Capture Stopped): Show paused frame
                 if st.session_state.last_frame is not None:
                     #video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
-                    new_image_display(st.session_state.last_frame)
+                    #new_image_display(st.session_state.last_frame)
 
                     ts = st.session_state.actual_timestamp
                     new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback (Stopped)"
+                    #st.session_state.last_frame = None  # mjm
                 else:
                     new_status = "Playback (Stopped - No Frame)"
                     video_placeholder.empty()
