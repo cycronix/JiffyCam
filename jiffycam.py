@@ -25,8 +25,7 @@ from jiffycapture import VideoCapture
 from jiffyui import (
     build_sidebar, 
     build_main_area, 
-    run_ui_update_loop, 
-    display_most_recent_image
+    run_ui_update_loop
     # Callbacks and helpers are internal to jiffyui now
 )
 
@@ -51,14 +50,14 @@ def main():
         st.session_state.video_capture = VideoCapture()
     
     # UI interaction state flags
-    if 'in_playback_mode' not in st.session_state: st.session_state.in_playback_mode = False
+    if 'in_playback_mode' not in st.session_state: st.session_state.in_playback_mode = True
     if 'rt_capture' not in st.session_state: st.session_state.rt_capture = False
     if 'need_to_display_recent' not in st.session_state: st.session_state.need_to_display_recent = True
     if 'live_button_clicked' not in st.session_state: st.session_state.live_button_clicked = False
     if 'status_message' not in st.session_state: st.session_state.status_message = "Initializing..."
-    #if 'image_just_saved' not in st.session_state: st.session_state.image_just_saved = False
+    if 'image_just_saved' not in st.session_state: st.session_state.image_just_saved = False
     if 'step_direction' not in st.session_state: st.session_state.step_direction = None
-
+    if 'autoplay_direction' not in st.session_state: st.session_state.autoplay_direction = None
     # Configuration related state (derived from video_capture.config)
     # Ensure device_aliases is OrderedDict
     aliases = st.session_state.video_capture.config.get('device_aliases', {'Default': '0'})
@@ -128,13 +127,9 @@ def main():
     st.session_state.video_placeholder, st.session_state.time_display, st.session_state.timearrow_placeholder = \
         build_main_area()
 
-    # --- Initial Image Display --- 
-    if st.session_state.need_to_display_recent and not st.session_state.video_capture.is_capturing():
-        display_most_recent_image() # Fetches placeholders from session_state
-    else:
-        st.session_state.video_placeholder.info("Initialize capture or select time.")
-        st.session_state.status_placeholder.text("Status: Idle")
-        st.session_state.status_message = "Status: Idle"
+    st.session_state.video_placeholder.info("Initialize capture or select time.")
+    st.session_state.status_placeholder.text("Status: Idle")
+    st.session_state.status_message = "Status: Idle"
 
     # --- Run Main UI Update Loop --- 
     run_ui_update_loop() # Loop fetches placeholders from session_state

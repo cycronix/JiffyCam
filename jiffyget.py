@@ -72,14 +72,32 @@ def jiffyget(time_posix: float, cam_name: str,
                     closest_dir = dir_path
                     closest_timestamp = timestamp
                     break
-        else:  # Find at-or-before for decreasing time (default behavior)
+        elif direction == "down":  # Find at-or-before for decreasing time (default behavior)
             for timestamp, dir_path in timestamps:
                 if timestamp <= target_timestamp:
                     closest_dir = dir_path
                     closest_timestamp = timestamp
                 else:
                     break
-    
+        else:
+            dt = 0
+            prev_dt = 0
+            prev_timestamp = None
+            prev_dir = None
+            for timestamp, dir_path in timestamps:
+                dt = timestamp - target_timestamp
+                if dt > 0:
+                    if dt < -prev_dt:
+                        closest_dir = dir_path
+                        closest_timestamp = timestamp
+                    else:
+                        closest_dir = prev_dir
+                        closest_timestamp = prev_timestamp
+                    break
+                prev_dt = dt
+                prev_timestamp = timestamp
+                prev_dir = dir_path
+
     if closest_dir is None:
         return None, None, eof
 

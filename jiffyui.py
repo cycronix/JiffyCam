@@ -16,27 +16,28 @@ from jiffyconfig import RESOLUTIONS   # Import necessary components from other m
 from jiffyget import jiffyget, get_locations
 
 # globals within jiffyui.py
-autoplay_direction = "None"
-need_to_rerun = False
+#autoplay_direction = "None"
+
+# following just to avoid error when importing YOLO
+import torch
+torch.classes.__path__ = [] # add this line to manually set it to empty. 
+
+# TODO:  fix double-click required and other Live toggle issues
 
 # --- UI Helper Functions ---
 def heartbeat():
     """Heartbeat to check if the UI is still running.""" 
-    global autoplay_direction, need_to_rerun
-
-    #print(f"autoplay_direction: {autoplay_direction}")
-    if(autoplay_direction == "forward"):
+    #global autoplay_direction
+    #print(f"autoplay_direction: {st.session_state.autoplay_direction}")
+    if(st.session_state.autoplay_direction == "forward"):
         on_next_button(False)
-    elif(autoplay_direction == "reverse"):
+    elif(st.session_state.autoplay_direction == "reverse"):
         on_prev_button(False)   
-
-    if need_to_rerun:
-        st.rerun()   # refresh timeline position pointer
 
 def set_autoplay(direction):
     """Set autoplay direction."""
-    global autoplay_direction
-    autoplay_direction = direction
+    #global autoplay_direction
+    st.session_state.autoplay_direction = direction
 
 def format_time_12h(hour, minute, second):
     """Format time in 12-hour format with AM/PM indicator."""
@@ -92,9 +93,6 @@ def toggle_rt_capture():
         st.session_state.video_capture.stop_capture()
         st.session_state.in_playback_mode = True   
 
-    # Fetch placeholders from session_state inside the update function
-    #update_image_display(direction="down")
-
 def on_date_change():
     """Handle date picker change."""
     set_autoplay("None")
@@ -144,7 +142,7 @@ def tweek_time(direction):
 
 def toggle_live_pause():
     """Handle Live/Pause button click."""
-    set_autoplay("None")
+    #set_autoplay("None")
     
     if st.session_state.in_playback_mode:
         # Go Live
@@ -186,7 +184,7 @@ def new_image_display(frame):
     timearrow_placeholder = st.session_state.timearrow_placeholder
     ta_img = generate_timeline_arrow()
     timearrow_placeholder.image(ta_img, channels="RGB", use_container_width=True)
-
+    
 def update_image_display(direction=None):
     """Update the image display based on the current date and time."""
     #print(f"update_image_display: {direction}")
@@ -231,7 +229,6 @@ def update_image_display(direction=None):
             st.session_state.browsing_date = dts.date() # Keep browsing date in sync with found image
 
             # Update UI placeholders
-            #video_placeholder.image(frame, channels="BGR", use_container_width=True)
             new_image_display(closest_image)
 
             # Update time display text
@@ -263,8 +260,6 @@ def update_image_display(direction=None):
         else: # No previous frame, clear the placeholder
             video_placeholder.empty()
 
-    # Ensure playback mode remains true
-    #st.session_state.in_playback_mode = True
     return success
 
 def display_most_recent_image():
@@ -283,7 +278,6 @@ def display_most_recent_image():
     st.session_state.need_to_display_recent = False # Mark as done
 
 # --- UI Building Functions ---
-
 def build_sidebar(show_resolution_setting):
     """Create the sidebar UI elements and return placeholders."""
     with st.sidebar:
@@ -515,11 +509,8 @@ def on_timeline_click(coords):
     st.session_state.minute = minutes
     st.session_state.second = seconds
     st.session_state.in_playback_mode = True
+    set_autoplay("none")
     
-    #print("st.session_state.hour", st.session_state.hour, "st.session_state.minute", st.session_state.minute, "st.session_state.second", st.session_state.second)
-    # Update display and mark that a new time was selected
-    #update_image_display(direction="closest")
-    #st.rerun()
 
 def build_main_area():
     """Create the main UI area elements and return placeholders."""
@@ -530,30 +521,17 @@ def build_main_area():
     /* General layout */
 
     .block-container { padding-top: 0.7rem !important; padding-bottom: 0.7rem !important; }
-    div[data-testid="stVerticalBlock"] > div { padding-top: 1px !important; padding-bottom: 1px !important; }
-    div[data-testid="element-container"] { margin-top: 1px !important; margin-bottom: 1px !important; }
+    
     h1, h2, h3 { margin-top: 0.3rem !important; margin-bottom: 0.3rem !important; padding: 0 !important; }
     hr { margin: 0 !important; padding: 0 !important; }
-    /* Video */
-    div[data-testid="stImage"] { margin-top: 2px !important; margin-bottom: 2px !important; }
-    div[data-testid="stImage"] > img { margin: 2px 0 !important; padding: 2px 0 !important; }
     /* Time Display */
     .time-display { font-size: 1.6rem; font-weight: 400; text-align: center; font-family: "Source Sans Pro", sans-serif; background: transparent; color: #333; border-radius: 5px; padding: 2px; margin: 2px 0; }
     @media (prefers-color-scheme: dark) { .time-display { color: #e0e0e0 !important; } }
-    [data-testid="stAppViewContainer"][data-theme="dark"] .time-display { color: #e0e0e0 !important; }
     /* Date Picker */
-    div[data-testid="stDateInput"] { margin: 10px 0 0 0 !important; padding: 1px 0 !important; display: flex !important; flex-direction: column !important; justify-content: center !important; }
+    div[data-testid="stDateInput"] { margin: 10px 0 0 0 !important; padding: 6px 0 !important; display: flex !important; flex-direction: column !important; justify-content: center !important; }
     div[data-testid="stDateInput"] > div { margin-bottom: 0 !important; display: flex !important; align-items: center !important; height: 32px !important; }
     div[data-testid="stDateInput"] input { padding: 2px 8px !important; height: 32px !important; font-size: 14px !important; background-color: #2e2e2e !important; color: #fff !important; border: 1px solid #555 !important; border-radius: 5px !important; text-align: center !important; font-weight: bold !important; margin: 0 !important; }
     div[data-testid="stDateInput"] svg { fill: #fff !important; }
-    /* Slider */
-    #div[data-testid="stSlider"] { padding: 0 !important; margin: -10px 0 0 0 !important; }
-    #div[data-testid="stSlider"] > label { text-align: center !important; width: 100% !important; display: block !important; font-weight: bold !important; margin-bottom: 0 !important; height: 0 !important; overflow: hidden !important; }
-    #div[data-testid="stSlider"] > div > div > div { background-color: #555 !important; } /* Track */
-    #div[data-testid="stSlider"] > div > div > div > div { background-color: #0f0f0f !important; border-color: #fff !important; } /* Thumb */
-    #div[data-testid="stSliderTickBarMin"], #div[data-testid="stSliderTickBarMax"] { display: none !important; }
-    #div[data-testid="stSlider"] > div { padding-top: 0 !important; margin-top: -5px !important; }
-    #div[data-testid="element-container"]:has(div[data-testid="stSlider"]) { margin-top: -5px !important; padding-top: 0 !important; }
 
     /* Live button styling */
     button[data-testid="baseButton-primary"]:has(div:contains("Live")) {
@@ -565,8 +543,6 @@ def build_main_area():
     """, unsafe_allow_html=True)
 
     # --- Layout ---
-    # MOVED: Video placeholder now created *after* controls
-    # video_placeholder = st.empty()
 
     # Centered controls container
     st.markdown("<div style='max-width: 600px; margin: 5px auto 0 auto;'>", unsafe_allow_html=True)
@@ -624,9 +600,6 @@ def build_main_area():
         
         st.button(button_text, key="live_btn", use_container_width=True, help=button_help,
                   on_click=toggle_live_pause, disabled=not is_capturing, type=button_type)
-
-    # Timeline Bar - Replace HTML approach with image
-    #st.markdown('<div style="margin-top:-5px; margin-bottom:-2px;">', unsafe_allow_html=True)
     
     # Time Arrow above timeline
     timearrow_placeholder = st.empty()
@@ -664,16 +637,15 @@ def build_main_area():
 
     # Create Video Placeholder *after* the controls container
     video_placeholder = st.empty() 
-    #if st.session_state.last_frame is not None:
-    #    new_image_display(st.session_state.last_frame)
-    #    st.session_state.video_capture.image_just_saved = False
+     # reduces flicker but causes double-jump on timeline click:
+    #if st.session_state.last_frame is not None and not st.session_state.in_playback_mode:
+    #    video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
 
     # Return placeholders needed outside this build function (by callbacks and main loop)
     return video_placeholder, time_display, timearrow_placeholder
 
 # --- Main UI Update Loop (runs in jiffycam.py) ---
 # This function is moved from jiffycam.py
-#@st.fragment(run_every=0.1)
 def run_ui_update_loop():
     """The main loop to update the UI based on capture state and interactions."""
     # Fetch placeholders from session state at the start of the loop
@@ -682,7 +654,10 @@ def run_ui_update_loop():
     error_placeholder = st.session_state.error_placeholder
     time_display = st.session_state.time_display
 
-    if st.session_state.last_frame is not None:
+    # --- Initial Image Display --- 
+    if st.session_state.need_to_display_recent and not st.session_state.video_capture.is_capturing():
+        display_most_recent_image() # Fetches placeholders from session_state
+    elif st.session_state.last_frame is not None:
         #print(f"last_frame is not None: {st.session_state.step_direction}")
         update_image_display(st.session_state.step_direction)
 
@@ -713,7 +688,6 @@ def run_ui_update_loop():
 
                 # Ensure paused frame is displayed
                 if st.session_state.last_frame is not None:
-                    #video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
                     #new_image_display(st.session_state.last_frame)
                     ts = st.session_state.actual_timestamp
                     new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback Mode"
@@ -727,8 +701,7 @@ def run_ui_update_loop():
                     st.session_state.video_capture.image_just_saved = False
                     status_placeholder.text(st.session_state.video_capture.save_status)
                     st.session_state.last_frame = frame.copy()
-                    print("just_saved")
-                    st.rerun()          # rebuild timeline
+                    st.rerun()          # rebuild timeline  (causese flicker and strange behavior)
 
                 if frame is not None:
                     # Update time display and slider for live view
@@ -749,13 +722,8 @@ def run_ui_update_loop():
                     # Update status (Save msg or FPS)
                     if st.session_state.video_capture.image_just_saved:
                         new_status = st.session_state.video_capture.save_status
-                        # Clear flag after timeout
-                        #if True or (time.time() - st.session_state.video_capture.image_saved_time > 3):
-                         #   st.session_state.video_capture.image_just_saved = False
                     else:
                         new_status = f"Live View - FPS: {fps}"
-
-                # else: Keep last frame if get_frame returns None briefly?
 
         else: # Capture Stopped
             if st.session_state.in_playback_mode:
@@ -771,20 +739,18 @@ def run_ui_update_loop():
                     new_status = "Playback (Stopped - No Frame)"
                     video_placeholder.empty()
             else:
-                 # Not capturing, not in playback - Show last frame or empty
-                if st.session_state.last_frame is not None:
-                    #video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
-                    new_image_display(st.session_state.last_frame)
-                    new_status = "Capture Stopped"
-                else:
-                    video_placeholder.info("Capture stopped. Select date/time or Start Capture.")
-                    new_status = "Status: Idle"
+                print("Odd state: capture stopped")     # this shouldnt happen if jiffycam.py inits in playback mode
+                video_placeholder.info("Capture stopped. Select date/time or Start Capture.")
+                new_status = "Status: Idle"
 
         # Update status placeholder only if message changed
         if True: #new_status != current_status:
             status_placeholder.text(new_status)
             st.session_state.status_message = new_status # Store new status
 
+        if(st.session_state.video_capture.image_just_saved):
+            st.session_state.video_capture.image_just_saved = False
+            st.rerun()
 
         # Main loop delay
         time.sleep(0.01)
