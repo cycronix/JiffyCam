@@ -14,8 +14,6 @@ import cv2
 global timestamps
 timestamps = None
 
-TODO:  track down null ptrs if no timestamps
-
 def jiffyget(time_posix: float, cam_name: str, 
              session: str, data_dir: str, 
              direction: str = "down"):
