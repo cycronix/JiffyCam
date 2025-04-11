@@ -1,6 +1,8 @@
 streamlit>=1.44.0
+streamlit-image-coordinates>=0.1.5
 opencv-python>=4.8.0
 PyYAML>=6.0.0
-numpy<=2.1.1,>=1.23.0
+numpy>=1.23.0,<=2.1.1
 ultralytics>=8.0.0
+torch>=2.0.0
 psutil>=6.0.0
