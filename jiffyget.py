@@ -164,6 +164,9 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int)
         timestamp = int(browse_date + float(parts[-1]))   
         timestamps.append((timestamp, dir_path))    
 
+    if(len(timestamps) == 0):
+        return None
+
     timestamps.sort()
     #print(f"timestamps: {timestamps}, base_dir: {base_dir}")    
     return timestamps
