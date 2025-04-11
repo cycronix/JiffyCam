@@ -40,13 +40,13 @@ def jiffyget(time_posix: float, cam_name: str,
     base_dir = os.path.join(data_dir, session, str(browse_date_posix))
     #print(f"base_dir: {base_dir}, cam_name: {cam_name}, session: {session}, data_dir: {data_dir}")
     if not os.path.exists(base_dir):
-        return None, None
+        return None, None, True
     
     # Convert directory names to timestamps and filter by current date
     if(not timestamps):
         timestamps = get_timestamps(cam_name, session, data_dir, browse_date_posix)
     if(not timestamps):
-        return None, None
+        return None, None, True
     
     # Find the closest timestamp based on direction
     timestamps.sort()
@@ -127,6 +127,9 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
     global timestamps
     if(timestamps is None):
         timestamps = get_timestamps(cam_name, session, data_dir, None)
+
+    if(timestamps is None):
+        return None, None
 
     # Convert to datetime objects
     oldest = datetime.fromtimestamp(timestamps[0][0] / 1000)
