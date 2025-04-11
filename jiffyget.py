@@ -14,6 +14,8 @@ import cv2
 global timestamps
 timestamps = None
 
+TODO:  track down null ptrs if no timestamps
+
 def jiffyget(time_posix: float, cam_name: str, 
              session: str, data_dir: str, 
              direction: str = "down"):
@@ -185,6 +187,8 @@ def get_locations(cam_name: str, session: str, data_dir: str, browse_date: int):
     global timestamps
 
     timestamps = get_timestamps(cam_name, session, data_dir, browse_date)
+    if(timestamps is None):
+        return None
 
     locations = []       
     for timestamp in timestamps:

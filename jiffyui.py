@@ -326,6 +326,8 @@ def generate_timeline_image(width=1200, height=60):
     # Construct base path safely
     browse_date_posix = int(time.mktime(st.session_state.date.timetuple()))
     timestamps = get_locations(st.session_state.cam_name, session, data_dir, browse_date_posix*1000)
+    if(timestamps is None):
+        return np.zeros((height, width, 3), dtype=np.uint8)
 
     # Create a blank image (dark gray background)
     background_color = (51, 51, 51)  # Dark gray
