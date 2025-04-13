@@ -9,7 +9,7 @@ import time
 import os
 import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
-from streamlit_server_state import server_state, server_state_lock, no_rerun
+#from streamlit_server_state import server_state, server_state_lock, no_rerun
 import numpy as np  # Add this import for image creation
 import cv2  # Add this import for image processing
 
@@ -80,16 +80,15 @@ def toggle_rt_capture():
         st.session_state.date = datetime.now().date()
 
         # Call start_capture on the video_capture object stored in session state
-        with no_rerun:
-            st.session_state.video_capture.start_capture(
-                resolution_str=resolution_str,
-                session=st.session_state.session,
-                cam_device=st.session_state.cam_device,
-                cam_name=st.session_state.cam_name,
-                save_interval=st.session_state.save_interval,
-                device_aliases=st.session_state.device_aliases,
-                selected_device_alias=st.session_state.selected_device_alias
-            )
+        st.session_state.video_capture.start_capture(
+            resolution_str=resolution_str,
+            session=st.session_state.session,
+            cam_device=st.session_state.cam_device,
+            cam_name=st.session_state.cam_name,
+            save_interval=st.session_state.save_interval,
+            device_aliases=st.session_state.device_aliases,
+            selected_device_alias=st.session_state.selected_device_alias
+        )
     else:
         st.session_state.video_capture.stop_capture()
         st.session_state.in_playback_mode = True   
@@ -307,8 +306,9 @@ def build_sidebar(show_resolution_setting):
                         help="Seconds between saves (0=disable)")
 
         # Capture Button
-        with server_state_lock["is_capturing"]:
-            is_capturing = server_state.is_capturing
+        is_capturing = st.session_state.video_capture.is_capturing()
+        #with server_state_lock["is_capturing"]:
+        #    is_capturing = server_state.is_capturing
 
         button_text = "Stop Capture" if is_capturing else "Start Capture"
         button_type = "secondary" if is_capturing else "primary"
@@ -594,8 +594,9 @@ def build_main_area():
     with time_cols[6]: # Separator
         st.markdown('<div style="width:1px;background-color:#555;height:32px;margin:0 auto;"></div>', unsafe_allow_html=True)
     with time_cols[7]: # Live/Pause Button
-        with server_state_lock["is_capturing"]: 
-            is_capturing = server_state.is_capturing
+        is_capturing = st.session_state.video_capture.is_capturing()
+        #with server_state_lock["is_capturing"]: 
+        #    is_capturing = server_state.is_capturing
         in_playback = st.session_state.in_playback_mode
         
         # Always display "Live" text, but with different styles
@@ -657,12 +658,12 @@ def build_main_area():
     # Return placeholders needed outside this build function (by callbacks and main loop)
     return video_placeholder, time_display, timearrow_placeholder
 
-def update_server_state(frame):
-    if frame is not None: 
-        with no_rerun:      
-            with server_state_lock["last_frame"]:
-                server_state.last_frame = frame
-                server_state.timestamp = datetime.now()
+#def update_server_state(frame):
+#    if frame is not None: 
+#        with no_rerun:      
+#            with server_state_lock["last_frame"]:
+#                server_state.last_frame = frame
+#                server_state.timestamp = datetime.now()
 
 # --- Main UI Update Loop (runs in jiffycam.py) ---
 # This function is moved from jiffycam.py
@@ -675,11 +676,12 @@ def run_ui_update_loop():
     time_display = st.session_state.time_display
 
     # --- Initial Image Display --- 
-    with server_state_lock["is_capturing"]:
-        is_capturing = server_state.is_capturing
+    is_capturing = st.session_state.video_capture.is_capturing()
+    #with server_state_lock["is_capturing"]:
+    #    is_capturing = server_state.is_capturing
     if st.session_state.need_to_display_recent and not is_capturing:
         display_most_recent_image() # Fetches placeholders from session_state
-    elif server_state.last_frame is not None:
+    elif st.session_state.last_frame is not None:
         #print(f"last_frame is not None: {st.session_state.step_direction}")
         update_image_display(st.session_state.step_direction)
 
@@ -697,18 +699,19 @@ def run_ui_update_loop():
             #      new_image_display(st.session_state.last_frame)
             break # Exit loop
     
-        #is_capturing = st.session_state.video_capture.is_capturing()
-        with server_state_lock["is_capturing"]:
-            is_capturing = server_state.is_capturing
+        is_capturing = st.session_state.video_capture.is_capturing()
+        #with server_state_lock["is_capturing"]:
+        #    is_capturing = server_state.is_capturing
 
         current_status = st.session_state.get("status_message", "")
         new_status = current_status # Default to no change
 
         if is_capturing:
-            if(not st.session_state.slave_mode):
-                frame = st.session_state.video_capture.get_last_frame()
-                if frame is not None:
-                    update_server_state(frame)
+            #if(not st.session_state.slave_mode):
+            frame = st.session_state.video_capture.get_last_frame()
+            if frame is not None:
+                st.session_state.last_frame = frame
+                #update_server_state(frame)
 
             #print(f"st.session_state.in_playback_mode: {st.session_state.in_playback_mode}")
             if st.session_state.in_playback_mode:
@@ -716,8 +719,9 @@ def run_ui_update_loop():
                 while True:
                     frame_data = st.session_state.video_capture.get_frame()
                     if frame_data[0] is None: break
-                    if(not st.session_state.slave_mode):
-                        update_server_state(frame_data[0])
+                    st.session_state.last_frame = frame_data[0]
+                    #if(not st.session_state.slave_mode):
+                    #    update_server_state(frame_data[0])
 
                 # Ensure paused frame is displayed
                 if st.session_state.last_frame is not None:
@@ -728,17 +732,11 @@ def run_ui_update_loop():
                     new_status = "Playback Mode (No Frame)"
                     video_placeholder.empty() # Clear if no frame to show
 
-            else: # Live View Mode (Capture Running)
-                if(st.session_state.slave_mode):
-                    frame = server_state.last_frame
-                    #print(f"slave mode: frame: {frame is not None}")
-                    fps = st.session_state.video_capture.current_fps
-                    width = st.session_state.video_capture.current_width
-                    height = st.session_state.video_capture.current_height
-                else:   
-                    frame, fps, width, height = st.session_state.video_capture.get_frame()
-                    #print(f"master mode: frame: {frame is not None}")
-                    update_server_state(frame)
+            else: # Live View Mode (Capture Running) 
+                frame, fps, width, height = st.session_state.video_capture.get_frame()
+                #print(f"master mode: frame: {frame is not None}")
+                st.session_state.last_frame = frame
+                #update_server_state(frame)
 
                 if frame is not None:
                     # Update time display and slider for live view
@@ -748,7 +746,7 @@ def run_ui_update_loop():
                     st.session_state.minute = current_time.minute
                     st.session_state.second = current_time.second
                     # Store & display live frame
-                    st.session_state.last_frame = server_state.last_frame
+                    st.session_state.last_frame = st.session_state.last_frame
                     new_image_display(frame)
 
                     # Update internal stats
@@ -767,7 +765,7 @@ def run_ui_update_loop():
                 # Playback Mode (Capture Stopped): Show paused frame
                 if st.session_state.last_frame is not None:
                     #video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
-                    #new_image_display(st.session_state.last_frame)
+                    new_image_display(st.session_state.last_frame)
 
                     ts = st.session_state.actual_timestamp
                     new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback (Stopped)"
@@ -778,7 +776,8 @@ def run_ui_update_loop():
             else:
                 print("Odd state: capture stopped")     # this shouldnt happen if jiffycam.py inits in playback mode
                 video_placeholder.info("Capture stopped. Select date/time or Start Capture.")
-                new_image_display(server_state.last_frame)
+               #new_image_display(server_state.last_frame)
+                new_image_display(st.session_state.last_frame)
                 new_status = "Status: Idle"
 
         # Update status placeholder only if message changed
