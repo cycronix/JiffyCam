@@ -14,6 +14,7 @@ from datetime import datetime, time as datetime_time
 from collections import OrderedDict
 
 import streamlit as st
+from streamlit_server_state import server_state, server_state_lock
 
 # Import Jiffy modules
 # from jiffyput import jiffyput # Not directly used here
@@ -25,16 +26,16 @@ from jiffycapture import VideoCapture
 from jiffyui import (
     build_sidebar, 
     build_main_area, 
-    run_ui_update_loop
+    run_ui_update_loop,
     # Callbacks and helpers are internal to jiffyui now
 )
 
 # Configuration flags (Keep if used outside UI, otherwise move/remove)
 SHOW_RESOLUTION_SETTING = False  
+#import jiffyglobals
 
 # --- Main Application Logic ---
-
-def main():
+def main():       
     # Page Config (Should be first Streamlit command)
     st.set_page_config(
         page_title="JiffyCam",
@@ -44,11 +45,24 @@ def main():
     
     # --- Initialize Session State --- 
     # Needs to happen *before* accessing state in UI build or logic
+    if 'is_capturing' not in server_state:
+        server_state.is_capturing = False   
+    if 'last_frame' not in server_state:
+        server_state.last_frame = None
+    if 'timestamp' not in server_state:
+        server_state.timestamp = datetime.now()
+
 
     # Core components
+    if('slave_mode' not in st.session_state):                          # new session
+        st.session_state.slave_mode = server_state.is_capturing        # some other session is capturing, so we're in slave mode
+
+    #print(f"server_state: {server_state.is_capturing}")
+    #print(f"st.session_state.slave_mode: {st.session_state.slave_mode}")
+
     if 'video_capture' not in st.session_state:
         st.session_state.video_capture = VideoCapture()
-    
+
     # UI interaction state flags
     if 'in_playback_mode' not in st.session_state: st.session_state.in_playback_mode = True
     if 'rt_capture' not in st.session_state: st.session_state.rt_capture = False
@@ -132,6 +146,7 @@ def main():
     st.session_state.status_message = "Status: Idle"
 
     # --- Run Main UI Update Loop --- 
+    #print(f"is_capturing: {get_is_capturing()}")
     run_ui_update_loop() # Loop fetches placeholders from session_state
 
 # --- Entry Point --- 

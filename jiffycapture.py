@@ -12,13 +12,17 @@ from datetime import datetime
 from typing import Optional, Tuple
 
 import cv2
+from streamlit_server_state import server_state, server_state_lock, no_rerun
 
 from jiffyput import jiffyput
 from jiffyconfig import JiffyConfig
 
+#import jiffyglobals
 
 class VideoCapture:
     def __init__(self):
+        #print("Initializing VideoCapture")
+
         """Initialize video capture functionality."""
         self.stop_event = threading.Event()
         self.frame_count = 0
@@ -37,12 +41,14 @@ class VideoCapture:
         self.skip_first_save = True  # Flag to skip the first save
         self.image_just_saved = False  # Flag to track when an image was just saved
         self.image_saved_time = 0  # Track when the image was saved
-        
+        self.last_frame = None
     def handle_error(self, error_msg: str):
         """Handle errors by setting error message and stopping capture"""
         self.last_error = error_msg
         self.error_event.set()
         self.stop_event.set()
+        with server_state_lock["is_capturing"]:
+            server_state.is_capturing = False
 
     def send_frame(self, cam_name: str, frame, ftime: float, session: str):
         """Send frame to server and optionally save to disk."""
@@ -55,7 +61,8 @@ class VideoCapture:
             # Update class attributes
             self.image_just_saved = True
             self.image_saved_time = self.last_save_time = time.time()
-            self.save_status = f"Frame saved: {datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')}"  
+            self.save_status = f"Frame saved: {datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')}"
+                
         except Exception as e:
             self.handle_error(f"Error sending frame: {str(e)}")
             return None
@@ -127,6 +134,10 @@ class VideoCapture:
                         self.frame_queue.put((frame, current_fps, width, height))
                     except:
                         pass
+
+                if frame is not None:
+                    self.last_frame = frame
+                    #print(f"last_frame: {self.last_frame is not None}")
 
                 time.sleep(0.01)  # Small delay to prevent overwhelming the system
             else:
@@ -206,6 +217,7 @@ class VideoCapture:
 
     def stop_capture(self):
         """Stop the capture thread."""
+        print("stopping capture")
         self.stop_event.set()
         if self.capture_thread:
             self.capture_thread.join(timeout=1.0)
@@ -228,6 +240,9 @@ class VideoCapture:
         except Exception as e:
             print(f"Warning during cleanup: {e}")
             # Continue shutdown despite errors
+        
+        with server_state_lock["is_capturing"]:
+            server_state.is_capturing = False
 
     def start_capture_thread(self, cam_device, width, height, session, cam_name, save_interval):
         """Start video capture in a separate thread."""
@@ -261,6 +276,12 @@ class VideoCapture:
             daemon=True
         )
         self.capture_thread.start()
+        with server_state_lock["is_capturing"]:
+            server_state.is_capturing = True
+
+    def get_last_frame(self):
+        """Get the last frame from the queue."""
+        return self.last_frame
 
     def get_frame(self) -> Tuple:
         """Get the latest frame from the queue.
@@ -281,4 +302,5 @@ class VideoCapture:
         Returns:
             bool: True if capture thread is running, False otherwise
         """
-        return self.capture_thread is not None and self.capture_thread.is_alive() 
+        with server_state_lock["is_capturing"]:
+            return server_state.is_capturing 
