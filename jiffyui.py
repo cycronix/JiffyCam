@@ -2,11 +2,15 @@
 jiffyui.py: UI components and logic for JiffyCam
 
 This module contains functions for building and updating the Streamlit UI.
+It can now connect to a standalone jiffycapture.py HTTP server.
 """
 
 from datetime import datetime, timedelta, time as datetime_time
 import time
 import os
+import requests
+import json
+from io import BytesIO
 import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
 #from streamlit_server_state import server_state, server_state_lock, no_rerun
@@ -22,6 +26,127 @@ from jiffyget import jiffyget, get_locations
 # following just to avoid error when importing YOLO
 import torch
 torch.classes.__path__ = [] # add this line to manually set it to empty. 
+
+# --- HTTP Client for JiffyCam Server ---
+
+class JiffyCamClient:
+    """Client for connecting to the standalone jiffycapture.py HTTP server."""
+    
+    def __init__(self, server_url="http://localhost:8080"):
+        """Initialize the client with the server URL."""
+        self.server_url = server_url
+        self.connected = False
+        self.last_error = None
+        self.last_status = None
+        self.last_frame = None
+        self.last_frame_time = 0
+        self.connection_check_time = 0
+        self.status_check_time = 0
+    
+    def check_connection(self, force=False):
+        """Check if the server is available."""
+        # Only check every 5 seconds unless forced
+        current_time = time.time()
+        if not force and current_time - self.connection_check_time < 5:
+            return self.connected
+            
+        self.connection_check_time = current_time
+        
+        try:
+            response = requests.get(f"{self.server_url}/status", timeout=2)
+            if response.status_code == 200:
+                self.connected = True
+                self.last_status = response.json()
+                self.last_error = None
+                self.status_check_time = current_time  # Update status check time
+                return True
+            else:
+                self.connected = False
+                self.last_error = f"Server responded with status code: {response.status_code}"
+                return False
+        except requests.RequestException as e:
+            self.connected = False
+            self.last_error = f"Connection error: {str(e)}"
+            return False
+    
+    def is_connected(self):
+        """Check if we're currently connected to the server."""
+        if time.time() - self.connection_check_time > 10:  # Force check if it's been more than 10 seconds
+            return self.check_connection(force=True)
+        return self.connected
+    
+    def update_status_if_needed(self):
+        """Update status information periodically without fetching a new frame."""
+        current_time = time.time()
+        # Only update status every 2 seconds to reduce server load
+        if current_time - self.status_check_time > 2:
+            self.get_status()
+            return True
+        return False
+        
+    def get_status(self):
+        """Get the server status."""
+        current_time = time.time()
+        self.status_check_time = current_time
+        
+        try:
+            response = requests.get(f"{self.server_url}/status", timeout=2)
+            if response.status_code == 200:
+                self.last_status = response.json()
+                self.connected = True  # Also update connection status
+                self.connection_check_time = current_time  # Update connection time too
+                self.last_error = None
+                return self.last_status
+            else:
+                self.last_error = f"Server responded with status code: {response.status_code}"
+                return None
+        except requests.RequestException as e:
+            self.last_error = f"Connection error: {str(e)}"
+            self.connected = False
+            return None
+    
+    def get_frame(self):
+        """Get the latest frame from the server."""
+        # Only fetch a new frame every 1/30 second (30 FPS max)
+        current_time = time.time()
+        if current_time - self.last_frame_time < 0.033:
+            return self.last_frame, None, None, None
+            
+        if not self.connected and not self.check_connection(force=False):
+            return None, None, None, None
+            
+        try:
+            # Add timestamp to URL to prevent caching
+            response = requests.get(f"{self.server_url}/image?t={int(current_time*1000)}", timeout=2)
+            if response.status_code == 200:
+                # Convert the response content to an OpenCV image
+                img_array = np.frombuffer(response.content, np.uint8)
+                frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                
+                # Update last frame and time
+                self.last_frame = frame
+                self.last_frame_time = current_time
+                
+                # Use last known status without making another request
+                if self.last_status:
+                    try:
+                        width, height = map(int, self.last_status.get('resolution', '0x0').split('x'))
+                        fps = self.last_status.get('fps', 0)
+                        return frame, fps, width, height
+                    except (ValueError, AttributeError):
+                        return frame, 0, 0, 0
+                return frame, 0, 0, 0
+            else:
+                self.last_error = f"Server responded with status code: {response.status_code}"
+                return None, None, None, None
+        except requests.RequestException as e:
+            self.last_error = f"Connection error: {str(e)}"
+            self.connected = False
+            return None, None, None, None
+    
+    def get_last_frame(self):
+        """Get the cached last frame."""
+        return self.last_frame
 
 # --- UI Helper Functions ---
 
@@ -79,18 +204,32 @@ def toggle_rt_capture():
         st.session_state.browsing_saved_images = False
         st.session_state.date = datetime.now().date()
 
-        # Call start_capture on the video_capture object stored in session state
-        st.session_state.video_capture.start_capture(
-            resolution_str=resolution_str,
-            session=st.session_state.session,
-            cam_device=st.session_state.cam_device,
-            cam_name=st.session_state.cam_name,
-            save_interval=st.session_state.save_interval,
-            device_aliases=st.session_state.device_aliases,
-            selected_device_alias=st.session_state.selected_device_alias
-        )
+        # Check if we should use HTTP mode
+        if hasattr(st.session_state, 'use_http_mode') and st.session_state.use_http_mode:
+            # When using HTTP mode, we don't need to start capture locally
+            if not hasattr(st.session_state, 'http_client'):
+                st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
+            
+            # Force a connection check
+            if not st.session_state.http_client.check_connection(force=True):
+                st.error(f"Failed to connect to JiffyCam server: {st.session_state.http_client.last_error}")
+                st.session_state.rt_capture = False
+                return
+        else:
+            # Call start_capture on the video_capture object stored in session state
+            st.session_state.video_capture.start_capture(
+                resolution_str=resolution_str,
+                session=st.session_state.session,
+                cam_device=st.session_state.cam_device,
+                cam_name=st.session_state.cam_name,
+                save_interval=st.session_state.save_interval,
+                device_aliases=st.session_state.device_aliases,
+                selected_device_alias=st.session_state.selected_device_alias
+            )
     else:
-        st.session_state.video_capture.stop_capture()
+        # Only stop local capture if not in HTTP mode
+        if not hasattr(st.session_state, 'use_http_mode') or not st.session_state.use_http_mode:
+            st.session_state.video_capture.stop_capture()
         st.session_state.in_playback_mode = True   
 
 def on_date_change():
@@ -142,7 +281,6 @@ def tweek_time(direction):
 
 def toggle_live_pause():
     """Handle Live/Pause button click."""
-    #set_autoplay("None")
     
     if st.session_state.in_playback_mode:
         # Go Live
@@ -150,6 +288,15 @@ def toggle_live_pause():
         current_time = datetime.now()
         st.session_state.browsing_date = current_time.date()
         st.session_state.in_playback_mode = False
+        
+        # If in HTTP mode, make sure rt_capture is turned on and check connection
+        if st.session_state.get('use_http_mode', False):
+            st.session_state.rt_capture = True
+            
+            # Force a connection check if we have a client
+            if hasattr(st.session_state, 'http_client'):
+                st.session_state.http_client.check_connection(force=True)
+        
         # Let the main loop update hour/min/sec/slider when live
     else:
         # Pause
@@ -283,40 +430,103 @@ def display_most_recent_image():
 
 # --- UI Building Functions ---
 def build_sidebar(show_resolution_setting):
-    """Create the sidebar UI elements and return placeholders."""
+    """Build the sidebar UI elements."""
+    # Setup main sections
     with st.sidebar:
         st.title("JiffyCam")
-        st.header("Settings")
+        
+        # Add HTTP client mode toggle
+        with st.expander("💻 Remote Server Settings", expanded=False):
+            use_http = st.checkbox("Connect to Remote JiffyCam Server", 
+                                   value=st.session_state.get('use_http_mode', False),
+                                   help="Connect to a standalone JiffyCam server instead of using local camera")
+            
+            if use_http:
+                server_url = st.text_input("Server URL", 
+                                           value=st.session_state.get('http_server_url', "http://localhost:8080"),
+                                           help="URL of the JiffyCam server")
+                
+                # Initialize HTTP client if needed
+                if use_http and not hasattr(st.session_state, 'http_client'):
+                    st.session_state.http_client = JiffyCamClient(server_url)
+                    
+                # Test connection button
+                if st.button("Test Connection"):
+                    if st.session_state.http_client.check_connection(force=True):
+                        st.success("Connected to JiffyCam server!")
+                        status = st.session_state.http_client.last_status
+                        if status:
+                            st.json(status)
+                    else:
+                        st.error(f"Failed to connect: {st.session_state.http_client.last_error}")
+                
+                # Update session state
+                st.session_state.use_http_mode = use_http
+                st.session_state.http_server_url = server_url
+            else:
+                # Reset HTTP mode if unchecked
+                st.session_state.use_http_mode = False
+        
+        with st.expander("📹 Camera Settings", expanded=True):
+            # Camera device selection
+            if 'device_aliases' in st.session_state and st.session_state.device_aliases:
+                # Only show this if not in HTTP mode
+                if not st.session_state.get('use_http_mode', False):
+                    device_options = list(st.session_state.device_aliases.keys())
+                    selected_alias = st.selectbox(
+                        "Camera Source", 
+                        options=device_options,
+                        index=device_options.index(st.session_state.selected_device_alias) if st.session_state.selected_device_alias in device_options else 0,
+                        key="selected_device_alias",
+                        on_change=on_device_alias_change
+                    )
+            
+            # Resolution selection (only show when configured)
+            if show_resolution_setting:
+                resolution_options = list(RESOLUTIONS.keys())
+                if isinstance(st.session_state.resolution, str) and st.session_state.resolution in resolution_options:
+                    current_index = resolution_options.index(st.session_state.resolution)
+                else:
+                    # For direct resolution strings like "1920x1080", add to options
+                    if isinstance(st.session_state.resolution, str) and 'x' in st.session_state.resolution:
+                        w, h = map(int, st.session_state.resolution.split('x'))
+                        for i, (key, (rw, rh)) in enumerate(RESOLUTIONS.items()):
+                            if rw == w and rh == h:
+                                current_index = i
+                                break
+                        else:
+                            resolution_options.append(st.session_state.resolution)
+                            current_index = len(resolution_options) - 1
+                    else:
+                        current_index = 0 # Default to first option
+                        
+                st.selectbox(
+                    "Resolution",
+                    options=resolution_options,
+                    index=current_index,
+                    key="resolution"
+                )
+            
+            # Camera configuration button
+            is_capturing = st.session_state.video_capture.is_capturing() if not st.session_state.get('use_http_mode', False) else st.session_state.rt_capture
+            #with server_state_lock["is_capturing"]:
+            #    is_capturing = server_state.is_capturing
+            
+            button_text = "📸 Start Capture" if not is_capturing else "⏹ Stop Capture"
+            st.button(button_text, on_click=toggle_rt_capture, key="capture_button")
 
-        # Device Selection
-        device_aliases = list(st.session_state.device_aliases.keys())
-        st.selectbox("Device", options=device_aliases, key='selected_device_alias',
-                     on_change=on_device_alias_change, help="Select camera device")
-
-        # Resolution Selection (Optional)
-        if show_resolution_setting:
-            resolution_options = list(RESOLUTIONS.keys())
-            if st.session_state.resolution not in RESOLUTIONS and st.session_state.resolution not in resolution_options:
-                resolution_options.append(st.session_state.resolution)
-            st.selectbox("Resolution", options=resolution_options, key="resolution",
-                         help="Select camera resolution")
-
-        # Save Interval
-        st.number_input("Save Interval (s)", key='save_interval', min_value=0,
-                        help="Seconds between saves (0=disable)")
-
-        # Capture Button
-        is_capturing = st.session_state.video_capture.is_capturing()
-        #with server_state_lock["is_capturing"]:
-        #    is_capturing = server_state.is_capturing
-
-        button_text = "Stop Capture" if is_capturing else "Start Capture"
-        button_type = "secondary" if is_capturing else "primary"
-        st.markdown("---")
-        st.button(button_text, key="rt_toggle", on_click=toggle_rt_capture,
-                  help="Toggle real-time capture", type=button_type)
-        if is_capturing: st.success("Capture Active")
-
+        # Save interval (only show when not in HTTP mode)
+        if not st.session_state.get('use_http_mode', False):
+            with st.expander("⚙️ Advanced Settings", expanded=False):
+                st.number_input(
+                    "Save Interval (seconds)",
+                    min_value=1,
+                    max_value=3600,
+                    value=st.session_state.save_interval,
+                    key="save_interval"
+                )
+                st.text_input("Camera Name", value=st.session_state.cam_name, key="cam_name")
+                
         # Status Placeholders (created here, returned for main loop)
         st.header("Status")
         status_placeholder = st.empty()
@@ -594,9 +804,22 @@ def build_main_area():
     with time_cols[6]: # Separator
         st.markdown('<div style="width:1px;background-color:#555;height:32px;margin:0 auto;"></div>', unsafe_allow_html=True)
     with time_cols[7]: # Live/Pause Button
-        is_capturing = st.session_state.video_capture.is_capturing()
-        #with server_state_lock["is_capturing"]: 
-        #    is_capturing = server_state.is_capturing
+        # Check if capture is active based on mode
+        if st.session_state.get('use_http_mode', False):
+            # For HTTP mode, check if client is connected
+            has_client = (hasattr(st.session_state, 'http_client') and 
+                          st.session_state.http_client.is_connected())
+            
+            # In HTTP mode, is_capturing reflects if rt_capture is enabled and we have a connection
+            is_capturing = st.session_state.rt_capture and has_client
+            
+            # Only disable the Live button if we don't have a connection to the server
+            live_disabled = not has_client
+        else:
+            # For local mode, use the traditional method
+            is_capturing = st.session_state.video_capture.is_capturing()
+            live_disabled = not is_capturing
+            
         in_playback = st.session_state.in_playback_mode
         
         # Always display "Live" text, but with different styles
@@ -612,8 +835,7 @@ def build_main_area():
             button_type = "primary"    # Red (filled) button via CSS
         
         st.button(button_text, key="live_btn", use_container_width=True, help=button_help,
-                #on_click=toggle_live_pause, type=button_type)
-                on_click=toggle_live_pause, disabled=not is_capturing, type=button_type)
+                on_click=toggle_live_pause, disabled=live_disabled, type=button_type)
     
     # Time Arrow above timeline
     timearrow_placeholder = st.empty()
@@ -676,69 +898,121 @@ def run_ui_update_loop():
     time_display = st.session_state.time_display
 
     # --- Initial Image Display --- 
-    is_capturing = st.session_state.video_capture.is_capturing()
-    #with server_state_lock["is_capturing"]:
-    #    is_capturing = server_state.is_capturing
+    is_capturing = False
+    if st.session_state.get('use_http_mode', False):
+        has_connected_client = (hasattr(st.session_state, 'http_client') and 
+                                st.session_state.http_client.is_connected())
+        is_capturing = st.session_state.rt_capture and has_connected_client
+    else:
+        is_capturing = st.session_state.video_capture.is_capturing()
+    
     if st.session_state.need_to_display_recent and not is_capturing:
         display_most_recent_image() # Fetches placeholders from session_state
     elif st.session_state.last_frame is not None:
-        #print(f"last_frame is not None: {st.session_state.step_direction}")
         update_image_display(st.session_state.step_direction)
 
     while True:
         heartbeat()
 
         # Check for errors first
-        if st.session_state.video_capture.error_event.is_set():
-            st.session_state.video_capture.stop_capture() # Ensure cleanup
-            error_placeholder.error(st.session_state.video_capture.last_error)
-            status_placeholder.text("Status: Error")
-            st.session_state.status_message = "Status: Error"
+        check_errors = False
+        if st.session_state.get('use_http_mode', False):
+            # In HTTP mode, check connection periodically
+            if (hasattr(st.session_state, 'http_client') and 
+                st.session_state.rt_capture and 
+                not st.session_state.http_client.is_connected()):
+                
+                error_placeholder.error(st.session_state.http_client.last_error or "Connection lost to JiffyCam server")
+                status_placeholder.text("Status: Connection Error")
+                st.session_state.status_message = "Status: Connection Error"
+                check_errors = True
+        else:
+            # In local mode, check VideoCapture errors
+            if st.session_state.video_capture.error_event.is_set():
+                st.session_state.video_capture.stop_capture() # Ensure cleanup
+                error_placeholder.error(st.session_state.video_capture.last_error)
+                status_placeholder.text("Status: Error")
+                st.session_state.status_message = "Status: Error"
+                check_errors = True
+        
+        if check_errors:
             # Keep last frame visible on error if possible
-            #if st.session_state.last_frame is not None:
-            #      new_image_display(st.session_state.last_frame)
             break # Exit loop
     
-        is_capturing = st.session_state.video_capture.is_capturing()
-        #with server_state_lock["is_capturing"]:
-        #    is_capturing = server_state.is_capturing
+        # Check if we're capturing
+        if st.session_state.get('use_http_mode', False):
+            has_connected_client = (hasattr(st.session_state, 'http_client') and 
+                                    st.session_state.http_client.is_connected())
+            is_capturing = st.session_state.rt_capture and has_connected_client
+        else:
+            is_capturing = st.session_state.video_capture.is_capturing()
 
         current_status = st.session_state.get("status_message", "")
         new_status = current_status # Default to no change
 
         if is_capturing:
-            #if(not st.session_state.slave_mode):
-            frame = st.session_state.video_capture.get_last_frame()
-            if frame is not None:
-                st.session_state.last_frame = frame
-                #update_server_state(frame)
+            # Get the latest frame based on mode
+            if st.session_state.get('use_http_mode', False):
+                if hasattr(st.session_state, 'http_client'):
+                    # Only get a new frame from the server if we're in live view mode
+                    # This prevents unnecessary HTTP requests when in playback mode
+                    if not st.session_state.in_playback_mode:
+                        frame = st.session_state.http_client.get_last_frame()
+                        if frame is not None:
+                            st.session_state.last_frame = frame
+            else:
+                frame = st.session_state.video_capture.get_last_frame()
+                if frame is not None:
+                    st.session_state.last_frame = frame
 
-            #print(f"st.session_state.in_playback_mode: {st.session_state.in_playback_mode}")
             if st.session_state.in_playback_mode:
                 # Playback Mode (Capture Running): Drain queue, show paused frame
-                while True:
-                    frame_data = st.session_state.video_capture.get_frame()
-                    if frame_data[0] is None: break
-                    st.session_state.last_frame = frame_data[0]
-                    #if(not st.session_state.slave_mode):
-                    #    update_server_state(frame_data[0])
+                if st.session_state.get('use_http_mode', False):
+                    # In HTTP mode, we don't need to continuously drain frames in playback mode
+                    # Only get a single frame if we don't already have one
+                    if st.session_state.last_frame is None and hasattr(st.session_state, 'http_client'):
+                        frame, _, _, _ = st.session_state.http_client.get_frame()
+                        if frame is not None:
+                            st.session_state.last_frame = frame
+                else:
+                    while True:
+                        frame_data = st.session_state.video_capture.get_frame()
+                        if frame_data[0] is None: break
+                        st.session_state.last_frame = frame_data[0]
 
                 # Ensure paused frame is displayed
                 if st.session_state.last_frame is not None:
-                    #new_image_display(st.session_state.last_frame)
                     ts = st.session_state.actual_timestamp
                     new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback Mode"
                 else:
                     new_status = "Playback Mode (No Frame)"
                     video_placeholder.empty() # Clear if no frame to show
 
-            else: # Live View Mode (Capture Running) 
-                frame, fps, width, height = st.session_state.video_capture.get_frame()
-                #print(f"master mode: frame: {frame is not None}")
-                st.session_state.last_frame = frame
-                #update_server_state(frame)
-
+            else: # Live View Mode (Capture Running)
+                if st.session_state.get('use_http_mode', False):
+                    if hasattr(st.session_state, 'http_client'):
+                        # In live view mode, always get the latest frame
+                        frame, fps, width, height = st.session_state.http_client.get_frame()
+                        
+                        # Update status information periodically
+                        status_updated = st.session_state.http_client.update_status_if_needed()
+                        
+                        # Always update status to show we're using HTTP mode
+                        if frame is not None:
+                            status = st.session_state.http_client.last_status
+                            if status:
+                                fps = status.get('fps', 0)
+                                resolution = status.get('resolution', '0x0')
+                                frame_count = status.get('frame_count', 0)
+                                new_status = f"Live View (HTTP) - FPS: {fps}, Frames: {frame_count}"
+                            else:
+                                new_status = "Live View (HTTP)"
+                else:
+                    frame, fps, width, height = st.session_state.video_capture.get_frame()
+                
                 if frame is not None:
+                    st.session_state.last_frame = frame
+                    
                     # Update time display and slider for live view
                     current_time = datetime.now()
                     time_display.markdown(f'<div class="time-display">{format_time_12h(current_time.hour, current_time.minute, current_time.second)}</div>', unsafe_allow_html=True)
@@ -746,37 +1020,38 @@ def run_ui_update_loop():
                     st.session_state.minute = current_time.minute
                     st.session_state.second = current_time.second
                     # Store & display live frame
-                    st.session_state.last_frame = st.session_state.last_frame
                     new_image_display(frame)
 
                     # Update internal stats
-                    st.session_state.video_capture.current_fps = fps
-                    st.session_state.video_capture.current_width = width
-                    st.session_state.video_capture.current_height = height
+                    if not st.session_state.get('use_http_mode', False):
+                        st.session_state.video_capture.current_fps = fps
+                        st.session_state.video_capture.current_width = width
+                        st.session_state.video_capture.current_height = height
                     
-                    # Update status (Save msg or FPS)
-                    if st.session_state.video_capture.image_just_saved:
-                        new_status = st.session_state.video_capture.save_status
+                    # Update status
+                    if st.session_state.get('use_http_mode', False):
+                        # Status already set above
+                        pass
                     else:
-                        new_status = f"Live View - FPS: {fps}"
+                        if st.session_state.video_capture.image_just_saved:
+                            new_status = st.session_state.video_capture.save_status
+                        else:
+                            new_status = f"Live View - FPS: {fps}"
 
         else: # Capture Stopped
             if st.session_state.in_playback_mode:
                 # Playback Mode (Capture Stopped): Show paused frame
                 if st.session_state.last_frame is not None:
-                    #video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
                     new_image_display(st.session_state.last_frame)
 
                     ts = st.session_state.actual_timestamp
                     new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback (Stopped)"
-                    #st.session_state.last_frame = None  # mjm
                 else:
                     new_status = "Playback (Stopped - No Frame)"
                     video_placeholder.empty()
             else:
-                print("Odd state: capture stopped")     # this shouldnt happen if jiffycam.py inits in playback mode
+                print("Odd state: capture stopped")
                 video_placeholder.info("Capture stopped. Select date/time or Start Capture.")
-               #new_image_display(server_state.last_frame)
                 new_image_display(st.session_state.last_frame)
                 new_status = "Status: Idle"
 
@@ -785,7 +1060,7 @@ def run_ui_update_loop():
             status_placeholder.text(new_status)
             st.session_state.status_message = new_status # Store new status
 
-        if(st.session_state.video_capture.image_just_saved):
+        if not st.session_state.get('use_http_mode', False) and st.session_state.video_capture.image_just_saved:
             st.session_state.video_capture.image_just_saved = False
             st.rerun()
 

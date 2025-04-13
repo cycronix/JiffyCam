@@ -2,7 +2,7 @@
 jiffycapture.py: Video capture functionality for JiffyCam
 
 This module provides the core video capture functionality for the JiffyCam application.
-It can be used as a module or run as a standalone script.
+It can be used as a module or run as a standalone script with an optional HTTP server.
 """
 
 import time
@@ -10,17 +10,222 @@ import threading
 import gc
 import sys
 import argparse
+import io
+import json
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from queue import Queue
 from datetime import datetime
 from typing import Optional, Tuple
 
 import cv2
+import numpy as np
 #from streamlit_server_state import server_state, server_state_lock, no_rerun
 
 from jiffyput import jiffyput
 from jiffyconfig import JiffyConfig
 
 #import jiffyglobals
+
+# Global variable to store the VideoCapture instance for HTTP server access
+global_capture_instance = None
+
+class JiffyHTTPHandler(BaseHTTPRequestHandler):
+    """HTTP request handler for JiffyCam that serves the last captured frame."""
+    
+    def _set_headers(self, content_type='text/html'):
+        self.send_response(200)
+        self.send_header('Content-type', content_type)
+        self.send_header('Access-Control-Allow-Origin', '*')  # Enable CORS
+        self.end_headers()
+    
+    def _send_json_response(self, data):
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')  # Enable CORS
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+    
+    def _handle_root(self):
+        """Handle the root path request"""
+        self._set_headers()
+        html = """
+        <html>
+        <head>
+            <title>JiffyCam Server</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 0; padding: 20px; max-width: 1200px; margin: 0 auto; }
+                h1 { color: #333; }
+                .container { display: flex; flex-direction: column; }
+                .image-container { margin-top: 20px; }
+                img { max-width: 100%; border: 1px solid #ddd; }
+                ul { padding-left: 20px; }
+                li { margin-bottom: 8px; }
+                .status { background-color: #f5f5f5; padding: 10px; border-radius: 4px; margin-top: 20px; }
+                .refresh-controls { margin: 10px 0; }
+            </style>
+        </head>
+        <body>
+            <h1>JiffyCam HTTP Server</h1>
+            <p>Server is running and capturing images.</p>
+            <div class="container">
+                <ul>
+                    <li><a href="/image" target="_blank">Raw image endpoint</a></li>
+                    <li><a href="/status" target="_blank">JSON status endpoint</a></li>
+                </ul>
+                
+                <div class="refresh-controls">
+                    Auto-refresh: 
+                    <select id="refresh-rate" onchange="updateRefreshRate()">
+                        <option value="1000">1 second</option>
+                        <option value="2000">2 seconds</option>
+                        <option value="5000" selected>5 seconds</option>
+                        <option value="10000">10 seconds</option>
+                        <option value="0">Off</option>
+                    </select>
+                    <button onclick="refreshImage()">Refresh Now</button>
+                </div>
+                
+                <div class="image-container">
+                    <h2>Live View</h2>
+                    <img src="/image" id="stream" style="max-width: 100%;">
+                </div>
+                
+                <div class="status" id="status-area">Loading status...</div>
+            </div>
+            
+            <script>
+                let refreshInterval;
+                let refreshRate = 5000;
+                
+                // Function to refresh the image
+                function refreshImage() {
+                    document.getElementById('stream').src = '/image?' + new Date().getTime();
+                }
+                
+                // Function to update the refresh rate
+                function updateRefreshRate() {
+                    const rate = document.getElementById('refresh-rate').value;
+                    refreshRate = parseInt(rate);
+                    
+                    // Clear existing interval if any
+                    if (refreshInterval) {
+                        clearInterval(refreshInterval);
+                    }
+                    
+                    // Set new interval if not disabled
+                    if (refreshRate > 0) {
+                        refreshInterval = setInterval(refreshImage, refreshRate);
+                    }
+                }
+                
+                // Function to refresh status
+                function refreshStatus() {
+                    fetch('/status')
+                        .then(response => response.json())
+                        .then(data => {
+                            let statusHtml = '<h2>Capture Status</h2>';
+                            statusHtml += `<p>Capturing: <strong>${data.capturing ? 'Active' : 'Stopped'}</strong></p>`;
+                            statusHtml += `<p>FPS: <strong>${data.fps}</strong></p>`;
+                            statusHtml += `<p>Resolution: <strong>${data.resolution}</strong></p>`;
+                            statusHtml += `<p>Total Frames: <strong>${data.frame_count}</strong></p>`;
+                            statusHtml += `<p>Last Save: <strong>${data.last_save_time || 'None'}</strong></p>`;
+                            if (data.error) {
+                                statusHtml += `<p style="color: red;">Error: ${data.error}</p>`;
+                            }
+                            document.getElementById('status-area').innerHTML = statusHtml;
+                        })
+                        .catch(err => {
+                            document.getElementById('status-area').innerHTML = '<p style="color: red;">Error fetching status</p>';
+                        });
+                }
+                
+                // Initialize refreshes
+                updateRefreshRate();
+                refreshStatus();
+                setInterval(refreshStatus, 2000);  // Update status every 2 seconds
+            </script>
+        </body>
+        </html>
+        """
+        self.wfile.write(html.encode())
+    
+    def _handle_image(self):
+        """Handle the image path request"""
+        if global_capture_instance and global_capture_instance.last_frame is not None:
+            frame = global_capture_instance.last_frame
+            if frame is not None:
+                _, buffer = cv2.imencode('.jpg', frame)
+                self._set_headers('image/jpeg')
+                if self.command != 'HEAD':  # Only send body for GET, not HEAD
+                    self.wfile.write(buffer.tobytes())
+            else:
+                self._set_headers()
+                if self.command != 'HEAD':
+                    self.wfile.write(b"No image available")
+        else:
+            self._set_headers()
+            if self.command != 'HEAD':
+                self.wfile.write(b"No image available")
+    
+    def _handle_status(self):
+        """Handle the status path request"""
+        if global_capture_instance:
+            frame_data = global_capture_instance.get_frame()
+            _, fps, width, height = frame_data if frame_data[0] is not None else (None, 0, 0, 0)
+            
+            status = {
+                "capturing": global_capture_instance.is_capturing(),
+                "frame_count": global_capture_instance.frame_count,
+                "fps": fps,
+                "resolution": f"{width}x{height}",
+                "last_save_time": datetime.fromtimestamp(global_capture_instance.last_save_time).strftime('%Y-%m-%d %H:%M:%S') if global_capture_instance.last_save_time > 0 else None,
+                "error": global_capture_instance.last_error
+            }
+            self._send_json_response(status)
+        else:
+            self._send_json_response({"error": "Capture not initialized"})
+    
+    def do_HEAD(self):
+        """Handle HEAD requests"""
+        if self.path == '/':
+            self._set_headers()
+        elif self.path.startswith('/image'):
+            self._set_headers('image/jpeg')
+        elif self.path == '/status':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+        else:
+            # Handle 404
+            self.send_response(404)
+            self.end_headers()
+    
+    def do_GET(self):
+        """Handle GET requests"""
+        if self.path == '/':
+            self._handle_root()
+        elif self.path.startswith('/image'):
+            self._handle_image()
+        elif self.path == '/status':
+            self._handle_status()
+        else:
+            # Handle 404
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b"404 Not Found")
+
+def run_http_server(port=8080):
+    """Run the HTTP server on the specified port."""
+    server = HTTPServer(('', port), JiffyHTTPHandler)
+    print(f"Starting HTTP server on port {port}")
+    print(f"You can view the latest image at: http://localhost:{port}/image")
+    print(f"You can check status at: http://localhost:{port}/status")
+    print(f"You can view the web UI at: http://localhost:{port}/")
+    server_thread = threading.Thread(target=server.serve_forever)
+    server_thread.daemon = True  # Set as daemon so it will be stopped when the main program exits
+    server_thread.start()
+    return server
 
 class VideoCapture:
     def __init__(self, config_file='jiffycam.yaml'):
@@ -339,6 +544,10 @@ def parse_args():
                         help='List available camera devices and exit')
     parser.add_argument('--runtime', type=int, default=0,
                         help='Run for specified number of seconds then exit (0 for indefinite)')
+    parser.add_argument('--http', action='store_true',
+                        help='Start an HTTP server to serve the latest frame')
+    parser.add_argument('--port', type=int, default=8080,
+                        help='Port for the HTTP server (default: 8080)')
     
     return parser.parse_args()
 
@@ -358,6 +567,8 @@ def list_available_cameras():
 
 def run_standalone():
     """Run JiffyCam in standalone mode."""
+    global global_capture_instance  # Use the global variable for the HTTP server
+    
     args = parse_args()
     
     if args.list_devices:
@@ -366,6 +577,7 @@ def run_standalone():
     
     # Initialize video capture with config file
     capture = VideoCapture(config_file=args.config)
+    global_capture_instance = capture  # Set the global instance for HTTP access
     
     # Override config with command line arguments
     config = capture.config
@@ -417,6 +629,11 @@ def run_standalone():
     print(f"  Data Directory: {config.get('data_dir', 'JiffyData')}")
     print(f"  Runtime: {args.runtime if args.runtime > 0 else 'Indefinite'} seconds")
     
+    # Start HTTP server if requested
+    http_server = None
+    if args.http:
+        http_server = run_http_server(args.port)
+    
     # Start capture
     capture.start_capture_thread(
         cam_device=cam_device,
@@ -456,6 +673,14 @@ def run_standalone():
         # Clean up
         capture.stop_capture()
         print("Capture stopped")
+        
+        # Stop HTTP server if it was started
+        if http_server:
+            print("Stopping HTTP server...")
+            http_server.shutdown()
+        
+        # Clear global reference
+        global_capture_instance = None
 
 if __name__ == "__main__":
     run_standalone() 
