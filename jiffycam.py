@@ -19,20 +19,16 @@ import streamlit as st
 # Import Jiffy modules
 # from jiffyput import jiffyput # Not directly used here
 from jiffyget import get_timestamp_range # get_frame moved to jiffyui 
-from jiffyconfig import RESOLUTIONS  
-from jiffycapture import VideoCapture  
+from jiffyconfig import RESOLUTIONS, JiffyConfig
 
 # Import UI functions from the new module
 from jiffyui import (
     build_sidebar, 
     build_main_area, 
     run_ui_update_loop,
+    JiffyCamClient,
     # Callbacks and helpers are internal to jiffyui now
 )
-
-# Configuration flags (Keep if used outside UI, otherwise move/remove)
-SHOW_RESOLUTION_SETTING = False  
-#import jiffyglobals
 
 # --- Main Application Logic ---
 def main():       
@@ -59,9 +55,10 @@ def main():
     #print(f"server_state: {server_state.is_capturing}")
     #print(f"st.session_state.slave_mode: {st.session_state.slave_mode}")
 
-    if 'video_capture' not in st.session_state:
-        st.session_state.video_capture = VideoCapture()
-
+    # Load config
+    config_manager = JiffyConfig()
+    config = config_manager.config
+    
     # UI interaction state flags
     if 'in_playback_mode' not in st.session_state: st.session_state.in_playback_mode = True
     if 'rt_capture' not in st.session_state: st.session_state.rt_capture = False
@@ -71,28 +68,37 @@ def main():
     if 'image_just_saved' not in st.session_state: st.session_state.image_just_saved = False
     if 'step_direction' not in st.session_state: st.session_state.step_direction = None
     if 'autoplay_direction' not in st.session_state: st.session_state.autoplay_direction = None
-    # Configuration related state (derived from video_capture.config)
+    
+    # Default to HTTP mode
+    if 'use_http_mode' not in st.session_state: st.session_state.use_http_mode = True
+    if 'http_server_url' not in st.session_state: st.session_state.http_server_url = "http://localhost:8080"
+    
+    # Initialize HTTP client if in HTTP mode
+    if st.session_state.use_http_mode and 'http_client' not in st.session_state:
+        st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
+    
+    # Configuration related state (derived from config)
     # Ensure device_aliases is OrderedDict
-    aliases = st.session_state.video_capture.config.get('device_aliases', {'Default': '0'})
+    aliases = config.get('device_aliases', {'Default': '0'})
     if 'device_aliases' not in st.session_state: st.session_state.device_aliases = OrderedDict(aliases) 
     else: st.session_state.device_aliases = OrderedDict(st.session_state.device_aliases) # Ensure type
 
-    if 'cam_name' not in st.session_state: st.session_state.cam_name = st.session_state.video_capture.config.get('cam_name', 'cam0')
+    if 'cam_name' not in st.session_state: st.session_state.cam_name = config.get('cam_name', 'cam0')
     if 'data_dir' not in st.session_state:
-        st.session_state.data_dir = st.session_state.video_capture.config.get('data_dir', 'JiffyData')
+        st.session_state.data_dir = config.get('data_dir', 'JiffyData')
         os.makedirs(st.session_state.data_dir, exist_ok=True)
     if 'resolution' not in st.session_state:
-        config_res = st.session_state.video_capture.config.get('resolution', '1080p (1920x1080)')
+        config_res = config.get('resolution', '1080p (1920x1080)')
         matched_key = None
         if isinstance(config_res, str) and 'x' in config_res:
             for key, (w,h) in RESOLUTIONS.items():
                 if f"{w}x{h}" == config_res: matched_key = key; break
         st.session_state.resolution = matched_key or config_res # Use key if found, else config value
-    if 'save_interval' not in st.session_state: st.session_state.save_interval = int(st.session_state.video_capture.config.get('save_interval', 60))
+    if 'save_interval' not in st.session_state: st.session_state.save_interval = int(config.get('save_interval', 60))
     
     # Determine initial cam_device (path/ID) and selected_device_alias (UI key)
     if 'selected_device_alias' not in st.session_state or 'cam_device' not in st.session_state:
-        config_device_val = st.session_state.video_capture.config.get('cam_device', 'Default') # This is likely the alias key
+        config_device_val = config.get('cam_device', 'Default') # This is likely the alias key
         available_aliases = st.session_state.device_aliases
         
         if config_device_val in available_aliases:
@@ -136,7 +142,7 @@ def main():
     # --- Build UI --- 
     # Call UI builders and store returned placeholders in session_state
     # These keys ('status_placeholder', etc.) must match those used in jiffyui callbacks
-    st.session_state.status_placeholder, st.session_state.error_placeholder = build_sidebar(SHOW_RESOLUTION_SETTING)
+    st.session_state.status_placeholder, st.session_state.error_placeholder = build_sidebar()
     st.session_state.video_placeholder, st.session_state.time_display, st.session_state.timearrow_placeholder = \
         build_main_area()
 

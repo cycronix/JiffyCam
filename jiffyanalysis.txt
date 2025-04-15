@@ -60,3 +60,47 @@ The system includes error handling mechanisms:
 - Graceful degradation when resources are constrained
 
 This architecture allows JiffyCam to capture video continuously while maintaining a buffer of recent footage, and quickly save clips when triggered, all while monitoring system health.
+
+JiffyCam Data Flow Diagram:
+
++----------------+     +------------------+     +------------------+
+|                |     |                  |     |                  |
+|  Camera Device |---->|  jiffycapture.py |---->|  HTTP Server     |
+|                |     |                  |     |  (Port 8080)     |
++----------------+     +------------------+     +------------------+
+                              |                        |
+                              |                        |
+                              v                        v
++----------------+     +------------------+     +------------------+
+|                |     |                  |     |                  |
+|  File System   |<----|  Frame Buffer    |<----|  /image Endpoint |
+|  (JiffyData)   |     |                  |     |                  |
++----------------+     +------------------+     +------------------+
+                              ^                        ^
+                              |                        |
+                              |                        |
++----------------+     +------------------+     +------------------+
+|                |     |                  |     |                  |
+|  User          |<----|  Streamlit UI    |<----|  jiffyui.py     |
+|                |     |  (Port 8501)     |     |                  |
++----------------+     +------------------+     +------------------+
+                              ^                        ^
+                              |                        |
+                              |                        |
++----------------+     +------------------+     +------------------+
+|                |     |                  |     |                  |
+|  Config        |---->|  Status Updates  |<----|  /status Endpoint|
+|  (jiffycam.yaml)|    |                  |     |                  |
++----------------+     +------------------+     +------------------+
+
+Data Flow:
+1. Camera → jiffycapture.py → Frame Buffer
+2. Frame Buffer → HTTP Server → Streamlit UI
+3. Status updates flow through the same path
+4. Images are saved to File System
+5. User interacts through Streamlit UI
+6. Config settings affect both components
+
+Ports:
+- HTTP Server: 8080
+- Streamlit UI: 8501

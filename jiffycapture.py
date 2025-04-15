@@ -45,6 +45,10 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
     
+    def log_message(self, format, *args):
+        """Override to suppress logging of HTTP requests."""
+        pass
+    
     def _handle_root(self):
         """Handle the root path request"""
         self._set_headers()
@@ -631,7 +635,7 @@ def run_standalone():
     
     # Start HTTP server if requested
     http_server = None
-    if args.http:
+    if True or args.http:                           # mjm always start http server
         http_server = run_http_server(args.port)
     
     # Start capture
@@ -653,8 +657,8 @@ def run_standalone():
                 print(f"Runtime limit of {args.runtime} seconds reached. Stopping capture.")
                 break
                 
-            # Print status every 5 seconds
-            if int(time.time()) % 5 == 0:
+            # Print status every 60 seconds
+            if int(time.time()) % 60 == 0:
                 frame_data = capture.get_frame()
                 if frame_data[0] is not None:
                     _, fps, width, height = frame_data
