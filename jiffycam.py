@@ -71,7 +71,18 @@ def main():
     
     # Default to HTTP mode
     if 'use_http_mode' not in st.session_state: st.session_state.use_http_mode = True
-    if 'http_server_url' not in st.session_state: st.session_state.http_server_url = "http://localhost:8080"
+    
+    # Initialize dataserver_port from config
+    if 'dataserver_port' not in st.session_state: 
+        st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
+    
+    # Set http_server_port to match dataserver_port for consistency
+    if 'http_server_port' not in st.session_state:
+        st.session_state.http_server_port = st.session_state.dataserver_port
+    
+    # Build HTTP server URL with the configured port
+    if 'http_server_url' not in st.session_state:
+        st.session_state.http_server_url = f"http://localhost:{st.session_state.dataserver_port}"
     
     # Initialize HTTP client if in HTTP mode
     if st.session_state.use_http_mode and 'http_client' not in st.session_state:

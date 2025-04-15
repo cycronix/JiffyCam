@@ -183,7 +183,8 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
                 "fps": fps,
                 "resolution": f"{width}x{height}",
                 "last_save_time": datetime.fromtimestamp(global_capture_instance.last_save_time).strftime('%Y-%m-%d %H:%M:%S') if global_capture_instance.last_save_time > 0 else None,
-                "error": global_capture_instance.last_error
+                "error": global_capture_instance.last_error,
+                "session": global_capture_instance.current_session
             }
             self._send_json_response(status)
         else:
@@ -254,6 +255,7 @@ class VideoCapture:
         self.image_just_saved = False  # Flag to track when an image was just saved
         self.image_saved_time = 0  # Track when the image was saved
         self.last_frame = None
+        self.current_session = None # Track the currently active session name
     def handle_error(self, error_msg: str):
         """Handle errors by setting error message and stopping capture"""
         self.last_error = error_msg
@@ -443,6 +445,7 @@ class VideoCapture:
         if self.capture_thread:
             self.capture_thread.join(timeout=1.0)
         self.capture_thread = None
+        self.current_session = None # Clear current session on stop
         # Clear the frame queue
         while not self.frame_queue.empty():
             try:
@@ -482,6 +485,7 @@ class VideoCapture:
         self.skip_first_save = True  # Reset the skip flag when starting capture
         self.image_just_saved = False  # Reset the image_just_saved flag
         self.image_saved_time = 0  # Reset the image_saved_time variable
+        self.current_session = session # Store the active session name
         
         # Start capture thread
         self.capture_thread = threading.Thread(
@@ -551,7 +555,7 @@ def parse_args():
     parser.add_argument('--http', action='store_true',
                         help='Start an HTTP server to serve the latest frame')
     parser.add_argument('--port', type=int, default=8080,
-                        help='Port for the HTTP server (default: 8080)')
+                        help='Port for the HTTP server (default: from config or 8080)')
     
     return parser.parse_args()
 
@@ -636,7 +640,10 @@ def run_standalone():
     # Start HTTP server if requested
     http_server = None
     if True or args.http:                           # mjm always start http server
-        http_server = run_http_server(args.port)
+        # Use port from arguments or from config if available
+        port = args.port if args.port != 8080 else int(config.get('dataserver_port', 8080))
+        http_server = run_http_server(port)
+        print(f"HTTP server started on port {port}")
     
     # Start capture
     capture.start_capture_thread(

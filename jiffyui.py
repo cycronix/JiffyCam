@@ -214,17 +214,46 @@ def format_time_12h(hour, minute, second):
         hour_12 = 12
     return f"{hour_12}:{minute:02d}:{second:02d} {period}"
 
+# --- Helper Functions ---
+
+def get_available_recordings(data_dir):
+    """Scan the data directory for available recordings (top-level folders)."""
+    recordings = {}
+    if data_dir is None or not os.path.isdir(data_dir):
+        print(f"Warning: data_dir '{data_dir}' not found or not a directory.")
+        return recordings
+
+    try:
+        for item_name in os.listdir(data_dir):
+            item_path = os.path.join(data_dir, item_name)
+            # Only include directories as recordings
+            if os.path.isdir(item_path):
+                # Use the directory name as both key and value
+                recordings[item_name] = item_name
+    except OSError as e:
+        print(f"Error scanning data_dir '{data_dir}': {e}")
+
+    return recordings
+
 # --- Callback Functions (must use st.session_state) ---
 
-def on_device_alias_change():
-    """Update cam_device when device alias is changed"""
-    selected_alias = st.session_state.selected_device_alias
-    if selected_alias in st.session_state.device_aliases:
-        st.session_state.cam_device = st.session_state.device_aliases[selected_alias]
-        st.session_state.session = selected_alias # Session matches alias
-        st.session_state.oldest_timestamp = None # Force range recalculation
-        st.session_state.newest_timestamp = None
-        st.session_state.need_to_display_recent = True # Show most recent for new device
+def on_recording_change():
+    """Update session based on the value selected in the recording selectbox."""
+    # The new value chosen by the user is ALREADY in st.session_state.selected_recording_key
+    # We just need to update our separate st.session_state.session variable
+    new_session = st.session_state.selected_recording_key
+
+    # Update the main session variable used by other parts of the app
+    st.session_state.session = new_session
+
+    # Perform other actions needed when the session changes
+    st.session_state.oldest_timestamp = None # Force range recalculation
+    st.session_state.newest_timestamp = None
+    st.session_state.need_to_display_recent = True # Show most recent for new recording
+    set_autoplay("None")
+    st.session_state.in_playback_mode = True # Default to playback when changing recording
+    if st.session_state.get('video_placeholder'):
+         display_most_recent_image()
 
 def toggle_rt_capture():
     """Toggle real-time capture on/off"""
@@ -425,12 +454,9 @@ def update_image_display(direction=None):
         # No image found or error displaying
         status_placeholder.text(f"No image found near specified time")
         st.session_state.status_message = f"No image found near specified time"
-        # Keep showing the last valid frame if one exists
-        if st.session_state.last_frame is not None:
-            #video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
-            new_image_display(st.session_state.last_frame)
-        else: # No previous frame, clear the placeholder
-            video_placeholder.empty()
+        # Clear the last frame and the display placeholder
+        st.session_state.last_frame = None
+        video_placeholder.empty()
 
     return success
 
@@ -456,41 +482,47 @@ def build_sidebar():
     with st.sidebar:
         st.title("JiffyCam")
         
-        # Remote Server Settings
-        with st.expander("💻 Remote Server Settings", expanded=True):
-            # Get the current server URL from session state or default to 8080
-            current_port = st.session_state.get('http_server_port', 8080)
-            
-            # Input for port number only
-            server_port = st.number_input("Data Server Port", 
-                                        value=current_port,
-                                        min_value=1,
-                                        max_value=65535,
-                                        help="Port number for the JiffyCam data server")
-            
-            # Update the HTTP client if the port changed
-            if server_port != current_port:
-                st.session_state.http_server_port = server_port
-                # Construct the server URL using the same host as Streamlit
-                server_url = f"http://{st.session_state.get('_server_host', 'localhost')}:{server_port}"
-                # Re-initialize the client with the new URL
-                st.session_state.http_client = JiffyCamClient(server_url)
-                
-            # Test connection button
-            if st.button("Test Connection"):
-                # Always re-initialize client with current port for test
-                server_url = f"http://{st.session_state.get('_server_host', 'localhost')}:{server_port}"
-                st.session_state.http_client = JiffyCamClient(server_url)
-                # Check connection but don't display message here
-                st.session_state.http_client.check_connection(force=True)
-            
-            # Display current connection status
-            if hasattr(st.session_state, 'http_client'):
-                if st.session_state.http_client.connected:
-                    st.success(f"Connected to port {server_port}")
-                elif st.session_state.rt_capture:
-                    st.error(f"Failed to connect to port {server_port}")
-        
+        # Recording Selection
+        st.header("Recordings")
+        # Get data_dir from session state (e.g., loaded from config)
+        data_dir = st.session_state.get('data_dir', 'JiffyData') # Default if not set
+
+        # Scan for recordings only if not already cached in session state
+        if 'available_recordings' not in st.session_state or not st.session_state.available_recordings:
+            st.session_state.available_recordings = get_available_recordings(data_dir)
+
+        # Use the cached/scanned recordings
+        available_recordings = st.session_state.available_recordings
+
+        recording_keys = list(available_recordings.keys())
+
+        if not recording_keys:
+            st.warning(f"No recordings found in '{data_dir}'.")
+            # Initialize session to avoid errors later, assume cam_name is set elsewhere
+            if 'session' not in st.session_state: st.session_state.session = "DefaultRecording"
+        else:
+            # Initialize the selectbox widget state key if it doesn't exist
+            # This ensures the widget has a starting value without overriding user selection later
+            if 'selected_recording_key' not in st.session_state:
+                # Try to use the current session if it's valid, otherwise default to first key
+                current_session = st.session_state.get('session', '')
+                if current_session in recording_keys:
+                    st.session_state.selected_recording_key = current_session
+                else:
+                    st.session_state.selected_recording_key = recording_keys[0]
+                    # If we defaulted the widget key, also update the main session state
+                    if st.session_state.session != st.session_state.selected_recording_key:
+                         st.session_state.session = st.session_state.selected_recording_key
+
+            st.selectbox(
+                "Select Recording",
+                options=recording_keys,
+                key="selected_recording_key",
+                on_change=on_recording_change,
+                help="Select the recording session to view.",
+                label_visibility="collapsed"
+            )
+
         # Status Placeholders (created here, returned for main loop)
         st.header("Status")
         status_placeholder = st.empty()
@@ -765,33 +797,47 @@ def build_main_area():
     with time_cols[6]: # Separator
         st.markdown('<div style="width:1px;background-color:#555;height:32px;margin:0 auto;"></div>', unsafe_allow_html=True)
     with time_cols[7]: # Live/Pause Button
-        # Check if client is connected
-        has_client = (hasattr(st.session_state, 'http_client') and 
-                      st.session_state.http_client.is_connected())
-        
+        # Check if client is connected and status is available
+        client_connected = False
+        server_session = None
+        if hasattr(st.session_state, 'http_client'):
+            client = st.session_state.http_client
+            if client.is_connected():
+                client_connected = True
+                # Attempt to get server session from last known status
+                if client.last_status:
+                    server_session = client.last_status.get('session') # Safely get session
+
+        # Get UI session
+        ui_session = st.session_state.get('session')
+
+        # Determine if live button should be disabled
+        live_disabled = True # Default to disabled
+        if client_connected and server_session is not None and ui_session is not None:
+            if server_session == ui_session:
+                live_disabled = False # Enable only if connected and sessions match
+
         # is_capturing reflects if rt_capture is enabled and we have a connection
-        is_capturing = st.session_state.rt_capture and has_client
-        
-        # Only disable the Live button if we don't have a connection to the server
-        live_disabled = not has_client
-            
+        # This doesn't determine enabled state anymore, but affects button style/help
+        # is_capturing = st.session_state.rt_capture and client_connected
+
         in_playback = st.session_state.in_playback_mode
-        
+
         # Always display "Live" text, but with different styles
         button_text = "Live"
-        
+
         if in_playback:
             # Not in live mode - unfilled button
-            button_help = "Switch to live view"
+            button_help = "Switch to live view" if not live_disabled else f"Server not capturing session '{ui_session}'"
             button_type = "secondary"  # Gray (unfilled) button
         else:
             # In live mode - filled red button
             button_help = "Pause live view"
             button_type = "primary"    # Red (filled) button via CSS
-        
+
         st.button(button_text, key="live_btn", use_container_width=True, help=button_help,
                 on_click=toggle_live_pause, disabled=live_disabled, type=button_type)
-    
+
     # Time Arrow above timeline
     timearrow_placeholder = st.empty()
     #timearrow_img = generate_timeline_arrow()

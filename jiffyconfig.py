@@ -51,6 +51,7 @@ class JiffyConfig:
             'resolution': '1920x1080',  # Combined resolution field
             'save_interval': 60,  # Changed to integer default
             'data_dir': 'JiffyData',  # Default data directory
+            'dataserver_port': 8080,  # Default port for the JiffyCam data server
             'device_aliases': OrderedDict([   # Use OrderedDict for default device aliases
                 ('USB0', '0'),
                 ('USB1', '1'),
