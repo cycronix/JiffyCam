@@ -186,6 +186,7 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
                 "error": global_capture_instance.last_error,
                 "session": global_capture_instance.current_session
             }
+            #print(f"status: {status}")
             self._send_json_response(status)
         else:
             self._send_json_response({"error": "Capture not initialized"})
@@ -419,7 +420,7 @@ class VideoCapture:
         
         # Save configuration
         self.config = config
-        self.config_manager.save_config(self.config)
+        #self.config_manager.save_config(self.config)
         
         # Parse resolution string for capture thread
         try:

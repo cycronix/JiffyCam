@@ -98,6 +98,7 @@ class JiffyConfig:
         Returns:
             bool: True if save was successful, False otherwise
         """
+        print(f"Saving configuration to {self.yaml_file}")      # shouildnt happen?
         try:
             # Create a copy to avoid modifying the original
             config = config.copy()

@@ -439,7 +439,7 @@ def update_image_display(direction=None):
             )
 
             # Update status text
-            status_placeholder.text(f"Viewing: {dts.strftime('%Y-%m-%d %H:%M:%S')}")
+            status_placeholder.markdown(f"<div style='padding: 5px 0;'>Viewing: {dts.strftime('%Y-%m-%d %H:%M:%S')}</div>", unsafe_allow_html=True)
             st.session_state.status_message = f"Viewing: {dts.strftime('%Y-%m-%d %H:%M:%S')}" # Update internal status too
             success = True
 
@@ -452,7 +452,7 @@ def update_image_display(direction=None):
         set_autoplay("None")
 
         # No image found or error displaying
-        status_placeholder.text(f"No image found near specified time")
+        status_placeholder.markdown("<div style='padding: 5px 0;'>No image found near specified time</div>", unsafe_allow_html=True)
         st.session_state.status_message = f"No image found near specified time"
         # Clear the last frame and the display placeholder
         st.session_state.last_frame = None
@@ -523,12 +523,13 @@ def build_sidebar():
                 label_visibility="collapsed"
             )
 
-        # Status Placeholders (created here, returned for main loop)
+        # Status Placeholders
         st.header("Status")
         status_placeholder = st.empty()
+        server_status_placeholder = st.empty()
         error_placeholder = st.empty()
 
-    return status_placeholder, error_placeholder
+    return status_placeholder, error_placeholder, server_status_placeholder
 
 def generate_timeline_image(width=1200, height=60):
     """Generate an image for the timeline bar based on available data."""
@@ -896,6 +897,7 @@ def run_ui_update_loop():
     status_placeholder = st.session_state.status_placeholder
     error_placeholder = st.session_state.error_placeholder
     time_display = st.session_state.time_display
+    server_status_placeholder = st.session_state.server_status_placeholder
 
     # --- Initial Image Display --- 
     is_capturing = False
@@ -914,9 +916,37 @@ def run_ui_update_loop():
     elif st.session_state.last_frame is not None:
         update_image_display(st.session_state.step_direction)
 
+    # Initialize server status update counter
+    server_status_update_time = 0
+
     while True:
         try:
             heartbeat()
+
+            # Update server connection status display (every 2 seconds)
+            current_time = time.time()
+            if current_time - server_status_update_time > 2:
+                server_status_update_time = current_time
+                connection_status = "Disconnected"
+                server_session = "None"
+                
+                if hasattr(st.session_state, 'http_client'):
+                    client = st.session_state.http_client
+                    if client.is_connected():
+                        connection_status = "Connected"
+                        if client.last_status:
+                            server_session = client.last_status.get('session', 'None')
+                            is_capturing = client.last_status.get('capturing', False)
+                            if is_capturing:
+                                connection_status = "Recording"
+                
+                # Display server status
+                status_html = f"""
+                <div style="padding: 5px 0;">
+                    <div><b>Recording:</b> <span style="color: {'blue' if server_session != 'None' else 'gray'}">{server_session if server_session != 'None' else 'Idle'}</span></div>
+                </div>
+                """
+                server_status_placeholder.markdown(status_html, unsafe_allow_html=True)
 
             # Check for errors first
             check_errors = False
@@ -928,7 +958,7 @@ def run_ui_update_loop():
                     not st.session_state.http_client.is_connected()):
                     
                     error_placeholder.error(st.session_state.http_client.last_error or "Connection lost to JiffyCam server")
-                    status_placeholder.text("Status: Connection Error")
+                    status_placeholder.markdown("<div style='padding: 5px 0;'>Status: Connection Error</div>", unsafe_allow_html=True)
                     st.session_state.status_message = "Status: Connection Error"
                     check_errors = True
             
@@ -977,7 +1007,7 @@ def run_ui_update_loop():
                         frame, fps, _, _ = st.session_state.http_client.get_frame()
                         
                         # Update status information periodically
-                        status_updated = st.session_state.http_client.update_status_if_needed()
+                        #status_updated = st.session_state.http_client.update_status_if_needed()
                         
                         # Always update status to show we're using HTTP mode
                         if frame is not None:
@@ -1020,8 +1050,8 @@ def run_ui_update_loop():
                         new_image_display(st.session_state.last_frame)
                     new_status = "Status: Idle"
 
-            # Update status placeholder
-            status_placeholder.text(new_status)
+            # Update status placeholder with formatted status
+            status_placeholder.markdown(f"<div style='padding: 5px 0;'>{new_status}</div>", unsafe_allow_html=True)
             st.session_state.status_message = new_status # Store new status
 
             # Main loop delay
