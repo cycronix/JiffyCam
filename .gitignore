@@ -3,5 +3,6 @@ models/
 Old/
 ghat.txt
 .DS_Store
+private.yaml
 __pycache__/
 

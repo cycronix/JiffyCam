@@ -288,9 +288,27 @@ def on_date_change():
 
     st.session_state.browsing_date = st.session_state.date
     st.session_state.in_playback_mode = True 
+    
+    # Reset jiffyget timestamps cache for the new date
+    import jiffyget
+    jiffyget.timestamps = None
+    
+    # Make sure step_direction is set for proper playback control initialization
+    if 'step_direction' not in st.session_state or not st.session_state.step_direction:
+        st.session_state.step_direction = "down"
 
-    # Fetch placeholders from session_state inside the update function
+    # Instead of checking need_to_display_recent flag, 
+    # always display the most recent image for the selected date
+    # First set time to end of day to find the latest image
+    st.session_state.hour = 23
+    st.session_state.minute = 59
+    st.session_state.second = 59
+    
+    # Search backwards ("down") for the latest image of the day
     update_image_display(direction="down")
+    
+    # Reset flag to avoid duplicate loading
+    st.session_state.need_to_display_recent = False
 
 def on_prev_button(stopAuto=True):
     """Handle previous image button click."""
@@ -328,6 +346,41 @@ def tweek_time(direction):
     st.session_state.hour = dt.hour
     st.session_state.minute = dt.minute
     st.session_state.second = dt.second
+
+def change_day(direction):
+    """Change the date by one day in the specified direction.
+    
+    Args:
+        direction: "next" or "prev" indicating which day to navigate to
+    """
+    # Reset jiffyget timestamps cache before changing day
+    import jiffyget
+    jiffyget.timestamps = None
+    
+    # Get current date from the session state
+    current_date = st.session_state.date
+    
+    # Calculate the new date based on direction
+    if direction == "next":
+        new_date = current_date + timedelta(days=1)
+    else:  # "prev"
+        new_date = current_date - timedelta(days=1)
+    
+    # Check if the new date is within min/max range
+    min_date = st.session_state.oldest_timestamp.date() if st.session_state.oldest_timestamp else None
+    max_date = max(datetime.now().date(), st.session_state.newest_timestamp.date() if st.session_state.newest_timestamp else datetime.now().date())
+    
+    if min_date and new_date < min_date:
+        new_date = min_date
+    if max_date and new_date > max_date:
+        new_date = max_date
+    
+    # Set step direction to ensure playback controls work after day change
+    st.session_state.step_direction = "down"
+    
+    # Update the date in session state
+    st.session_state.date = new_date
+    # This alone won't trigger on_date_change since we're calling it explicitly from the button handlers
 
 def toggle_live_pause():
     """Handle Live/Pause button click."""
@@ -372,6 +425,32 @@ def on_fast_forward_button():
     tweek_time('up')
     # Set to playback mode like other buttons do
     st.session_state.in_playback_mode = True
+
+def on_prev_day_button():
+    """Handle previous day button click."""
+    set_autoplay("None")
+    
+    # In-line function to force playback controls to work right after day change
+    st.session_state.in_playback_mode = True
+    
+    # Change the day
+    change_day("prev")
+    
+    # Directly trigger the date change handler instead of waiting for callback
+    on_date_change()
+    
+def on_next_day_button():
+    """Handle next day button click."""
+    set_autoplay("None")
+    
+    # In-line function to force playback controls to work right after day change
+    st.session_state.in_playback_mode = True
+    
+    # Change the day
+    change_day("next")
+    
+    # Directly trigger the date change handler instead of waiting for callback
+    on_date_change()
 
 # --- UI Update Functions ---
 def new_image_display(frame):
@@ -471,6 +550,17 @@ def display_most_recent_image():
     st.session_state.browsing_date = timestamp.date()
     # st.session_state.date = timestamp.date() # REMOVED: Cannot modify widget state directly
 
+    # Make sure we're in playback mode
+    st.session_state.in_playback_mode = True
+
+    # Make sure step_direction is set for proper playback control initialization
+    if 'step_direction' not in st.session_state or not st.session_state.step_direction:
+        st.session_state.step_direction = "down"
+    
+    # Reset jiffyget timestamps to force reload for current date
+    import jiffyget
+    jiffyget.timestamps = None
+    
     # Search backwards ("down") for the latest image before now
     update_image_display(direction="down")
     st.session_state.need_to_display_recent = False # Mark as done
@@ -754,23 +844,52 @@ def build_main_area():
         border-color: #ff4b4b !important;
         color: white !important;
     }
+    
+    /* Day navigation buttons styling */
+    button[data-testid="baseButton-secondary"]:has(div:contains("◀")),
+    button[data-testid="baseButton-secondary"]:has(div:contains("▶")) {
+        padding: 0 !important;
+    }
+    
+    /* Centered controls container with margin for better positioning */
+    .top-controls {
+        max-width: 600px;
+        margin: 25px auto 0 auto;
+    }
+    
+    /* Remove all the vertical align stuff */
     </style>
     """, unsafe_allow_html=True)
 
     # --- Layout ---
 
     # Centered controls container
-    st.markdown("<div style='max-width: 600px; margin: 5px auto 0 auto;'>", unsafe_allow_html=True)
+    st.markdown("<div class='top-controls'>", unsafe_allow_html=True)
 
-    # Date Picker
-    min_date, max_date = None, datetime.now().date()
-    if st.session_state.oldest_timestamp: min_date = st.session_state.oldest_timestamp.date()
-    if st.session_state.newest_timestamp: max_date = max(max_date, st.session_state.newest_timestamp.date())
-    st.date_input("Date", key="date",
-                   # Callback no longer needs args
-                   on_change=on_date_change,
-                   help="Select date", label_visibility="collapsed",
-                   min_value=min_date, max_value=max_date)
+    # Date Picker with navigation buttons in a single row with vertical alignment
+    date_cols = st.columns([0.7, 5, 0.7])
+    
+    with date_cols[0]:  # Previous day button
+        # Add a simple empty space above the button to create consistent positioning
+        st.write("")
+        st.button("◀", key="prev_day_button", use_container_width=True, help="Previous Day",
+                 on_click=on_prev_day_button)
+    
+    with date_cols[1]:  # Date Picker
+        min_date, max_date = None, datetime.now().date()
+        if st.session_state.oldest_timestamp: min_date = st.session_state.oldest_timestamp.date()
+        if st.session_state.newest_timestamp: max_date = max(max_date, st.session_state.newest_timestamp.date())
+        st.date_input("Date", key="date",
+                       # Callback no longer needs args
+                       on_change=on_date_change,
+                       help="Select date", label_visibility="collapsed",
+                       min_value=min_date, max_value=max_date)
+    
+    with date_cols[2]:  # Next day button
+        # Add a simple empty space above the button to create consistent positioning
+        st.write("")
+        st.button("▶", key="next_day_button", use_container_width=True, help="Next Day",
+                 on_click=on_next_day_button)
 
     # Time controls row
     time_cols = st.columns([3, 1, 1, 1, 1, 1, 0.2, 1])
