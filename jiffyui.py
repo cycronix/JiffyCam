@@ -942,7 +942,7 @@ def build_main_area():
     /* Centered controls container with margin for better positioning */
     .top-controls {
         max-width: 600px;
-        margin: 25px auto 0 auto;
+        margin: 20px 0 0 0;
     }
     
     /* Remove all the vertical align stuff */

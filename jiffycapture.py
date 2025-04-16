@@ -209,6 +209,7 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
     
     def do_GET(self):
         """Handle GET requests"""
+        #print(f"do_GET: {self.path}")
         if self.path == '/':
             self._handle_root()
         elif self.path.startswith('/image'):
