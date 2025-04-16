@@ -250,6 +250,12 @@ def on_recording_change():
     st.session_state.oldest_timestamp = None # Force range recalculation
     st.session_state.newest_timestamp = None
     st.session_state.need_to_display_recent = True # Show most recent for new recording
+    st.session_state.last_displayed_timestamp = None # Force display update
+    
+    # Explicitly reset timestamps in jiffyget
+    import jiffyget
+    jiffyget.timestamps = None
+    
     set_autoplay("None")
     st.session_state.in_playback_mode = True # Default to playback when changing recording
     if st.session_state.get('video_placeholder'):
@@ -297,6 +303,28 @@ def on_date_change():
     if 'step_direction' not in st.session_state or not st.session_state.step_direction:
         st.session_state.step_direction = "down"
 
+    # Count frames for the new date
+    try:
+        browse_date = st.session_state.date
+        browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
+        
+        # Get timestamps for this date
+        timestamps = jiffyget.get_timestamps(
+            st.session_state.cam_name, 
+            st.session_state.session, 
+            st.session_state.data_dir, 
+            browse_date_posix
+        )
+        
+        # Count the number of frames
+        if timestamps is not None:
+            st.session_state.frames_detected = len(timestamps)
+        else:
+            st.session_state.frames_detected = 0
+    except Exception as e:
+        print(f"Error counting frames: {str(e)}")
+        st.session_state.frames_detected = 0
+    
     # Instead of checking need_to_display_recent flag, 
     # always display the most recent image for the selected date
     # First set time to end of day to find the latest image
@@ -387,6 +415,14 @@ def toggle_live_pause():
     
     if st.session_state.in_playback_mode:
         # Go Live
+        # Check if current browsing date is today
+        current_date = datetime.now().date()
+        browsing_date = st.session_state.get('browsing_date') or current_date
+        
+        if browsing_date != current_date:
+            # Don't toggle to live mode if date isn't today
+            return
+            
         # Update browsing date/time to current (will be reflected in loop)
         current_time = datetime.now()
         st.session_state.browsing_date = current_time.date()
@@ -404,12 +440,21 @@ def toggle_live_pause():
     else:
         # Pause
         st.session_state.in_playback_mode = True
+        
+        # No longer immediately reset display FPS - let it decay naturally
+        # when no more frames are being displayed
 
 def on_pause_button():
     """Handle pause button click."""
     set_autoplay("None")
     st.session_state.in_playback_mode = True
     st.session_state.step_direction = "None"
+    
+    # Force display update when pausing
+    st.session_state.last_displayed_timestamp = None
+    
+    # No longer immediately reset display FPS - let it decay naturally
+    # when no more frames are being displayed
     #print(f"on_pause_button: {get_is_capturing()}")
 
 def on_fast_reverse_button():
@@ -458,6 +503,16 @@ def new_image_display(frame):
         return
 
     """Display a new image based on the current date and time."""
+    # Track display FPS whenever we display a new frame, even in playback mode
+    current_time = time.time()
+    st.session_state.display_frame_count += 1
+    
+    # Calculate display FPS once per second
+    if current_time - st.session_state.last_display_time >= 1.0:
+        st.session_state.display_fps = st.session_state.display_frame_count / (current_time - st.session_state.last_display_time)
+        st.session_state.display_frame_count = 0
+        st.session_state.last_display_time = current_time
+    
     video_placeholder = st.session_state.video_placeholder
     video_placeholder.image(frame, channels="BGR", use_container_width=True)
 
@@ -561,6 +616,28 @@ def display_most_recent_image():
     import jiffyget
     jiffyget.timestamps = None
     
+    # Count frames for today
+    try:
+        browse_date = timestamp.date()
+        browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
+        
+        # Get timestamps for this date
+        timestamps = jiffyget.get_timestamps(
+            st.session_state.cam_name, 
+            st.session_state.session, 
+            st.session_state.data_dir, 
+            browse_date_posix
+        )
+        
+        # Count the number of frames
+        if timestamps is not None:
+            st.session_state.frames_detected = len(timestamps)
+        else:
+            st.session_state.frames_detected = 0
+    except Exception as e:
+        print(f"Error counting frames: {str(e)}")
+        st.session_state.frames_detected = 0
+    
     # Search backwards ("down") for the latest image before now
     update_image_display(direction="down")
     st.session_state.need_to_display_recent = False # Mark as done
@@ -617,9 +694,20 @@ def build_sidebar():
         st.header("Status")
         status_placeholder = st.empty()
         server_status_placeholder = st.empty()
+        
+        # Add metrics for FPS
+        st.subheader("Performance")
+        metrics_cols = st.columns(3)
+        with metrics_cols[0]:
+            capture_fps_placeholder = st.empty()
+        with metrics_cols[1]:
+            display_fps_placeholder = st.empty()
+        with metrics_cols[2]:
+            frames_detected_placeholder = st.empty()
+            
         error_placeholder = st.empty()
 
-    return status_placeholder, error_placeholder, server_status_placeholder
+    return status_placeholder, error_placeholder, server_status_placeholder, capture_fps_placeholder, display_fps_placeholder, frames_detected_placeholder
 
 def generate_timeline_image(width=1200, height=60):
     """Generate an image for the timeline bar based on available data."""
@@ -935,7 +1023,14 @@ def build_main_area():
         live_disabled = True # Default to disabled
         if client_connected and server_session is not None and ui_session is not None:
             if server_session == ui_session:
-                live_disabled = False # Enable only if connected and sessions match
+                # Only enable if connected, sessions match AND the date is today
+                current_date = datetime.now().date()
+                browsing_date = st.session_state.get('browsing_date') or current_date
+                if browsing_date == current_date:
+                    live_disabled = False
+                else:
+                    live_disabled = True
+                    button_help = "Live view is only available for current date"
 
         # is_capturing reflects if rt_capture is enabled and we have a connection
         # This doesn't determine enabled state anymore, but affects button style/help
@@ -948,7 +1043,8 @@ def build_main_area():
 
         if in_playback:
             # Not in live mode - unfilled button
-            button_help = "Switch to live view" if not live_disabled else f"Server not capturing session '{ui_session}'"
+            if not 'button_help' in locals():  # Don't override if already set for date mismatch
+                button_help = "Switch to live view" if not live_disabled else f"Server not capturing session '{ui_session}'"
             button_type = "secondary"  # Gray (unfilled) button
         else:
             # In live mode - filled red button
@@ -1017,6 +1113,9 @@ def run_ui_update_loop():
     error_placeholder = st.session_state.error_placeholder
     time_display = st.session_state.time_display
     server_status_placeholder = st.session_state.server_status_placeholder
+    capture_fps_placeholder = st.session_state.capture_fps_placeholder
+    display_fps_placeholder = st.session_state.display_fps_placeholder
+    frames_detected_placeholder = st.session_state.frames_detected_placeholder
 
     # --- Initial Image Display --- 
     is_capturing = False
@@ -1048,6 +1147,7 @@ def run_ui_update_loop():
                 server_status_update_time = current_time
                 connection_status = "Disconnected"
                 server_session = "None"
+                capture_fps = 0
                 
                 if hasattr(st.session_state, 'http_client'):
                     client = st.session_state.http_client
@@ -1056,8 +1156,42 @@ def run_ui_update_loop():
                         if client.last_status:
                             server_session = client.last_status.get('session', 'None')
                             is_capturing = client.last_status.get('capturing', False)
+                            capture_fps = client.last_status.get('fps', 0)
                             if is_capturing:
                                 connection_status = "Recording"
+                
+                # Store capture FPS in session state
+                st.session_state.capture_fps = capture_fps
+                
+                # Count frames for current date
+                if current_time - st.session_state.last_frames_count_update > 5:  # Update every 5 seconds
+                    st.session_state.last_frames_count_update = current_time
+                    try:
+                        # Get current date in posix milliseconds
+                        if st.session_state.in_playback_mode:
+                            browse_date = st.session_state.browsing_date
+                        else:
+                            browse_date = datetime.now().date()
+                        
+                        browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
+                        
+                        # Get timestamps for this date
+                        import jiffyget
+                        timestamps = jiffyget.get_timestamps(
+                            st.session_state.cam_name, 
+                            st.session_state.session, 
+                            st.session_state.data_dir, 
+                            browse_date_posix
+                        )
+                        
+                        # Count the number of frames
+                        if timestamps is not None:
+                            st.session_state.frames_detected = len(timestamps)
+                        else:
+                            st.session_state.frames_detected = 0
+                    except Exception as e:
+                        print(f"Error counting frames: {str(e)}")
+                        st.session_state.frames_detected = 0
                 
                 # Display server status
                 status_html = f"""
@@ -1066,6 +1200,32 @@ def run_ui_update_loop():
                 </div>
                 """
                 server_status_placeholder.markdown(status_html, unsafe_allow_html=True)
+                
+                # Update FPS metrics
+                # Only show Capture FPS when connected to and viewing live data
+                is_viewing_live = False
+                if (not st.session_state.in_playback_mode and 
+                    hasattr(st.session_state, 'http_client')):
+                    client = st.session_state.http_client
+                    is_viewing_live = (
+                        client.is_connected() and
+                        client.last_status and
+                        server_session == st.session_state.session
+                    )
+                
+                if is_viewing_live:
+                    capture_fps_placeholder.metric("Capture FPS", f"{st.session_state.capture_fps:.1f}")
+                else:
+                    # Reset and hide Capture FPS when not viewing live
+                    st.session_state.capture_fps = 0
+                    capture_fps_placeholder.metric("Capture FPS", "0.0")
+                
+                # Set display FPS to 0 when in playback mode and no frames displayed recently
+                if st.session_state.in_playback_mode and (current_time - st.session_state.last_display_time > 2.0):
+                    st.session_state.display_fps = 0
+                    
+                display_fps_placeholder.metric("Display FPS", f"{st.session_state.display_fps:.1f}")
+                frames_detected_placeholder.metric("Detections", st.session_state.frames_detected)
 
             # Check for errors first
             check_errors = False
@@ -1155,7 +1315,28 @@ def run_ui_update_loop():
                 if st.session_state.in_playback_mode:
                     # Playback Mode (Capture Stopped): Show paused frame
                     if st.session_state.last_frame is not None:
-                        new_image_display(st.session_state.last_frame)
+                        # Determine if we need to update the display
+                        # We need to update if:
+                        # 1. We're actively navigating (step_direction is set)
+                        # 2. The image hasn't been displayed yet (timestamps don't match)
+                        # 3. We just switched to playback mode (last_displayed_timestamp is None)
+                        need_display_update = False
+                        
+                        if st.session_state.step_direction not in [None, "None"]:
+                            need_display_update = True
+                        elif 'last_displayed_timestamp' not in st.session_state or st.session_state.last_displayed_timestamp is None:
+                            need_display_update = True
+                        elif st.session_state.last_displayed_timestamp != st.session_state.actual_timestamp:
+                            need_display_update = True
+                        
+                        if need_display_update:
+                            # Only display if we need to update the image
+                            new_image_display(st.session_state.last_frame)
+                            st.session_state.last_displayed_timestamp = st.session_state.actual_timestamp
+                            
+                            # Reset step_direction to prevent continuous updates
+                            if st.session_state.step_direction not in ["forward", "reverse"]:
+                                st.session_state.step_direction = "None"
 
                         ts = st.session_state.actual_timestamp
                         new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback (Stopped)"

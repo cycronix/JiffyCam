@@ -128,13 +128,13 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
     if(timestamps is None):
         timestamps = get_timestamps(cam_name, session, data_dir, None)
 
-    if(timestamps is None):
+    if timestamps is None or len(timestamps) == 0:
         return None, None
 
     # Convert to datetime objects
     oldest = datetime.fromtimestamp(timestamps[0][0] / 1000)
     newest = datetime.fromtimestamp(timestamps[-1][0] / 1000)
-    return oldest, newest    
+    return oldest, newest
 
 def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int):
     """Get all timestamps for the camera.

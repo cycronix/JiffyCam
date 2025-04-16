@@ -8,6 +8,7 @@ from a camera and send it to a CloudTurbine (CT) server.
 import os
 # import threading # Keep only if other non-UI threads are used
 from typing import Optional, Dict, Any
+import time
 
 # from queue import Queue # No longer needed here
 from datetime import datetime, time as datetime_time
@@ -143,6 +144,15 @@ def main():
     if 'actual_timestamp' not in st.session_state: st.session_state.actual_timestamp = None
     if 'oldest_timestamp' not in st.session_state: st.session_state.oldest_timestamp = None
     if 'newest_timestamp' not in st.session_state: st.session_state.newest_timestamp = None
+    
+    # Add performance tracking variables
+    if 'capture_fps' not in st.session_state: st.session_state.capture_fps = 0
+    if 'display_fps' not in st.session_state: st.session_state.display_fps = 0
+    if 'last_display_time' not in st.session_state: st.session_state.last_display_time = time.time()
+    if 'display_frame_count' not in st.session_state: st.session_state.display_frame_count = 0
+    if 'frames_detected' not in st.session_state: st.session_state.frames_detected = 0
+    if 'last_frames_count_update' not in st.session_state: st.session_state.last_frames_count_update = 0
+    if 'last_displayed_timestamp' not in st.session_state: st.session_state.last_displayed_timestamp = None
 
     # Get initial timestamp range
     if st.session_state.oldest_timestamp is None or st.session_state.newest_timestamp is None:
@@ -153,7 +163,8 @@ def main():
     # --- Build UI --- 
     # Call UI builders and store returned placeholders in session_state
     # These keys ('status_placeholder', etc.) must match those used in jiffyui callbacks
-    st.session_state.status_placeholder, st.session_state.error_placeholder, st.session_state.server_status_placeholder = build_sidebar()
+    st.session_state.status_placeholder, st.session_state.error_placeholder, st.session_state.server_status_placeholder, \
+    st.session_state.capture_fps_placeholder, st.session_state.display_fps_placeholder, st.session_state.frames_detected_placeholder = build_sidebar()
     st.session_state.video_placeholder, st.session_state.time_display, st.session_state.timearrow_placeholder = \
         build_main_area()
 
