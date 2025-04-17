@@ -134,16 +134,43 @@ def main():
     if 'hour' not in st.session_state: st.session_state.hour = current_time.hour
     if 'minute' not in st.session_state: st.session_state.minute = current_time.minute
     if 'second' not in st.session_state: st.session_state.second = current_time.second
-    if 'date' not in st.session_state: st.session_state.date = current_time.date()
-    if 'browsing_date' not in st.session_state: st.session_state.browsing_date = st.session_state.date
-    if 'time_slider' not in st.session_state: 
-         st.session_state.time_slider = datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second)
+    
+    # Default date to today (will be adjusted after timestamp range is determined)
+    if 'init_date' not in st.session_state: st.session_state.init_date = current_time.date()
     
     # Image/Timestamp state
     if 'last_frame' not in st.session_state: st.session_state.last_frame = None
     if 'actual_timestamp' not in st.session_state: st.session_state.actual_timestamp = None
     if 'oldest_timestamp' not in st.session_state: st.session_state.oldest_timestamp = None
     if 'newest_timestamp' not in st.session_state: st.session_state.newest_timestamp = None
+
+    # Get initial timestamp range
+    if 'oldest_timestamp' not in st.session_state or st.session_state.oldest_timestamp is None:
+        try:
+            oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
+            st.session_state.oldest_timestamp = oldest
+            st.session_state.newest_timestamp = newest
+            
+            # After getting timestamp range, ensure init_date is within valid range
+            current_date = st.session_state.init_date
+            min_date = oldest.date() if oldest else None
+            max_date = max(datetime.now().date(), newest.date() if newest else datetime.now().date())
+            
+            # Ensure init_date is within valid range
+            if min_date and current_date < min_date:
+                st.session_state.init_date = min_date
+            elif max_date and current_date > max_date:
+                st.session_state.init_date = max_date
+                
+        except Exception as e:
+            print(f"Error getting timestamp range: {str(e)}")
+            st.session_state.oldest_timestamp = None
+            st.session_state.newest_timestamp = None
+
+    if 'browsing_date' not in st.session_state and 'init_date' in st.session_state: 
+        st.session_state.browsing_date = st.session_state.init_date
+    if 'time_slider' not in st.session_state: 
+         st.session_state.time_slider = datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second)
     
     # Add performance tracking variables
     if 'capture_fps' not in st.session_state: st.session_state.capture_fps = 0
@@ -153,18 +180,13 @@ def main():
     if 'frames_detected' not in st.session_state: st.session_state.frames_detected = 0
     if 'last_frames_count_update' not in st.session_state: st.session_state.last_frames_count_update = 0
     if 'last_displayed_timestamp' not in st.session_state: st.session_state.last_displayed_timestamp = None
-
-    # Get initial timestamp range
-    if st.session_state.oldest_timestamp is None or st.session_state.newest_timestamp is None:
-        oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
-        st.session_state.oldest_timestamp = oldest
-        st.session_state.newest_timestamp = newest
+    #if 'last_save_time' not in st.session_state: st.session_state.last_save_time = None
 
     # --- Build UI --- 
     # Call UI builders and store returned placeholders in session_state
     # These keys ('status_placeholder', etc.) must match those used in jiffyui callbacks
     st.session_state.status_placeholder, st.session_state.error_placeholder, st.session_state.server_status_placeholder, \
-    st.session_state.capture_fps_placeholder, st.session_state.display_fps_placeholder, st.session_state.frames_detected_placeholder = build_sidebar()
+    st.session_state.capture_fps_placeholder, st.session_state.display_fps_placeholder, st.session_state.frames_detected_placeholder, st.session_state.last_save_time_placeholder = build_sidebar()
     st.session_state.video_placeholder, st.session_state.time_display, st.session_state.timearrow_placeholder = \
         build_main_area()
 
