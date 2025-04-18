@@ -511,7 +511,7 @@ def toggle_live_pause():
         # Pause
         st.session_state.in_playback_mode = True
         
-        # No longer immediately reset display FPS - let it decay naturally
+        # No longer immediately reset FPS Display - let it decay naturally
         # when no more frames are being displayed
 
 def on_pause_button():
@@ -523,7 +523,7 @@ def on_pause_button():
     # Force display update when pausing
     st.session_state.last_displayed_timestamp = None
     
-    # No longer immediately reset display FPS - let it decay naturally
+    # No longer immediately reset FPS Display - let it decay naturally
     # when no more frames are being displayed
     #print(f"on_pause_button: {get_is_capturing()}")
 
@@ -605,11 +605,11 @@ def new_image_display(frame):
         return
 
     """Display a new image based on the current date and time."""
-    # Track display FPS whenever we display a new frame, even in playback mode
+    # Track FPS Display whenever we display a new frame, even in playback mode
     current_time = time.time()
     st.session_state.display_frame_count += 1
     
-    # Calculate display FPS once per second
+    # Calculate FPS Display once per second
     if current_time - st.session_state.last_display_time >= 1.0:
         st.session_state.display_fps = st.session_state.display_frame_count / (current_time - st.session_state.last_display_time)
         st.session_state.display_frame_count = 0
@@ -832,28 +832,30 @@ def build_sidebar():
                     if st.session_state.session != st.session_state.selected_recording_key:
                          st.session_state.session = st.session_state.selected_recording_key
 
-            st.selectbox(
-                "Select Recording",
-                options=recording_keys,
-                key="selected_recording_key",
-                on_change=on_recording_change,
-                help="Select the recording session to view.",
-                label_visibility="collapsed"
-            )
+        # Add a button to clear the session stated  
+        st.selectbox(
+            "Select Recording",
+            options=recording_keys,
+            key="selected_recording_key",
+            on_change=on_recording_change,
+            help="Select the recording session to view.",
+            label_visibility="collapsed", 
+            format_func= lambda x:(x+" (Active)") if (x==get_server_status()[0]) else x  # mjm
+        )
 
         # Status Placeholders
         st.header("Status")
         status_placeholder = st.empty()
-        server_status_placeholder = st.empty()
+        #server_status_placeholder = st.empty()
         
         # Add metrics for FPS
-        st.subheader("Performance")
+        #st.subheader("Performance")
         
-        # Put Capture FPS and Display FPS in one row (2 columns)
+        # Put FPS Camera and FPS Display in one row (2 columns)
         fps_cols = st.columns(2)
         with fps_cols[0]:
             capture_fps_placeholder = st.metric(
-                "Capture FPS", 
+                "FPS Camera", 
                 "---", 
                 delta=None,
                 delta_color="normal",
@@ -863,7 +865,7 @@ def build_sidebar():
             )
         with fps_cols[1]:
             display_fps_placeholder = st.metric(
-                "Display FPS", 
+                "FPS Display", 
                 "---", 
                 delta=None,
                 delta_color="normal",
@@ -883,20 +885,20 @@ def build_sidebar():
             border=True
         )
         
-        # Add last save time on its own row
+        # Add Last Detection time on its own row
         last_save_time_placeholder = st.metric(
-            "Last Save", 
+            "Last Detection", 
             "---",
             delta=None,
             delta_color="normal", 
-            help="Time of last image save",
+            help="Time of last image detection and save",
             label_visibility="visible",
             border=True
         )
 
         error_placeholder = st.empty()
 
-    return status_placeholder, error_placeholder, server_status_placeholder, capture_fps_placeholder, display_fps_placeholder, frames_detected_placeholder, last_save_time_placeholder
+    return status_placeholder, error_placeholder, capture_fps_placeholder, display_fps_placeholder, frames_detected_placeholder, last_save_time_placeholder
 
 def generate_timeline_image(width=1200, height=60):
     """Generate an image for the timeline bar based on available data."""
@@ -1072,6 +1074,22 @@ def generate_timeline_arrow(width=1200, height=24):
             cv2.addWeighted(overlay, 0.8, timeline_img, 0.2, 0, timeline_img)
 
     return timeline_img
+
+def get_server_status():
+    """Get the server session from the session state."""
+    if hasattr(st.session_state, 'http_client'):
+        client = st.session_state.http_client
+        if client.is_connected():
+            client_connected = True
+            # Attempt to get server session from last known status
+            if client.last_status:
+                server_session = client.last_status.get('session') # Safely get session
+                is_capturing = client.last_status.get('capturing', False)
+                capture_fps = client.last_status.get('fps', 0)
+                last_save_time = client.last_status.get('last_save_time', None)
+                return server_session, is_capturing, capture_fps, last_save_time, client_connected
+    return None, False, 0, None, False
+
 
 def on_timeline_click(coords):
     """Handle clicks on the timeline image."""
@@ -1272,14 +1290,7 @@ def build_main_area():
     with time_cols[7]: # Live/Pause Button
         # Check if client is connected and status is available
         client_connected = False
-        server_session = None
-        if hasattr(st.session_state, 'http_client'):
-            client = st.session_state.http_client
-            if client.is_connected():
-                client_connected = True
-                # Attempt to get server session from last known status
-                if client.last_status:
-                    server_session = client.last_status.get('session') # Safely get session
+        server_session, is_capturing, capture_fps, last_save_time, client_connected = get_server_status()
 
         # Get UI session
         ui_session = st.session_state.get('session')
@@ -1377,7 +1388,7 @@ def run_ui_update_loop():
     status_placeholder = st.session_state.status_placeholder
     error_placeholder = st.session_state.error_placeholder
     time_display = st.session_state.time_display
-    server_status_placeholder = st.session_state.server_status_placeholder
+    #server_status_placeholder = st.session_state.server_status_placeholder
     capture_fps_placeholder = st.session_state.capture_fps_placeholder
     display_fps_placeholder = st.session_state.display_fps_placeholder
     frames_detected_placeholder = st.session_state.frames_detected_placeholder
@@ -1411,22 +1422,11 @@ def run_ui_update_loop():
             if current_time - server_status_update_time > 2:
                 server_status_update_time = current_time
                 connection_status = "Disconnected"
-                server_session = "None"
-                capture_fps = 0
+                server_session, is_capturing, capture_fps, last_save_time, client_connected = get_server_status()
+                if is_capturing:
+                    connection_status = "Recording"
                 
-                if hasattr(st.session_state, 'http_client'):
-                    client = st.session_state.http_client
-                    if client.is_connected():
-                        connection_status = "Connected"
-                        if client.last_status:
-                            server_session = client.last_status.get('session', 'None')
-                            is_capturing = client.last_status.get('capturing', False)
-                            capture_fps = client.last_status.get('fps', 0)
-                            last_save_time = client.last_status.get('last_save_time', None)
-                            if is_capturing:
-                                connection_status = "Recording"
-                
-                # Store capture FPS in session state
+                # Store FPS Camera in session state
                 st.session_state.capture_fps = capture_fps
                 
                 # Count frames for current date
@@ -1459,16 +1459,8 @@ def run_ui_update_loop():
                         print(f"Error counting frames: {str(e)}")
                         st.session_state.frames_detected = 0
                 
-                # Display server status
-                status_html = f"""
-                <div style="padding: 5px 0;">
-                    <div><b>Recording:</b> <span style="color: {'red' if server_session != 'None' else 'gray'}">{server_session if server_session != 'None' else 'Idle'}</span></div>
-                </div>
-                """
-                server_status_placeholder.markdown(status_html, unsafe_allow_html=True)
-                
                 # Update FPS metrics
-                # Only show Capture FPS when connected to and viewing live data
+                # Only show FPS Camera when connected to and viewing live data
                 is_viewing_live = False
                 if (not st.session_state.in_playback_mode and 
                     hasattr(st.session_state, 'http_client')):
@@ -1482,32 +1474,32 @@ def run_ui_update_loop():
                 if is_viewing_live:
                     # Format to 1 decimal place and show the metric
                     capture_fps_placeholder.metric(
-                        "Capture FPS",
-                        f"{st.session_state.capture_fps:.1f}",
+                        "FPS Camera",
+                        f"{st.session_state.capture_fps:.0f}",
                         delta=None,
-                        help="Frames per second being captured by the camera",
+                        #help="Frames per second being captured by the camera",
                         border=True
                     )
                 else:
-                    # Reset and hide Capture FPS when not viewing live
+                    # Reset and hide FPS Camera when not viewing live
                     st.session_state.capture_fps = 0
                     capture_fps_placeholder.metric(
-                        "Capture FPS",
-                        "---",
+                        "FPS Camera",
+                        "  ---",
                         delta=None,
-                        help="Frames per second being captured by the camera",
+                        #help="Frames per second being captured by the camera",
                         border=True
                     )
                 
-                # Set display FPS to 0 when in playback mode and no frames displayed recently
+                # Set FPS Display to 0 when in playback mode and no frames displayed recently
                 if st.session_state.in_playback_mode and (current_time - st.session_state.last_display_time > 2.0):
                     st.session_state.display_fps = 0
                     
                 display_fps_placeholder.metric(
-                    "Display FPS",
-                    f"{st.session_state.display_fps:.1f}",
+                    "FPS Display",
+                    f"{st.session_state.display_fps:.0f}",
                     delta=None,
-                    help="Frames per second being displayed",
+                    #help="Frames per second being displayed",
                     border=True
                 )
                 
@@ -1515,21 +1507,21 @@ def run_ui_update_loop():
                     "Detections",
                     st.session_state.frames_detected,
                     delta=None,
-                    help="Number of frames detected for current date",
+                    #help="Number of frames detected for current date",
                     border=True
                 )
 
-                # Display last saved time (as string)
+                # Display Last Detectiond time (as string)
                 if last_save_time:
                     last_save_display = str(last_save_time)
                 else:
                     last_save_display = "---"
                     
                 last_save_time_placeholder.metric(
-                    "Last Save",
+                    "Last Detection",
                     last_save_display,
                     delta=None,
-                    help="Time of last image save",
+                    help="Time of last image detection and save",
                     border=True
                 )
                 
@@ -1600,7 +1592,7 @@ def run_ui_update_loop():
                             if status:
                                 fps = status.get('fps', 0)
                                 frame_count = status.get('frame_count', 0)
-                                new_status = f"Live View - FPS: {fps}, Frames: {frame_count}"
+                                new_status = f"Live View - Frames: {frame_count}"
                             else:
                                 new_status = "Live View"
                     

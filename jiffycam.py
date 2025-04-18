@@ -185,8 +185,8 @@ def main():
     # --- Build UI --- 
     # Call UI builders and store returned placeholders in session_state
     # These keys ('status_placeholder', etc.) must match those used in jiffyui callbacks
-    st.session_state.status_placeholder, st.session_state.error_placeholder, st.session_state.server_status_placeholder, \
-    st.session_state.capture_fps_placeholder, st.session_state.display_fps_placeholder, st.session_state.frames_detected_placeholder, st.session_state.last_save_time_placeholder = build_sidebar()
+    st.session_state.status_placeholder, st.session_state.error_placeholder, st.session_state.capture_fps_placeholder, \
+        st.session_state.display_fps_placeholder, st.session_state.frames_detected_placeholder, st.session_state.last_save_time_placeholder = build_sidebar()
     st.session_state.video_placeholder, st.session_state.time_display, st.session_state.timearrow_placeholder = \
         build_main_area()
 
