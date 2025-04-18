@@ -125,15 +125,34 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
         Tuple of (oldest_timestamp, newest_timestamp) as datetime objects, or (None, None) if no images
     """
     global timestamps
-    if(timestamps is None):
-        timestamps = get_timestamps(cam_name, session, data_dir, None)
-
-    if timestamps is None or len(timestamps) == 0:
+    
+    # Force a fresh scan to ensure we have up-to-date information
+    timestamps = None
+    
+    # Get all valid timestamps for this recording
+    all_timestamps = get_timestamps(cam_name, session, data_dir, None)
+    
+    if all_timestamps is None or len(all_timestamps) == 0:
+        print(f"No valid timestamps found for {cam_name} in session {session}")
         return None, None
 
     # Convert to datetime objects
-    oldest = datetime.fromtimestamp(timestamps[0][0] / 1000)
-    newest = datetime.fromtimestamp(timestamps[-1][0] / 1000)
+    oldest = datetime.fromtimestamp(all_timestamps[0][0] / 1000)
+    newest = datetime.fromtimestamp(all_timestamps[-1][0] / 1000)
+    
+    # Get a list of all unique dates that actually have images
+    unique_dates = set()
+    for ts, _ in all_timestamps:
+        dt = datetime.fromtimestamp(ts / 1000)
+        unique_dates.add(dt.date())
+    
+    # Store the unique dates in the global timestamps variable for future reference
+    # This will be used in build_main_area to correctly set the selectable date range
+    timestamps = all_timestamps
+    
+    # Log the date range we found
+    #print(f"Valid date range for {session}: {oldest.date()} to {newest.date()} ({len(unique_dates)} days with data)")
+    
     return oldest, newest
 
 def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int):
@@ -145,31 +164,111 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int)
         data_dir: Data directory path
         browse_date: POSIX timestamp of the browse date (int)
     Returns:
-        List of float detection positions 0-1 for specified browse_date
+        List of timestamp tuples (timestamp, dir_path) for specified browse_date
     """
     global timestamps
 
-    # get all timestamps for the session
-    if(browse_date is None):
-        browse_date = 0
+    # Get all timestamps for the session
+    if browse_date is None:
+        # When browsing_date is None, we need to scan all date directories
         base_dir = os.path.join(data_dir, session)
+        if not os.path.exists(base_dir):
+            print(f"Directory doesn't exist: {base_dir}")
+            return None
+            
+        # Scan for date directories (millisecond timestamp directories)
+        date_dirs = glob.glob(os.path.join(base_dir, "*"))
+        
+        # Initialize collection for all timestamps across dates
+        all_timestamps = []
+        
+        # Process each date directory to extract timestamps
+        for date_dir in date_dirs:
+            # Skip non-directories and non-numeric directories
+            if not os.path.isdir(date_dir):
+                continue
+                
+            date_name = os.path.basename(date_dir)
+            try:
+                # Try to convert directory name to timestamp (milliseconds)
+                date_timestamp = int(date_name)
+                
+                # Also check if this directory actually contains images
+                # by checking for subdirectories that contain the cam_name.jpg file
+                base_name = os.path.basename(cam_name)
+                has_images = False
+                
+                # Get timestamp directories within this date directory
+                time_dirs = glob.glob(os.path.join(date_dir, "*"))
+                
+                # Process each timestamp directory
+                for time_dir in time_dirs:
+                    if not os.path.isdir(time_dir):
+                        continue
+                        
+                    # Check if this time_dir contains an image for this camera
+                    image_path = os.path.join(time_dir, f"{base_name}.jpg")
+                    if not os.path.exists(image_path):
+                        continue
+                    
+                    # We found an image, so this date is valid
+                    has_images = True
+                        
+                    # Get the time offset within the day
+                    time_offset = os.path.basename(time_dir)
+                    try:
+                        # Combine date timestamp and time offset
+                        timestamp = date_timestamp + int(time_offset)
+                        all_timestamps.append((timestamp, time_dir))
+                    except ValueError:
+                        # Skip if time offset can't be converted to int
+                        continue
+                        
+                # If no valid images were found in this date directory, we should log it
+                if not has_images:
+                    print(f"No valid images found for camera {cam_name} in date directory: {date_dir}")
+                    
+            except ValueError:
+                # Skip if date directory name can't be converted to int
+                continue
+                
+        if len(all_timestamps) == 0:
+            print(f"No timestamps found for camera {cam_name} in session {session}")
+            return None
+            
+        # Sort all timestamps from all date directories
+        all_timestamps.sort()
+        return all_timestamps
     else:
+        # Regular case: browsing within a specific date
         base_dir = os.path.join(data_dir, session, str(browse_date))
+        if not os.path.exists(base_dir):
+            return None
+            
+        dirpaths = glob.glob(os.path.join(base_dir, "*"))
+        base_name = os.path.basename(cam_name)
+        timestamps = []  
+        for dir_path in dirpaths:
+            if not os.path.isdir(dir_path):
+                continue
+                
+            # Check if this directory contains an image for this camera
+            image_path = os.path.join(dir_path, f"{base_name}.jpg")
+            if not os.path.exists(image_path):
+                continue
+                
+            parts = os.path.normpath(dir_path).split(os.sep)
+            try:
+                timestamp = int(browse_date + float(parts[-1]))   
+                timestamps.append((timestamp, dir_path))
+            except ValueError:
+                continue    
 
-    dirpaths = glob.glob(os.path.join(base_dir, "*"))
+        if len(timestamps) == 0:
+            return None
 
-    timestamps = []  
-    for dir_path in dirpaths:
-        parts = os.path.normpath(dir_path).split(os.sep)
-        timestamp = int(browse_date + float(parts[-1]))   
-        timestamps.append((timestamp, dir_path))    
-
-    if(len(timestamps) == 0):
-        return None
-
-    timestamps.sort()
-    #print(f"timestamps: {timestamps}, base_dir: {base_dir}")    
-    return timestamps
+        timestamps.sort()
+        return timestamps
 
 def get_locations(cam_name: str, session: str, data_dir: str, browse_date: int):
     """Get all timestamps for the camera.

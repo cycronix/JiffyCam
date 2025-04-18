@@ -20,172 +20,16 @@ import cv2  # Add this import for image processing
 from jiffyconfig import RESOLUTIONS   # Import necessary components from other modules
 from jiffyget import jiffyget, get_locations, get_timestamp_range
 
-# globals within jiffyui.py
-#import jiffyglobals
+# Import from extracted modules
+from jiffyclient import JiffyCamClient
+from jiffyvis import generate_timeline_image, generate_timeline_arrow, format_time_12h
+
+# Import UI components (may be imported within individual functions as needed)
+# import jiffyui_components
 
 # following just to avoid error when importing YOLO
 import torch
 torch.classes.__path__ = [] # add this line to manually set it to empty. 
-
-# --- HTTP Client for JiffyCam Server ---
-
-class JiffyCamClient:
-    """Client for connecting to the standalone jiffycapture.py HTTP server."""
-    
-    def __init__(self, server_url="http://localhost:8080"):
-        """Initialize the client with the server URL."""
-        # Ensure server_url has protocol and doesn't end with slash
-        if not server_url.startswith("http://") and not server_url.startswith("https://"):
-            server_url = "http://" + server_url
-        if server_url.endswith("/"):
-            server_url = server_url[:-1]
-            
-        self.server_url = server_url
-        self.connected = False
-        self.last_error = None
-        self.last_status = None
-        self.last_frame = None
-        self.last_frame_time = 0
-        self.connection_check_time = 0
-        self.status_check_time = 0
-        self.error_event = threading.Event()  # Event for error handling
-        self.is_capturing_flag = False
-        
-        print(f"Initialized HTTP client with server URL: {self.server_url}")
-    
-    def check_connection(self, force=False):
-        """Check if the server is available."""
-        # Only check every 5 seconds unless forced
-        current_time = time.time()
-        if not force and current_time - self.connection_check_time < 5:
-            return self.connected
-            
-        self.connection_check_time = current_time
-        
-        try:
-            response = requests.get(f"{self.server_url}/status", timeout=2)
-            if response.status_code == 200:
-                self.connected = True
-                self.last_status = response.json()
-                self.last_error = None
-                self.status_check_time = current_time  # Update status check time
-                self.error_event.clear()  # Clear any previous error
-                return True
-            else:
-                self.connected = False
-                self.last_error = f"Server responded with status code: {response.status_code}"
-                self.error_event.set()  # Set error event
-                return False
-        except requests.RequestException as e:
-            self.connected = False
-            self.last_error = f"Connection error: {str(e)}"
-            self.error_event.set()  # Set error event
-            return False
-    
-    def is_connected(self):
-        """Check if we're currently connected to the server."""
-        if time.time() - self.connection_check_time > 10:  # Force check if it's been more than 10 seconds
-            return self.check_connection(force=True)
-        return self.connected
-    
-    def update_status_if_needed(self):
-        """Update status information periodically without fetching a new frame."""
-        current_time = time.time()
-        # Only update status every 2 seconds to reduce server load
-        if current_time - self.status_check_time > 2:
-            self.get_status()
-            return True
-        return False
-        
-    def get_status(self):
-        """Get the server status."""
-        current_time = time.time()
-        self.status_check_time = current_time
-        
-        try:
-            response = requests.get(f"{self.server_url}/status", timeout=2)
-            if response.status_code == 200:
-                self.last_status = response.json()
-                self.connected = True  # Also update connection status
-                self.connection_check_time = current_time  # Update connection time too
-                self.last_error = None
-                self.error_event.clear()  # Clear any previous error
-                return self.last_status
-            else:
-                self.last_error = f"Server responded with status code: {response.status_code}"
-                self.error_event.set()  # Set error event
-                return None
-        except requests.RequestException as e:
-            self.last_error = f"Connection error: {str(e)}"
-            self.connected = False
-            self.error_event.set()  # Set error event
-            return None
-    
-    def get_frame(self):
-        """Get the latest frame from the server."""
-        # Only fetch a new frame every 1/30 second (30 FPS max)
-        current_time = time.time()
-        if current_time - self.last_frame_time < 0.033:
-            return self.last_frame, self.last_status.get('fps', 0) if self.last_status else 0, 0, 0
-            
-        if not self.connected and not self.check_connection(force=False):
-            return None, 0, 0, 0
-            
-        try:
-            # Add timestamp to URL to prevent caching
-            response = requests.get(f"{self.server_url}/image?t={int(current_time*1000)}", timeout=2)
-            if response.status_code == 200:
-                # Convert the response content to an OpenCV image
-                img_array = np.frombuffer(response.content, np.uint8)
-                frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-                
-                # Update last frame and time
-                self.last_frame = frame
-                self.last_frame_time = current_time
-                
-                # Use last known status without making another request
-                if self.last_status:
-                    try:
-                        width, height = map(int, self.last_status.get('resolution', '0x0').split('x'))
-                        fps = self.last_status.get('fps', 0)
-                        return frame, fps, width, height
-                    except (ValueError, AttributeError):
-                        return frame, 0, 0, 0
-                return frame, 0, 0, 0
-            else:
-                self.last_error = f"Server responded with status code: {response.status_code}"
-                self.error_event.set()  # Set error event
-                return None, 0, 0, 0
-        except requests.RequestException as e:
-            self.last_error = f"Connection error: {str(e)}"
-            self.connected = False
-            self.error_event.set()  # Set error event
-            return None, 0, 0, 0
-    
-    def get_last_frame(self):
-        """Get the cached last frame."""
-        return self.last_frame
-    
-    # --- VideoCapture compatibility methods ---
-    
-    def is_capturing(self):
-        """Check if capturing is currently active."""
-        return self.is_capturing_flag and self.connected
-    
-    def start_capture(self, **kwargs):
-        """Start capture - mark as capturing and connect to server."""
-        if self.check_connection(force=True):
-            self.is_capturing_flag = True
-            return True
-        return False
-        
-    def stop_capture(self):
-        """Stop capture - mark as not capturing."""
-        self.is_capturing_flag = False
-        
-    def error_event_is_set(self):
-        """Check if there's an error."""
-        return self.error_event.is_set()
 
 # Add threading module for compatibility
 import threading
@@ -206,14 +50,6 @@ def set_autoplay(direction):
     #global autoplay_direction
     st.session_state.autoplay_direction = direction
 
-def format_time_12h(hour, minute, second):
-    """Format time in 12-hour format with AM/PM indicator."""
-    period = "AM" if hour < 12 else "PM"
-    hour_12 = hour % 12
-    if hour_12 == 0:
-        hour_12 = 12
-    return f"{hour_12}:{minute:02d}:{second:02d} {period}"
-
 # --- Helper Functions ---
 
 def get_available_recordings(data_dir):
@@ -228,11 +64,10 @@ def get_available_recordings(data_dir):
             item_path = os.path.join(data_dir, item_name)
             # Only include directories as recordings
             if os.path.isdir(item_path):
-                # Use the directory name as both key and value
-                recordings[item_name] = item_name
-    except OSError as e:
-        print(f"Error scanning data_dir '{data_dir}': {e}")
-
+                recordings[item_name] = item_path
+    except Exception as e:
+        print(f"Error scanning recordings: {str(e)}")
+        
     return recordings
 
 # --- Callback Functions (must use st.session_state) ---
@@ -252,30 +87,75 @@ def on_recording_change():
     st.session_state.need_to_display_recent = True # Show most recent for new recording
     st.session_state.last_displayed_timestamp = None # Force display update
     
-    # Explicitly reset timestamps in jiffyget
+    # Clear the valid dates cache
+    if 'valid_dates' in st.session_state:
+        st.session_state.valid_dates = []
+    
+    # Explicitly reset timestamps in jiffyget to ensure fresh data
     import jiffyget
     jiffyget.timestamps = None
     
-    # Get the new date range for this recording
+    # Get the new date range for this recording with proper error handling
     try:
+        # Force a complete refresh of the timestamp data for the new recording
         oldest, newest = get_timestamp_range(st.session_state.cam_name, new_session, st.session_state.data_dir)
+        
+        # Store the results in session state
         st.session_state.oldest_timestamp = oldest
         st.session_state.newest_timestamp = newest
         
-        # Calculate a target date within the new recording's range
-        current_date = datetime.now().date()
-        
-        if newest and newest.date() > current_date:
-            # If newest date is in the future, use it
-            target_date = newest.date()
+        # Build a list of all unique dates that have images
+        unique_dates = set()
+        if jiffyget.timestamps:
+            for ts, _ in jiffyget.timestamps:
+                dt = datetime.fromtimestamp(ts / 1000)
+                unique_dates.add(dt.date())
+            st.session_state.valid_dates = sorted(list(unique_dates))
         else:
-            # Otherwise default to today
-            target_date = current_date
+            st.session_state.valid_dates = []
+        
+        if not st.session_state.valid_dates:
+            # No valid dates found - use today's date as fallback
+            target_date = datetime.now().date()
+            st.session_state.hour = 23
+            st.session_state.minute = 59
+            st.session_state.second = 59
+        elif len(st.session_state.valid_dates) == 1:
+            # Only one valid date - use it
+            target_date = st.session_state.valid_dates[0]
             
-        # Make sure it's not before the oldest data
-        if oldest and target_date < oldest.date():
-            target_date = oldest.date()
+            # Also set time to show the latest image on this date
+            if newest:
+                # Set time to the newest image's time
+                st.session_state.hour = newest.hour
+                st.session_state.minute = newest.minute
+                st.session_state.second = newest.second
+            else:
+                # Set to end of day if no newest timestamp
+                st.session_state.hour = 23
+                st.session_state.minute = 59
+                st.session_state.second = 59
+        else:
+            # Multiple valid dates - use newest unless specified otherwise
+            if newest:
+                target_date = newest.date()
+                # Set time to the newest timestamp's time
+                st.session_state.hour = newest.hour
+                st.session_state.minute = newest.minute
+                st.session_state.second = newest.second
+            else:
+                # Use the newest valid date
+                target_date = st.session_state.valid_dates[-1]
+                # Set to end of day
+                st.session_state.hour = 23
+                st.session_state.minute = 59
+                st.session_state.second = 59
             
+            # Make sure it's in the list of valid dates
+            if target_date not in st.session_state.valid_dates:
+                # Use the newest valid date
+                target_date = st.session_state.valid_dates[-1]
+                
         # IMPORTANT: Don't update st.session_state.date directly
         # Instead, store target date in a separate variable
         st.session_state.target_browsing_date = target_date
@@ -293,6 +173,10 @@ def on_recording_change():
         st.session_state.target_browsing_date = today
         st.session_state.browsing_date = today
         st.session_state.needs_date_update = True
+        # Set time to end of day to find the latest image
+        st.session_state.hour = 23
+        st.session_state.minute = 59
+        st.session_state.second = 59
     
     set_autoplay("None")
     st.session_state.in_playback_mode = True # Default to playback when changing recording
@@ -391,33 +275,33 @@ def on_date_change():
     # Reset flag to avoid duplicate loading
     st.session_state.need_to_display_recent = False
 
-def on_prev_button(stopAuto=True):
-    """Handle previous image button click."""
-    if(stopAuto):
+def on_navigation_button(direction, stopAuto=True):
+    """Handle image navigation button click.
+    
+    Args:
+        direction: "up" for next image or "down" for previous image
+        stopAuto: Whether to stop autoplay mode when navigating
+    """
+    if stopAuto:
         set_autoplay("None")
     st.session_state.in_playback_mode = True
-    # Decrement time logic
-    tweek_time('down')
+    
+    # Increment/decrement time logic
+    tweek_time(direction)
 
     # Fetch placeholders from session_state inside the update function
-    if(stopAuto):
-        st.session_state.step_direction = "down"    # let rerun handle the update  
+    if stopAuto:
+        st.session_state.step_direction = direction  # let rerun handle the update  
     else:
-        update_image_display(direction="down")
+        update_image_display(direction=direction)
+
+def on_prev_button(stopAuto=True):
+    """Handle previous image button click."""
+    on_navigation_button('down', stopAuto)
 
 def on_next_button(stopAuto=True):
     """Handle next image button click."""
-    if(stopAuto):
-        set_autoplay("None")
-    st.session_state.in_playback_mode = True
-    # Increment time logic
-    tweek_time('up')
-
-    # Fetch placeholders from session_state inside the update function
-    if(stopAuto):
-        st.session_state.step_direction = "up"      # let rerun handle the update
-    else:
-        update_image_display(direction="up")
+    on_navigation_button('up', stopAuto)
 
 def tweek_time(direction):
     """Tweek the time by 1 second in the given direction."""
@@ -441,28 +325,60 @@ def change_day(direction):
     # Get current date from the session state
     current_date = st.session_state.date
     
-    # Get valid date range
-    min_date = st.session_state.oldest_timestamp.date() if st.session_state.oldest_timestamp else None
-    max_date = max(datetime.now().date(), st.session_state.newest_timestamp.date() if st.session_state.newest_timestamp else datetime.now().date())
-    
-    # If we have a single day range, don't try to change days
-    if min_date and max_date and min_date == max_date:
-        # Just refresh the current date's display
-        st.session_state.step_direction = "down"
-        st.session_state.last_displayed_timestamp = None
-        return
-    
-    # Calculate the new date based on direction
-    if direction == "next":
-        new_date = current_date + timedelta(days=1)
-    else:  # "prev"
-        new_date = current_date - timedelta(days=1)
-    
-    # Check if the new date is within min/max range
-    if min_date and new_date < min_date:
-        new_date = min_date
-    if max_date and new_date > max_date:
-        new_date = max_date
+    # Check if we have valid dates in session state
+    if 'valid_dates' in st.session_state and st.session_state.valid_dates:
+        valid_dates = sorted(st.session_state.valid_dates)
+        
+        # If we only have one valid date, we can't navigate
+        if len(valid_dates) <= 1:
+            print(f"Only one valid date available ({valid_dates[0] if valid_dates else 'none'}), can't change days")
+            # Just refresh the current date's display
+            st.session_state.step_direction = "down"
+            st.session_state.last_displayed_timestamp = None
+            return
+            
+        # Find current date in the valid dates list
+        current_index = -1
+        for i, date in enumerate(valid_dates):
+            if date == current_date:
+                current_index = i
+                break
+                
+        # Calculate the new date based on direction
+        if direction == "next" and current_index < len(valid_dates) - 1:
+            new_date = valid_dates[current_index + 1]
+        elif direction == "prev" and current_index > 0:
+            new_date = valid_dates[current_index - 1]
+        else:
+            # We're at the end of the list, can't navigate further
+            print(f"At {'end' if direction == 'next' else 'beginning'} of valid dates, can't change days")
+            # Just refresh the current date's display
+            st.session_state.step_direction = "down"
+            st.session_state.last_displayed_timestamp = None
+            return
+    else:
+        # Get valid date range from timestamps
+        min_date = st.session_state.oldest_timestamp.date() if st.session_state.oldest_timestamp else None
+        max_date = max(datetime.now().date(), st.session_state.newest_timestamp.date() if st.session_state.newest_timestamp else datetime.now().date())
+        
+        # If we have a single day range, don't try to change days
+        if min_date and max_date and min_date == max_date:
+            # Just refresh the current date's display
+            st.session_state.step_direction = "down"
+            st.session_state.last_displayed_timestamp = None
+            return
+        
+        # Calculate the new date based on direction
+        if direction == "next":
+            new_date = current_date + timedelta(days=1)
+        else:  # "prev"
+            new_date = current_date - timedelta(days=1)
+        
+        # Check if the new date is within min/max range
+        if min_date and new_date < min_date:
+            new_date = min_date
+        if max_date and new_date > max_date:
+            new_date = max_date
     
     # Reset state to ensure clean navigation
     st.session_state.step_direction = "down"
@@ -541,8 +457,12 @@ def on_fast_forward_button():
     # Set to playback mode like other buttons do
     st.session_state.in_playback_mode = True
 
-def on_prev_day_button():
-    """Handle previous day button click."""
+def on_day_navigation_button(direction):
+    """Handle day navigation button click.
+    
+    Args:
+        direction: "next" or "prev" indicating which day to navigate to
+    """
     set_autoplay("None")
     
     # In-line function to force playback controls to work right after day change
@@ -558,46 +478,25 @@ def on_prev_day_button():
         st.session_state.newest_timestamp = newest
         
         # Change the day
-        change_day("prev")
+        change_day(direction)
         
         # Directly trigger the date change handler instead of waiting for callback
         on_date_change()
     except Exception as e:
-        print(f"Error changing to previous day: {str(e)}")
+        print(f"Error changing to {direction} day: {str(e)}")
         # Reset key state on error to prevent deadlocks
         import jiffyget
         jiffyget.timestamps = None
         st.session_state.step_direction = "None"
         st.session_state.last_frame = None
+
+def on_prev_day_button():
+    """Handle previous day button click."""
+    on_day_navigation_button("prev")
     
 def on_next_day_button():
     """Handle next day button click."""
-    set_autoplay("None")
-    
-    # In-line function to force playback controls to work right after day change
-    st.session_state.in_playback_mode = True
-    st.session_state.last_displayed_timestamp = None  # Force display update
-    
-    try:
-        # Explicitly update timestamp range before changing days
-        import jiffyget
-        jiffyget.timestamps = None  # Clear cached timestamps
-        oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
-        st.session_state.oldest_timestamp = oldest
-        st.session_state.newest_timestamp = newest
-        
-        # Change the day
-        change_day("next")
-        
-        # Directly trigger the date change handler instead of waiting for callback
-        on_date_change()
-    except Exception as e:
-        print(f"Error changing to next day: {str(e)}")
-        # Reset key state on error to prevent deadlocks
-        import jiffyget
-        jiffyget.timestamps = None
-        st.session_state.step_direction = "None"
-        st.session_state.last_frame = None
+    on_day_navigation_button("next")
 
 # --- UI Update Functions ---
 def new_image_display(frame):
@@ -675,7 +574,7 @@ def update_image_display(direction=None):
             )
 
             # Update status text
-            status_placeholder.markdown(f"<div style='padding: 5px 0;'>Viewing: {dts.strftime('%Y-%m-%d %H:%M:%S')}</div>", unsafe_allow_html=True)
+            # status_placeholder.markdown(f"<div style='padding: 5px 0;'>Viewing: {dts.strftime('%Y-%m-%d %H:%M:%S')}</div>", unsafe_allow_html=True)
             st.session_state.status_message = f"Viewing: {dts.strftime('%Y-%m-%d %H:%M:%S')}" # Update internal status too
             success = True
 
@@ -688,7 +587,7 @@ def update_image_display(direction=None):
         set_autoplay("None")
 
         # No image found or error displaying
-        status_placeholder.markdown("<div style='padding: 5px 0;'>No image found near specified time</div>", unsafe_allow_html=True)
+        # status_placeholder.markdown("<div style='padding: 5px 0;'>No image found near specified time</div>", unsafe_allow_html=True)
         st.session_state.status_message = f"No image found near specified time"
         # Clear the last frame and the display placeholder
         st.session_state.last_frame = None
@@ -699,12 +598,37 @@ def update_image_display(direction=None):
 def display_most_recent_image():
     """Display the most recent image for the current camera."""
 
-    # Use current time as starting point
-    timestamp = datetime.now()
-    st.session_state.hour = timestamp.hour
-    st.session_state.minute = timestamp.minute
-    st.session_state.second = timestamp.second
-    st.session_state.browsing_date = timestamp.date()
+    # If we have a newest timestamp available, use its time directly
+    if st.session_state.newest_timestamp:
+        timestamp = st.session_state.newest_timestamp
+        st.session_state.hour = timestamp.hour
+        st.session_state.minute = timestamp.minute
+        st.session_state.second = timestamp.second
+        st.session_state.browsing_date = timestamp.date()
+    else:
+        # Otherwise use current time as starting point
+        timestamp = datetime.now()
+        st.session_state.hour = timestamp.hour
+        st.session_state.minute = timestamp.minute
+        st.session_state.second = timestamp.second
+        st.session_state.browsing_date = timestamp.date()
+        
+        # If we don't have a newest timestamp, try to get it again
+        try:
+            import jiffyget
+            jiffyget.timestamps = None
+            oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
+            if newest:
+                st.session_state.newest_timestamp = newest
+                st.session_state.oldest_timestamp = oldest
+                # Update with newest timestamp info
+                st.session_state.hour = newest.hour
+                st.session_state.minute = newest.minute
+                st.session_state.second = newest.second
+                st.session_state.browsing_date = newest.date()
+        except Exception as e:
+            print(f"Error getting timestamp range in display_most_recent_image: {str(e)}")
+    
     # st.session_state.date = timestamp.date() # REMOVED: Cannot modify widget state directly
 
     # Make sure we're in playback mode
@@ -720,7 +644,7 @@ def display_most_recent_image():
     
     # Count frames for today
     try:
-        browse_date = timestamp.date()
+        browse_date = st.session_state.browsing_date
         browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
         
         # Get timestamps for this date
@@ -775,28 +699,10 @@ def build_sidebar():
     """Build the sidebar UI elements."""
     # Setup main sections
     with st.sidebar:
-        # Custom CSS for compact metrics 
-        st.markdown("""
-        <style>
-        /* Make metric labels and values more compact */
-        [data-testid="stMetricLabel"] {
-            font-size: 0.8rem !important;
-            font-weight: 500 !important;
-            padding-bottom: 0.1rem !important;
-        }
+        # Apply CSS styling for metrics
+        from jiffyui_components import apply_metrics_css, create_metric_display, create_fps_metrics_row, create_detection_metrics, create_recording_selector
         
-        [data-testid="stMetricValue"] {
-            font-size: 1rem !important;
-            font-weight: 500 !important;
-        }
-        
-        /* Reduce padding around metric containers */
-        [data-testid="metric-container"] {
-            padding: 5px 0px !important;
-            margin-bottom: 0px !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+        apply_metrics_css()
         
         st.title("JiffyCam")
         
@@ -811,7 +717,6 @@ def build_sidebar():
 
         # Use the cached/scanned recordings
         available_recordings = st.session_state.available_recordings
-
         recording_keys = list(available_recordings.keys())
 
         if not recording_keys:
@@ -832,248 +737,32 @@ def build_sidebar():
                     if st.session_state.session != st.session_state.selected_recording_key:
                          st.session_state.session = st.session_state.selected_recording_key
 
-        # Add a button to clear the session stated  
-        st.selectbox(
-            "Select Recording",
+        # Get the current server session for highlighting the active recording
+        server_session, _, _, _, _ = get_server_status()
+        
+        # Create the recording selector
+        create_recording_selector(
             options=recording_keys,
-            key="selected_recording_key",
-            on_change=on_recording_change,
-            help="Select the recording session to view.",
-            label_visibility="collapsed", 
-            format_func= lambda x:(x+" (Active)") if (x==get_server_status()[0]) else x  # mjm
+            current_selection=st.session_state.get('selected_recording_key'),
+            on_change_handler=on_recording_change,
+            help_text="Select the recording session to view.",
+            server_session=server_session
         )
 
-        # Status Placeholders
+        # Status section header
         st.header("Status")
+        
+        # Create empty placeholders to maintain return compatibility
         status_placeholder = st.empty()
-        #server_status_placeholder = st.empty()
+        server_status_placeholder = st.empty()
         
-        # Add metrics for FPS
-        #st.subheader("Performance")
-        
-        # Put FPS Camera and FPS Display in one row (2 columns)
-        fps_cols = st.columns(2)
-        with fps_cols[0]:
-            capture_fps_placeholder = st.metric(
-                "FPS Camera", 
-                "---", 
-                delta=None,
-                delta_color="normal",
-                help="Frames per second being captured by the camera",
-                label_visibility="visible",
-                border=True
-            )
-        with fps_cols[1]:
-            display_fps_placeholder = st.metric(
-                "FPS Display", 
-                "---", 
-                delta=None,
-                delta_color="normal",
-                help="Frames per second being displayed",
-                label_visibility="visible",
-                border=True
-            )
-        
-        # Put Detections on its own row
-        frames_detected_placeholder = st.metric(
-            "Detections", 
-            0,
-            delta=None,
-            delta_color="normal", 
-            help="Number of frames detected for current date",
-            label_visibility="visible",
-            border=True
-        )
-        
-        # Add Last Detection time on its own row
-        last_save_time_placeholder = st.metric(
-            "Last Detection", 
-            "---",
-            delta=None,
-            delta_color="normal", 
-            help="Time of last image detection and save",
-            label_visibility="visible",
-            border=True
-        )
+        # Create metrics displays
+        capture_fps_placeholder, display_fps_placeholder = create_fps_metrics_row()
+        frames_detected_placeholder, last_save_time_placeholder = create_detection_metrics()
 
         error_placeholder = st.empty()
 
-    return status_placeholder, error_placeholder, capture_fps_placeholder, display_fps_placeholder, frames_detected_placeholder, last_save_time_placeholder
-
-def generate_timeline_image(width=1200, height=60):
-    """Generate an image for the timeline bar based on available data."""
-    #print(f"generate_timeline_image: {width}, {height}")
-    session = st.session_state.get('session', 'Default')
-    data_dir = st.session_state.get('data_dir', 'JiffyData')
-
-    # Construct base path safely
-    browse_date = st.session_state.date
-    browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
-    
-    try:
-        timestamps = get_locations(st.session_state.cam_name, session, data_dir, browse_date_posix)
-    except Exception as e:
-        print(f"Error getting locations for timeline: {str(e)}")
-        timestamps = None
-        
-    if(timestamps is None):
-        return np.zeros((height, width, 3), dtype=np.uint8)
-
-    # Create a blank image (dark gray background)
-    background_color = (51, 51, 51)  # Dark gray
-    mark_color = (255, 0, 0)  # Red in BGR format (Blue = 0, Green = 0, Red = 255) 
-    hour_marker_color = (180, 180, 180)  # Light gray for hour markers
-    special_marker_color = (255, 255, 0)  # Yellow in BGR format
-    text_color = (220, 220, 220)  # Brighter light gray for text
-    
-    # Add equal padding for top and bottom margins
-    text_padding = 20  # Pixels below timeline for text
-    top_margin = 0  # Match top margin to text padding (was 12)
-    timeline_y_start = top_margin  # Timeline now starts below top margin
-    timeline_y_end = timeline_y_start + height
-    total_height = timeline_y_end + text_padding  # Total image height
-    
-    # Start with a blank transparent image (including space for labels and top margin)
-    rounded_img = np.zeros((total_height, width, 3), dtype=np.uint8)
-    
-    # Add radius for rounded corner effect (small radius)
-    radius = int(height/2)
-    
-    
-    # Draw a rounded rectangle for the timeline (top portion only)
-    cv2.rectangle(rounded_img, (radius, timeline_y_start), (width-radius, timeline_y_end), background_color, -1)
-    cv2.rectangle(rounded_img, (0, timeline_y_start+radius), (width, timeline_y_end-radius), background_color, -1)
-    
-    # Draw the four corners
-    cv2.circle(rounded_img, (radius, timeline_y_start+radius), radius, background_color, -1)
-    cv2.circle(rounded_img, (width-radius, timeline_y_start+radius), radius, background_color, -1)
-    cv2.circle(rounded_img, (radius, timeline_y_end-radius), radius, background_color, -1)
-    cv2.circle(rounded_img, (width-radius, timeline_y_end-radius), radius, background_color, -1)
-    
-    timeline_img = rounded_img
-    
-    # Define label positions in advance
-    label_positions = {
-        0: "12am",
-        6: "6am",
-        12: "12pm",
-        18: "6pm",
-        24: "12am"
-    }
-    
-    # Set font properties
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = max(0.33, min(0.5, width / 2000))  # Scale text based on timeline width
-    font_thickness = 1
-    
-    # Add hour markers and time labels (24 hours)
-    for hour in range(25):  # 0 to 24 hours (include 24 for end of day)
-        position = hour / 24.0  # Convert hour to percentage of day
-        x_pos = int(position * width)
-        
-        # Adjust thickness and height based on marker type
-        if hour % 6 == 0:  # More prominent markers at 6-hour intervals
-            marker_height = int(height * 0.7)  # 70% of total height
-            thickness = max(1, int(width/1200))
-            alpha = 0.5  # 50% opacity
-            
-            # Get time label for this hour
-            time_label = label_positions.get(hour, "")
-                
-            if time_label:
-                # Calculate text size to center it
-                text_size, baseline = cv2.getTextSize(time_label, font, font_scale, font_thickness)
-                
-                # Center text below marker
-                text_x = x_pos - text_size[0] // 2
-                # Position text below timeline with enough room for descenders
-                text_y = timeline_y_end + baseline + 8  # Adjusted positioning to avoid clipping descenders
-                
-                # Handle edge cases
-                if hour == 0:  # Leftmost label (12am)
-                    text_x = max(text_x, 2)  # Keep a minimum of 2px from left edge
-                elif hour == 24:  # Rightmost label (12am)
-                    text_x = min(text_x, width - text_size[0] - 2)  # Keep from right edge
-                
-                # Draw a slightly darker rectangle behind the text
-                # Make the background rectangle taller to accommodate descenders
-                cv2.rectangle(timeline_img, 
-                            (text_x - 2, text_y - text_size[1] - 2),
-                            (text_x + text_size[0] + 2, text_y + baseline + 2),
-                            (30, 30, 30), -1)
-                
-                # Draw the text
-                cv2.putText(timeline_img, time_label, (text_x, text_y), font, font_scale, text_color, font_thickness, cv2.LINE_AA)
-        else:
-            marker_height = int(height * 0.4)  # 40% of total height
-            thickness = max(1, int(width/1500))
-            alpha = 0.3  # 30% opacity
-            
-        # Skip markers at the very edges but still draw text
-        if x_pos < radius or x_pos > width - radius:
-            continue
-            
-        # Draw line from bottom
-        start_y = timeline_y_end - 1
-        end_y = timeline_y_end - marker_height
-        
-        # Draw semi-transparent hour marker lines
-        overlay = timeline_img.copy()
-        cv2.line(overlay, (x_pos, start_y), (x_pos, end_y), hour_marker_color, thickness)
-        cv2.addWeighted(overlay, alpha, timeline_img, 1-alpha, 0, timeline_img)
-
-    # Add marks for timestamps
-    if timestamps:
-        for position in timestamps:
-            # Calculate pixel position
-            x_pos = int(position * width)
-            # Draw a red vertical line with alpha blending
-            cv_thickness = max(1, int(width/1000))  # Scale thickness with width
-            alpha = 0.8  # 80% opacity (slightly more visible than before)
-            
-            # Draw semi-transparent line
-            overlay = timeline_img.copy()
-            cv2.line(overlay, (x_pos, timeline_y_start), (x_pos, timeline_y_end), mark_color, cv_thickness)
-            cv2.addWeighted(overlay, alpha, timeline_img, 1-alpha, 0, timeline_img)
-
-    return timeline_img
-
-def generate_timeline_arrow(width=1200, height=24):
-    # Add special timestamp marker for current time
-    if hasattr(st.session_state, 'hour') and hasattr(st.session_state, 'minute') and hasattr(st.session_state, 'second'):
-        # Calculate position as percentage of day
-        current_seconds = st.session_state.hour * 3600 + st.session_state.minute * 60 + st.session_state.second
-        day_percentage = current_seconds / (24 * 60 * 60)
-        #print(f"day_percentage: {day_percentage}")
-        x_pos = int(day_percentage * width)
-        radius = int(height/2)
-        timeline_y_start = height -1
-        timeline_y_end = 1
-        timeline_img = np.zeros((height, width, 3), dtype=np.uint8)
-        special_marker_color = (255, 255, 0)  # Yellow in BGR format
-
-        # Skip if too close to edges
-        if x_pos >= radius and x_pos <= width - radius:
-            # Draw special marker (thicker line with yellow color)
-            cv_thickness = max(2, int(width/800))  # Thicker than regular markers
-            
-            # Draw semi-transparent triangle ABOVE timeline (pointing down)
-            triangle_height = int(height * 0.75)  # Adjusted to 75% of top margin height
-            triangle_width = int(height * 0.75)  # Slightly wider triangle
-            
-            # Triangle points (pointing down)
-            bottom_point = (x_pos, timeline_y_start - 1)  # Just above timeline
-            left_point = (x_pos - triangle_width//2, timeline_y_start - triangle_height)
-            right_point = (x_pos + triangle_width//2, timeline_y_start - triangle_height)
-            
-            # Draw the triangle
-            triangle_pts = np.array([bottom_point, left_point, right_point], np.int32)
-            triangle_pts = triangle_pts.reshape((-1, 1, 2))
-            overlay = timeline_img.copy()
-            cv2.fillPoly(overlay, [triangle_pts], special_marker_color)
-            cv2.addWeighted(overlay, 0.8, timeline_img, 0.2, 0, timeline_img)
-
-    return timeline_img
+    return status_placeholder, error_placeholder, server_status_placeholder, capture_fps_placeholder, display_fps_placeholder, frames_detected_placeholder, last_save_time_placeholder
 
 def get_server_status():
     """Get the server session from the session state."""
@@ -1089,7 +778,6 @@ def get_server_status():
                 last_save_time = client.last_status.get('last_save_time', None)
                 return server_session, is_capturing, capture_fps, last_save_time, client_connected
     return None, False, 0, None, False
-
 
 def on_timeline_click(coords):
     """Handle clicks on the timeline image."""
@@ -1124,62 +812,63 @@ def on_timeline_click(coords):
 
 def build_main_area():
     """Create the main UI area elements and return placeholders."""
+    # Import UI components
+    from jiffyui_components import (
+        apply_general_css, 
+        create_date_navigation, 
+        create_playback_controls, 
+        create_live_button,
+        create_empty_timeline_arrow
+    )
+    
     # Apply CSS for main area styling
-    st.markdown("""
-    <style>
-    /* General layout */
-
-    .block-container { padding-top: 0.7rem !important; padding-bottom: 0.7rem !important; }
-    
-    h1, h2, h3 { margin-top: 0.3rem !important; margin-bottom: 0.3rem !important; padding: 0 !important; }
-    hr { margin: 0 !important; padding: 0 !important; }
-    /* Time Display */
-    .time-display { font-size: 1.6rem; font-weight: 400; text-align: center; font-family: "Source Sans Pro", sans-serif; background: transparent; color: #333; border-radius: 5px; padding: 2px; margin: 2px 0; }
-    @media (prefers-color-scheme: dark) { .time-display { color: #e0e0e0 !important; } }
-    /* Date Picker */
-    div[data-testid="stDateInput"] { margin: 10px 0 0 0 !important; padding: 6px 0 !important; display: flex !important; flex-direction: column !important; justify-content: center !important; }
-    div[data-testid="stDateInput"] > div { margin-bottom: 0 !important; display: flex !important; align-items: center !important; height: 32px !important; }
-    div[data-testid="stDateInput"] input { padding: 2px 0px !important; height: 32px !important; font-size: 14px !important; background-color: #2e2e2e !important; color: #fff !important; border: 1px solid #555 !important; border-radius: 5px !important; text-align: center !important; font-weight: bold !important; margin: 0 !important; }
-    div[data-testid="stDateInput"] svg { fill: #fff !important; }
-
-    /* Live button styling */
-    button[data-testid="baseButton-primary"]:has(div:contains("Live")) {
-        background-color: #ff4b4b !important;
-        border-color: #ff4b4b !important;
-        color: white !important;
-    }
-    
-    /* Day navigation buttons styling */
-    button[data-testid="baseButton-secondary"]:has(div:contains("◀")),
-    button[data-testid="baseButton-secondary"]:has(div:contains("▶")) {
-        padding: 0 !important;
-    }
-    
-    /* Centered controls container with margin for better positioning */
-    .top-controls {
-        max-width: 600px;
-        margin: 20px 0 0 0;
-    }
-    
-    /* Remove all the vertical align stuff */
-    </style>
-    """, unsafe_allow_html=True)
+    apply_general_css()
 
     # --- Layout ---
 
     # Centered controls container
     st.markdown("<div class='top-controls'>", unsafe_allow_html=True)
 
-    # Date Picker with navigation buttons in a single row with vertical alignment
-    date_cols = st.columns([0.7, 5, 0.7])
+    # Check if we have a single-day recording
+    single_day_recording = False
+    if 'valid_dates' in st.session_state and len(st.session_state.valid_dates) == 1:
+        single_day_recording = True
     
-    with date_cols[0]:  # Previous day button
-        # Add a simple empty space above the button to create consistent positioning
-        st.write("")
-        st.button("◀", key="prev_day_button", use_container_width=True, help="Previous Day",
-                 on_click=on_prev_day_button)
+    # Create date navigation
+    date_cols, date_picker_placeholder = create_date_navigation(
+        prev_handler=on_prev_day_button,
+        next_handler=on_next_day_button,
+        single_day_mode=single_day_recording
+    )
     
-    with date_cols[1]:  # Date Picker
+    # Handle date picker creation - moved from the inline code in the column
+    with date_cols[1]:
+        # Ensure we have the latest timestamp range data before setting up date picker
+        if (st.session_state.oldest_timestamp is None or 
+            st.session_state.newest_timestamp is None or 
+            st.session_state.get('needs_date_update', False)):
+            try:
+                # Force a fresh recalculation of the timestamp range
+                import jiffyget
+                jiffyget.timestamps = None
+                oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
+                st.session_state.oldest_timestamp = oldest
+                st.session_state.newest_timestamp = newest
+                
+                # Build a list of all unique dates that have images
+                unique_dates = set()
+                if jiffyget.timestamps:
+                    for ts, _ in jiffyget.timestamps:
+                        dt = datetime.fromtimestamp(ts / 1000)
+                        unique_dates.add(dt.date())
+                    st.session_state.valid_dates = sorted(list(unique_dates))
+                else:
+                    st.session_state.valid_dates = []
+                
+            except Exception as e:
+                print(f"Error recalculating timestamp range: {str(e)}")
+                st.session_state.valid_dates = []
+        
         # Initialize min/max dates for the date picker
         min_date = None
         max_date = datetime.now().date()
@@ -1190,8 +879,12 @@ def build_main_area():
         if st.session_state.newest_timestamp: 
             max_date = max(max_date, st.session_state.newest_timestamp.date())
         
-        # Ensure min_date is not after max_date
-        if min_date and min_date > max_date:
+        # Ensure min_date is not after max_date and set defaults if either is None
+        if min_date is None:
+            min_date = datetime(2000, 1, 1).date()  # Safe default if no minimum date
+        if max_date is None:
+            max_date = datetime.now().date()  # Today as default if no maximum date
+        if min_date > max_date:
             min_date = max_date
         
         # Calculate a valid default date within bounds
@@ -1203,91 +896,189 @@ def build_main_area():
             # Clear the flags now that we've used them
             st.session_state.needs_date_update = False
             
-            # Make sure the date is within bounds
-            if min_date and default_date < min_date:
-                default_date = min_date
-            elif max_date and default_date > max_date:
-                default_date = max_date
+            # Make sure the date is within bounds and is a valid date with images
+            if 'valid_dates' in st.session_state and st.session_state.valid_dates:
+                # Find closest valid date
+                if default_date not in st.session_state.valid_dates:
+                    # Find the closest valid date
+                    valid_dates = sorted(st.session_state.valid_dates)
+                    # Use the newest date by default if target date is after all valid dates
+                    if default_date > valid_dates[-1]:
+                        default_date = valid_dates[-1]
+                    # Use the oldest date if target date is before all valid dates
+                    elif default_date < valid_dates[0]:
+                        default_date = valid_dates[0]
+                    else:
+                        # Find the closest date
+                        closest_date = min(valid_dates, key=lambda d: abs((default_date - d).days))
+                        default_date = closest_date
+                
+                # Also update the browsing_date since it's not a widget state
+                st.session_state.browsing_date = default_date
+            else:
+                # Fall back to bounds checking if no valid dates list
+                if default_date < min_date:
+                    default_date = min_date
+                    # Also update the browsing_date
+                    st.session_state.browsing_date = default_date
+                elif default_date > max_date:
+                    default_date = max_date
+                    # Also update the browsing_date
+                    st.session_state.browsing_date = default_date
+                    
         elif 'date' in st.session_state:
-            # Use the existing date value but validate it's within bounds
+            # Use the existing date value but validate it's within bounds and is a valid date
             default_date = st.session_state.date
-            if min_date and default_date < min_date:
-                default_date = min_date
-            elif max_date and default_date > max_date:
-                default_date = max_date
+            
+            # Check if it's in valid dates first
+            if 'valid_dates' in st.session_state and st.session_state.valid_dates:
+                if default_date not in st.session_state.valid_dates:
+                    # Find closest valid date
+                    valid_dates = sorted(st.session_state.valid_dates)
+                    if valid_dates:
+                        closest_date = min(valid_dates, key=lambda d: abs((default_date - d).days))
+                        default_date = closest_date
+                        st.session_state.browsing_date = default_date
+                    else:
+                        # Fall back to today if no valid dates
+                        default_date = max_date
+                        st.session_state.browsing_date = default_date
+            else:
+                # Fall back to bounds checking if no valid dates list
+                if default_date < min_date:
+                    default_date = min_date
+                    # Also update the browsing_date
+                    st.session_state.browsing_date = min_date
+                elif default_date > max_date:
+                    default_date = max_date
+                    # Also update the browsing_date
+                    st.session_state.browsing_date = max_date
         elif 'init_date' in st.session_state:
             # Use the init_date value but validate it's within bounds
             default_date = st.session_state.init_date
-            if min_date and default_date < min_date:
-                default_date = min_date
-            elif max_date and default_date > max_date:
-                default_date = max_date
+            
+            # Check if it's in valid dates first
+            if 'valid_dates' in st.session_state and st.session_state.valid_dates:
+                if default_date not in st.session_state.valid_dates:
+                    # Find closest valid date
+                    valid_dates = sorted(st.session_state.valid_dates)
+                    if valid_dates:
+                        closest_date = min(valid_dates, key=lambda d: abs((default_date - d).days))
+                        default_date = closest_date
+                        st.session_state.browsing_date = default_date
+                    else:
+                        # Fall back to today if no valid dates
+                        default_date = max_date
+                        st.session_state.browsing_date = default_date
+            else:
+                # Fall back to bounds checking if no valid dates list
+                if default_date < min_date:
+                    default_date = min_date
+                    # Also update the browsing_date
+                    st.session_state.browsing_date = min_date
+                elif default_date > max_date:
+                    default_date = max_date
+                    # Also update the browsing_date
+                    st.session_state.browsing_date = max_date
         else:
             # Initial default if neither session_state.date nor init_date exists yet
-            default_date = max_date
-            if min_date and default_date < min_date:
-                default_date = min_date
+            if 'valid_dates' in st.session_state and st.session_state.valid_dates:
+                # Use newest valid date
+                valid_dates = sorted(st.session_state.valid_dates)
+                default_date = valid_dates[-1]
+                st.session_state.browsing_date = default_date
+            else:
+                # Fall back to max_date
+                default_date = max_date
+                if default_date < min_date:
+                    default_date = min_date
+                    # Also update the browsing_date
+                    st.session_state.browsing_date = min_date
         
         # Create the date_input widget - ONLY use the value parameter, never set st.session_state.date directly
+        from jiffyui_components import create_date_picker
+        
         try:
-            st.date_input("Date", 
-                        value=default_date,  # Pass the calculated default directly as value
-                        key="date",          # This creates st.session_state.date implicitly
-                        on_change=on_date_change,
-                        help="Select date", 
-                        label_visibility="collapsed",
-                        min_value=min_date, 
-                        max_value=max_date)
+            # Ensure default_date is valid and within min_date and max_date
+            if default_date < min_date:
+                default_date = min_date
+            if default_date > max_date:
+                default_date = max_date
+                
+            # If we have valid dates, only allow selecting those dates
+            if 'valid_dates' in st.session_state and st.session_state.valid_dates:
+                # For recordings with single day of data, just show that date
+                if len(st.session_state.valid_dates) == 1:
+                    only_date = st.session_state.valid_dates[0]
+                    
+                    create_date_picker(
+                        value=only_date,
+                        min_value=only_date,
+                        max_value=only_date,
+                        on_change_handler=on_date_change,
+                        key="date",
+                        help_text="Only one date available for this recording",
+                        single_day=True
+                    )
+                    
+                    # Ensure browsing_date is set correctly
+                    st.session_state.browsing_date = only_date
+                else:
+                    # Multiple valid dates - create a date picker with only those dates
+                    valid_dates = sorted(st.session_state.valid_dates)
+                    
+                    create_date_picker(
+                        value=default_date,
+                        min_value=valid_dates[0],
+                        max_value=valid_dates[-1],
+                        on_change_handler=on_date_change,
+                        key="date",
+                        help_text=f"Choose from {len(valid_dates)} days with data"
+                    )
+            else:
+                # Standard date picker with min/max bounds
+                create_date_picker(
+                    value=default_date,
+                    min_value=min_date,
+                    max_value=max_date,
+                    on_change_handler=on_date_change,
+                    key="date",
+                    help_text="Select date"
+                )
         except Exception as e:
-            # If there's still an error, log it but continue
             print(f"Date picker error: {str(e)}")
-            # Fallback: create date input with minimal constraints
+            
+            # Try a simpler fallback with a unique key
             try:
-                # Use min_date or max_date as fallback, whichever is valid
-                fallback_date = min_date or max_date
-                st.date_input("Date", 
-                            value=fallback_date,  # Set value directly, never through session_state
-                            key="date",
-                            on_change=on_date_change,
-                            help="Select date", 
-                            label_visibility="collapsed")
+                create_date_picker(
+                    value=default_date,
+                    min_value=None,
+                    max_value=None,
+                    on_change_handler=on_date_change,
+                    key="date_fallback",
+                    help_text="Select date"
+                )
             except Exception as e2:
-                # Last resort: just show an error message in place of the date picker
                 print(f"Fallback date picker error: {str(e2)}")
-                st.error("Date picker error. Try restarting the app.")
-    
-    with date_cols[2]:  # Next day button
-        # Add a simple empty space above the button to create consistent positioning
-        st.write("")
-        st.button("▶", key="next_day_button", use_container_width=True, help="Next Day",
-                 on_click=on_next_day_button)
+                
+                # Final fallback - just show the date as text
+                today = datetime.now().date()
+                date_picker_placeholder.markdown(f"**Date:** {default_date.strftime('%Y-%m-%d')}")
 
-    # Time controls row
-    time_cols = st.columns([3, 1, 1, 1, 1, 1, 0.2, 1])
-    with time_cols[0]: # Time Display Placeholder
-        time_display = st.empty()
-        # Set initial display value
-        #time_display.markdown(f'<div class="time-display">{format_time_12h(st.session_state.hour, st.session_state.minute, st.session_state.second)}</div>', unsafe_allow_html=True)
-    with time_cols[1]: # Fast Reverse Button
-        st.button("⏪", key="fast_reverse_button", use_container_width=True, help="Fast Reverse",
-                  on_click=on_fast_reverse_button)
-    with time_cols[2]: # Prev Button
-        st.button("◀️", key="prev_button", use_container_width=True, help="Previous",
-                  # Callback no longer needs args
-                  on_click=on_prev_button)
-    with time_cols[3]: # Pause Button
-        st.button("⏸️", key="pause_button", use_container_width=True, help="Pause",
-                  on_click=on_pause_button)
-    with time_cols[4]: # Next Button
-        st.button("▶️", key="next_button", use_container_width=True, help="Next",
-                  # Callback no longer needs args
-                  on_click=on_next_button)
-    with time_cols[5]: # Fast Forward Button
-        st.button("⏩", key="fast_forward_button", use_container_width=True, help="Fast Forward",
-                  on_click=on_fast_forward_button)
-    with time_cols[6]: # Separator
-        st.markdown('<div style="width:1px;background-color:#555;height:32px;margin:0 auto;"></div>', unsafe_allow_html=True)
-    with time_cols[7]: # Live/Pause Button
+    # Create playback controls
+    handlers = {
+        'fast_reverse': on_fast_reverse_button,
+        'prev': on_prev_button,
+        'pause': on_pause_button,
+        'next': on_next_button,
+        'fast_forward': on_fast_forward_button,
+        # 'live' is handled separately
+    }
+    
+    time_cols, time_display = create_playback_controls(handlers)
+
+    # Handle Live button separately due to its conditional styling
+    with time_cols[7]:
         # Check if client is connected and status is available
         client_connected = False
         server_session, is_capturing, capture_fps, last_save_time, client_connected = get_server_status()
@@ -1297,6 +1088,8 @@ def build_main_area():
 
         # Determine if live button should be disabled
         live_disabled = True # Default to disabled
+        button_help = ""
+        
         if client_connected and server_session is not None and ui_session is not None:
             if server_session == ui_session:
                 # Only enable if connected, sessions match AND the date is today
@@ -1308,33 +1101,17 @@ def build_main_area():
                     live_disabled = True
                     button_help = "Live view is only available for current date"
 
-        # is_capturing reflects if rt_capture is enabled and we have a connection
-        # This doesn't determine enabled state anymore, but affects button style/help
-        # is_capturing = st.session_state.rt_capture and client_connected
-
-        in_playback = st.session_state.in_playback_mode
-
-        # Always display "Live" text, but with different styles
-        button_text = "Live"
-
-        if in_playback:
-            # Not in live mode - unfilled button
-            if not 'button_help' in locals():  # Don't override if already set for date mismatch
-                button_help = "Switch to live view" if not live_disabled else f"Server not capturing session '{ui_session}'"
-            button_type = "secondary"  # Gray (unfilled) button
-        else:
-            # In live mode - filled red button
-            button_help = "Pause live view"
-            button_type = "primary"    # Red (filled) button via CSS
-
-        st.button(button_text, key="live_btn", use_container_width=True, help=button_help,
-                on_click=toggle_live_pause, disabled=live_disabled, type=button_type)
+        # Create the live button with appropriate styling
+        create_live_button(
+            handler=toggle_live_pause,
+            is_enabled=not live_disabled,
+            is_live_mode=not st.session_state.in_playback_mode,
+            help_text=button_help,
+            session_name=ui_session
+        )
 
     # Time Arrow above timeline
-    timearrow_placeholder = st.empty()
-    #timearrow_img = generate_timeline_arrow()
-    timearrow_img = np.zeros((24, 1200, 3), dtype=np.uint8)
-    timearrow_placeholder.image(timearrow_img, channels="RGB", use_container_width=True)
+    timearrow_placeholder, timearrow_img = create_empty_timeline_arrow(width=1200, height=24)
 
     # Generate timeline image with appropriate width and increased height (50% taller)
     timeline_img = generate_timeline_image(width=1200, height=60)  # Increased from 40 to 60
@@ -1348,7 +1125,6 @@ def build_main_area():
         key="timeline_bar",
         use_column_width=True
     )
-    #st.markdown('</div>', unsafe_allow_html=True)
     
     # Handle timeline click only if it's a new click (different from previous)
     if clicked_coords and 'x' in clicked_coords:
@@ -1366,9 +1142,6 @@ def build_main_area():
 
     # Create Video Placeholder *after* the controls container
     video_placeholder = st.empty() 
-     # reduces flicker but causes double-jump on timeline click:
-    #if st.session_state.last_frame is not None and not st.session_state.in_playback_mode:
-    #    video_placeholder.image(st.session_state.last_frame, channels="BGR", use_container_width=True)
 
     # Return placeholders needed outside this build function (by callbacks and main loop)
     return video_placeholder, time_display, timearrow_placeholder
@@ -1388,7 +1161,7 @@ def run_ui_update_loop():
     status_placeholder = st.session_state.status_placeholder
     error_placeholder = st.session_state.error_placeholder
     time_display = st.session_state.time_display
-    #server_status_placeholder = st.session_state.server_status_placeholder
+    server_status_placeholder = st.session_state.server_status_placeholder
     capture_fps_placeholder = st.session_state.capture_fps_placeholder
     display_fps_placeholder = st.session_state.display_fps_placeholder
     frames_detected_placeholder = st.session_state.frames_detected_placeholder
@@ -1458,6 +1231,14 @@ def run_ui_update_loop():
                     except Exception as e:
                         print(f"Error counting frames: {str(e)}")
                         st.session_state.frames_detected = 0
+                
+                # Display server status
+                # status_html = f"""
+                # <div style="padding: 5px 0;">
+                #     <div><b>Recording:</b> <span style="color: {'blue' if server_session != None else 'gray'}">{server_session if server_session != None else 'Idle'}</span></div>
+                # </div>
+                # """
+                # server_status_placeholder.markdown(status_html, unsafe_allow_html=True)
                 
                 # Update FPS metrics
                 # Only show FPS Camera when connected to and viewing live data
@@ -1535,7 +1316,7 @@ def run_ui_update_loop():
                     not st.session_state.http_client.is_connected()):
                     
                     error_placeholder.error(st.session_state.http_client.last_error or "Connection lost to JiffyCam server")
-                    status_placeholder.markdown("<div style='padding: 5px 0;'>Status: Connection Error</div>", unsafe_allow_html=True)
+                    # status_placeholder.markdown("<div style='padding: 5px 0;'>Status: Connection Error</div>", unsafe_allow_html=True)
                     st.session_state.status_message = "Status: Connection Error"
                     check_errors = True
             
@@ -1649,7 +1430,7 @@ def run_ui_update_loop():
                     new_status = "Status: Idle"
 
             # Update status placeholder with formatted status
-            status_placeholder.markdown(f"<div style='padding: 5px 0;'>{new_status}</div>", unsafe_allow_html=True)
+            # status_placeholder.markdown(f"<div style='padding: 5px 0;'>{new_status}</div>", unsafe_allow_html=True)
             st.session_state.status_message = new_status # Store new status
 
             # Main loop delay

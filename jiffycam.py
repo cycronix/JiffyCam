@@ -22,14 +22,16 @@ import streamlit as st
 from jiffyget import get_timestamp_range # get_frame moved to jiffyui 
 from jiffyconfig import RESOLUTIONS, JiffyConfig
 
-# Import UI functions from the new module
+# Import UI functions from the new modules
 from jiffyui import (
     build_sidebar, 
     build_main_area, 
     run_ui_update_loop,
-    JiffyCamClient,
     # Callbacks and helpers are internal to jiffyui now
 )
+# UI components are imported directly in the relevant functions
+import jiffyui_components
+from jiffyclient import JiffyCamClient
 
 # --- Main Application Logic ---
 def main():       
@@ -185,13 +187,14 @@ def main():
     # --- Build UI --- 
     # Call UI builders and store returned placeholders in session_state
     # These keys ('status_placeholder', etc.) must match those used in jiffyui callbacks
-    st.session_state.status_placeholder, st.session_state.error_placeholder, st.session_state.capture_fps_placeholder, \
-        st.session_state.display_fps_placeholder, st.session_state.frames_detected_placeholder, st.session_state.last_save_time_placeholder = build_sidebar()
+    st.session_state.status_placeholder, st.session_state.error_placeholder, st.session_state.server_status_placeholder, \
+        st.session_state.capture_fps_placeholder, st.session_state.display_fps_placeholder, \
+        st.session_state.frames_detected_placeholder, st.session_state.last_save_time_placeholder = build_sidebar()
     st.session_state.video_placeholder, st.session_state.time_display, st.session_state.timearrow_placeholder = \
         build_main_area()
 
     st.session_state.video_placeholder.info("Initialize capture or select time.")
-    st.session_state.status_placeholder.markdown("<div style='padding: 5px 0;'>Status: Idle</div>", unsafe_allow_html=True)
+    # st.session_state.status_placeholder.markdown("<div style='padding: 5px 0;'>Status: Idle</div>", unsafe_allow_html=True)
     st.session_state.status_message = "Status: Idle"
 
     # --- Run Main UI Update Loop --- 
