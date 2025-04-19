@@ -351,7 +351,7 @@ def change_day(direction):
             new_date = valid_dates[current_index - 1]
         else:
             # We're at the end of the list, can't navigate further
-            print(f"At {'end' if direction == 'next' else 'beginning'} of valid dates, can't change days")
+            #print(f"At {'end' if direction == 'next' else 'beginning'} of valid dates, can't change days")
             # Just refresh the current date's display
             st.session_state.step_direction = "down"
             st.session_state.last_displayed_timestamp = None

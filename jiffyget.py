@@ -42,24 +42,28 @@ def jiffyget(time_posix: float, cam_name: str,
     if not os.path.exists(base_dir):
         return None, None, True
     
-    # Convert directory names to timestamps and filter by current date
-    if(not timestamps):
-        timestamps = get_timestamps(cam_name, session, data_dir, browse_date_posix)
-    if(not timestamps):
+    # Get timestamps data if not already available
+    timestamp_data = timestamps
+    if not timestamp_data:
+        timestamp_data = get_timestamps(cam_name, session, data_dir, browse_date_posix)
+        # Update the global timestamps
+        timestamps = timestamp_data
+        
+    if not timestamp_data:
         return None, None, True
     
     # Find the closest timestamp based on direction
-    timestamps.sort()
-    oldest_timestamp = timestamps[0][0]
-    newest_timestamp = timestamps[-1][0] 
+    timestamp_data.sort()
+    oldest_timestamp = timestamp_data[0][0]
+    newest_timestamp = timestamp_data[-1][0] 
     #print(f"oldest_timestamp: {oldest_timestamp}, newest_timestamp: {newest_timestamp}, target_timestamp: {target_timestamp}")
     # If closest timestamp is outside range of timestamps, use oldest or newest
     if(target_timestamp <= oldest_timestamp):
-        closest_dir = timestamps[0][1]
-        closest_timestamp = timestamps[0][0]
+        closest_dir = timestamp_data[0][1]
+        closest_timestamp = timestamp_data[0][0]
         eof = True
     elif(target_timestamp >= newest_timestamp):
-        closest_dir = timestamps[-1][1]
+        closest_dir = timestamp_data[-1][1]
         closest_timestamp = newest_timestamp
         eof = True
     else:
@@ -67,13 +71,13 @@ def jiffyget(time_posix: float, cam_name: str,
         closest_dir = None
         closest_timestamp = None 
         if direction == "up":  # Find at-or-after for increasing time
-            for timestamp, dir_path in timestamps:
+            for timestamp, dir_path in timestamp_data:
                 if timestamp >= target_timestamp:
                     closest_dir = dir_path
                     closest_timestamp = timestamp
                     break
         elif direction == "down":  # Find at-or-before for decreasing time (default behavior)
-            for timestamp, dir_path in timestamps:
+            for timestamp, dir_path in timestamp_data:
                 if timestamp <= target_timestamp:
                     closest_dir = dir_path
                     closest_timestamp = timestamp
@@ -84,7 +88,7 @@ def jiffyget(time_posix: float, cam_name: str,
             prev_dt = 0
             prev_timestamp = None
             prev_dir = None
-            for timestamp, dir_path in timestamps:
+            for timestamp, dir_path in timestamp_data:
                 dt = timestamp - target_timestamp
                 if dt > 0:
                     if dt < -prev_dt:
@@ -146,8 +150,7 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
         dt = datetime.fromtimestamp(ts / 1000)
         unique_dates.add(dt.date())
     
-    # Store the unique dates in the global timestamps variable for future reference
-    # This will be used in build_main_area to correctly set the selectable date range
+    # Store the timestamps in the global variable for future reference
     timestamps = all_timestamps
     
     # Log the date range we found
@@ -283,12 +286,15 @@ def get_locations(cam_name: str, session: str, data_dir: str, browse_date: int):
     """
     global timestamps
 
-    timestamps = get_timestamps(cam_name, session, data_dir, browse_date)
-    if(timestamps is None):
+    timestamp_data = get_timestamps(cam_name, session, data_dir, browse_date)
+    if timestamp_data is None:
         return None
 
+    # Store the data in global timestamps for other functions to access
+    timestamps = timestamp_data
+
     locations = []       
-    for timestamp in timestamps:
+    for timestamp in timestamp_data:
         location = (timestamp[0]-browse_date) / 86400000.    # fraction of day (msec/msec)
         locations.append(location)
 

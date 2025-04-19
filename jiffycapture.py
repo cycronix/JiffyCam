@@ -277,6 +277,7 @@ class VideoCapture:
             # Update class attributes
             self.image_just_saved = True
             self.image_saved_time = self.last_save_time = time.time()
+            print(f"Frame saved: {datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')}")
             self.save_status = f"Frame saved: {datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')}"
                 
         except Exception as e:
