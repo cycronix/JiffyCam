@@ -1,0 +1,11 @@
+cam_device: WebCam
+cam_name: cam0
+data_dir: JiffyData
+device_aliases:
+  WebCam: 0
+  WebCam2: 2
+  FrontYard: rtsp://admin:xxx.1@192.168.50.xxx/cam/realmonitor?channel=1&subtype=0
+  Sample: 0
+resolution: '0x0'
+save_interval: 5
+dataserver_port: 8081

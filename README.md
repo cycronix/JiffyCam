@@ -44,6 +44,23 @@ JiffyCam is a portable all-Python webapp that uses Streamlit for the UI to captu
    ```bash
    streamlit run jiffycam.py --server.port 8080
    ```
+   
+   To specify a custom data directory (overrides the default 'JiffyData'):
+   ```bash
+   streamlit run jiffycam.py CustomDataDir
+   ```
+   
+   When using a custom data directory, JiffyCam will look for session-specific 
+   configuration files in that directory (e.g., CustomDataDir/SessionName/jiffycam.yaml).
+   
+   Both jiffycam.py and jiffycapture.py support custom data directories:
+   ```bash
+   # For the Streamlit UI:
+   streamlit run jiffycam.py CustomDataDir
+   
+   # For standalone capture:
+   python jiffycapture.py DeviceAlias --data-dir CustomDataDir
+   ```
 Note: install and run in a Python virtual environment.
 
 ## Usage

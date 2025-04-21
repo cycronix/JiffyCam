@@ -173,6 +173,7 @@ def create_detection_metrics():
     
     Returns:
         Tuple of (frames_detected_placeholder, last_save_time_placeholder)
+        Note: last_save_time_placeholder is now None as the UI component is removed
     """
     frames_detected_placeholder = create_metric_display(
         "Detections",
@@ -180,11 +181,8 @@ def create_detection_metrics():
         "Number of frames detected for current date"
     )
     
-    last_save_time_placeholder = create_metric_display(
-        "Last Detection",
-        "---",
-        "Time of last image detection and save"
-    )
+    # Last detection time placeholder removed from UI, but maintain API compatibility
+    last_save_time_placeholder = None
     
     return frames_detected_placeholder, last_save_time_placeholder
 

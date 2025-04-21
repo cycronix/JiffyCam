@@ -1289,7 +1289,7 @@ def run_ui_update_loop():
     capture_fps_placeholder = st.session_state.capture_fps_placeholder
     display_fps_placeholder = st.session_state.display_fps_placeholder
     frames_detected_placeholder = st.session_state.frames_detected_placeholder
-    last_save_time_placeholder = st.session_state.last_save_time_placeholder
+    last_save_time_placeholder = st.session_state.get('last_save_time_placeholder', None)
     # --- Initial Image Display --- 
     is_capturing = False
     
@@ -1417,21 +1417,22 @@ def run_ui_update_loop():
                     border=True
                 )
 
-                """
                 # Display Last Detectiond time (as string)
                 if last_save_time:
                     last_save_display = str(last_save_time)
                 else:
                     last_save_display = "---"
                     
-                last_save_time_placeholder.metric(
-                    "Last Detection",
-                    last_save_display,
-                    delta=None,
-                    help="Time of last image detection and save",
-                    border=True
-                )
-                """
+                # Last Detection UI component has been removed, but keep the data flow
+                # The last_save_time_placeholder will be None, so we should skip updating it
+                if last_save_time_placeholder is not None:
+                    last_save_time_placeholder.metric(
+                        "Last Detection",
+                        last_save_display,
+                        delta=None,
+                        help="Time of last image detection and save",
+                        border=True
+                    )
             # Check for errors first
             check_errors = False
             
@@ -1595,7 +1596,11 @@ def initialize_session_state():
     from jiffyconfig import JiffyConfig, RESOLUTIONS
     from collections import OrderedDict
     
-    config_manager = JiffyConfig()
+    # Check if data_dir is already set in session state (from command line arguments)
+    if 'data_dir' in st.session_state:
+        config_manager = JiffyConfig(data_dir=st.session_state.data_dir)
+    else:
+        config_manager = JiffyConfig()
     config = config_manager.config
     
     # UI interaction state flags

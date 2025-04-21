@@ -10,6 +10,7 @@ import sys
 import time
 import yaml
 import threading
+import argparse
 from typing import Optional, Dict, Any
 from datetime import datetime, time as datetime_time
 from collections import OrderedDict
@@ -33,8 +34,18 @@ from jiffyui import (
 import jiffyui_components
 from jiffyclient import JiffyCamClient
 
+# --- Parse Command Line Arguments ---
+def parse_args():
+    parser = argparse.ArgumentParser(description='JiffyCam Streamlit Web Interface')
+    parser.add_argument('data_dir', nargs='?', default=None, 
+                        help='Optional data directory to use instead of default JiffyData')
+    return parser.parse_args()
+
 # --- Main Application Logic ---
 def main():       
+    # Parse command line arguments
+    args = parse_args()
+    
     # Page Config (Should be first Streamlit command)
     st.set_page_config(
         page_title="JiffyCam",
@@ -58,9 +69,15 @@ def main():
     #print(f"server_state: {server_state.is_capturing}")
     #print(f"st.session_state.slave_mode: {st.session_state.slave_mode}")
 
-    # Load config
-    config_manager = JiffyConfig()
+    # Load config with the data_dir from command line if provided
+    data_dir = args.data_dir if args.data_dir else 'JiffyData'
+    config_manager = JiffyConfig(data_dir=data_dir)
     config = config_manager.config
+    
+    # Ensure data_dir is set in the config
+    if args.data_dir:
+        config['data_dir'] = args.data_dir
+        #print(f"Using data directory from command line: {args.data_dir}")
     
     # UI interaction state flags
     if 'in_playback_mode' not in st.session_state: st.session_state.in_playback_mode = True
@@ -79,6 +96,7 @@ def main():
     if 'dataserver_port' not in st.session_state: 
         current_session = config.get('session', 'Default')
         data_dir = config.get('data_dir', 'JiffyData')
+        #print(f"data_dir: {data_dir}")
         session_config_path = os.path.join(data_dir, current_session, 'jiffycam.yaml')
         
         # First check if session-specific config exists and has dataserver_port
