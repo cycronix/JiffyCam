@@ -1,28 +1,39 @@
 """
-jiffyui.py: UI components and logic for JiffyCam
+jiffyui.py: Main UI component for JiffyCam browser
 
-This module contains functions for building and updating the Streamlit UI.
-It uses HTTP client to connect to standalone JiffyCam server.
+This module contains the main UI code for the JiffyCam browser interface.
 """
 
-from datetime import datetime, timedelta, time as datetime_time
-import time
 import os
-import requests
-import json
-from io import BytesIO
+import sys
+import time
+import threading
+from datetime import datetime, timedelta
+from datetime import time as datetime_time
+import numpy as np
+import cv2
 import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
-#from streamlit_server_state import server_state, server_state_lock, no_rerun
-import numpy as np  # Add this import for image creation
-import cv2  # Add this import for image processing
+import yaml
 
 from jiffyconfig import RESOLUTIONS   # Import necessary components from other modules
-from jiffyget import jiffyget, get_locations, get_timestamp_range
+from jiffyget import (
+    jiffyget, 
+    get_locations, 
+    get_timestamp_range, 
+    get_active_sessions, 
+    get_session_port
+)
+from jiffyvis import generate_timeline_image, generate_timeline_arrow, format_time_12h
 
 # Import from extracted modules
-from jiffyclient import JiffyCamClient
-from jiffyvis import generate_timeline_image, generate_timeline_arrow, format_time_12h
+try:
+    from jiffyclient import JiffyCamClient
+except ImportError:
+    print("Warning: JiffyCamClient module not found. HTTP mode will be unavailable.")
+    
+# For normal rerun prevention in callback context
+no_rerun = threading.Lock()
 
 # Import UI components (may be imported within individual functions as needed)
 # import jiffyui_components
@@ -80,6 +91,43 @@ def on_recording_change():
 
     # Update the main session variable used by other parts of the app
     st.session_state.session = new_session
+
+    # Check if the new session is active
+    from jiffyget import get_active_sessions, get_session_port
+    data_dir = st.session_state.get('data_dir', 'JiffyData')
+    active_sessions = get_active_sessions(data_dir)
+    
+    # If the session is active, update the HTTP client
+    if new_session in active_sessions:
+        port = get_session_port(new_session, data_dir)
+        if port:
+            server_url = f"http://localhost:{port}"
+            st.session_state.http_server_url = server_url
+            
+            try:
+                # Update or create HTTP client
+                if hasattr(st.session_state, 'http_client'):
+                    # Update existing client
+                    st.session_state.http_client.set_server_url(server_url)
+                else:
+                    # Create new client
+                    from jiffyclient import JiffyCamClient
+                    st.session_state.http_client = JiffyCamClient(server_url)
+                
+                # Try a test connection to verify server is actually responding
+                if not st.session_state.http_client.check_connection(force=True):
+                    print(f"Warning: Could not connect to server at {server_url}")
+                    # Don't show errors here - just quietly fail to connect
+            except Exception as e:
+                print(f"Error connecting to server at {server_url}: {str(e)}")
+                # Don't show errors here - just quietly fail to connect
+    elif hasattr(st.session_state, 'http_client'):
+        # If session is not active but we have a client, disconnect it
+        # This is cleaner than keeping a stale connection
+        try:
+            st.session_state.http_client.disconnect()
+        except Exception:
+            pass
 
     # Clear existing timestamps and date range info
     st.session_state.oldest_timestamp = None # Force range recalculation
@@ -197,22 +245,59 @@ def toggle_rt_capture():
         st.session_state.browsing_saved_images = False
         st.session_state.date = datetime.now().date()
 
-        # Get HTTP client
-        if not hasattr(st.session_state, 'http_client'):
-            st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
+        # Get session info
+        current_session = st.session_state.session
+        data_dir = st.session_state.get('data_dir', 'JiffyData')
         
-        # Force a connection check
-        if not st.session_state.http_client.check_connection(force=True):
-            st.error(f"Failed to connect to JiffyCam server: {st.session_state.http_client.last_error}")
+        # Get active sessions
+        active_sessions = get_active_sessions(data_dir)
+        
+        # Check if current session is active
+        if current_session not in active_sessions:
+            st.warning(f"Session '{current_session}' is not currently active on any server. Please select an active session or start a server for this session.")
             st.session_state.rt_capture = False
             return
+        
+        # Get the port for this session
+        port = get_session_port(current_session, data_dir)
+        if not port:
+            st.error(f"Could not determine the server port for session '{current_session}'.")
+            st.session_state.rt_capture = False
+            return
+        
+        # Set the HTTP server URL
+        server_url = f"http://localhost:{port}"
+        st.session_state.http_server_url = server_url
+        
+        # Get HTTP client
+        try:
+            if not hasattr(st.session_state, 'http_client'):
+                from jiffyclient import JiffyCamClient
+                st.session_state.http_client = JiffyCamClient(server_url)
+            else:
+                # Update URL if client exists
+                st.session_state.http_client.set_server_url(server_url)
             
-        # Start capture
-        st.session_state.http_client.start_capture()
+            # Force a connection check
+            if not st.session_state.http_client.check_connection(force=True):
+                st.error(f"Failed to connect to JiffyCam server at {server_url}: {st.session_state.http_client.last_error}")
+                st.session_state.rt_capture = False
+                return
+            
+            # Start capture
+            st.session_state.http_client.start_capture()
+        except Exception as e:
+            st.error(f"Error connecting to JiffyCam server at {server_url}: {str(e)}")
+            st.session_state.rt_capture = False
+            return
     else:
         # Stop capture
         if hasattr(st.session_state, 'http_client'):
-            st.session_state.http_client.stop_capture()
+            try:
+                st.session_state.http_client.stop_capture()
+                # No need for full disconnect, just stop the capture
+            except Exception as e:
+                print(f"Error stopping capture: {str(e)}")
         st.session_state.in_playback_mode = True
 
 def on_date_change():
@@ -695,6 +780,49 @@ def reset_session_state():
     st.session_state.minute = current_time.minute
     st.session_state.second = current_time.second
 
+def get_server_status():
+    """Get the server status information for all active sessions.
+    
+    Returns:
+        Tuple of (active_sessions, is_capturing, capture_fps, last_save_time, client_connected)
+        where active_sessions is a list of active sessions (may be empty)
+    """
+    from jiffyget import get_active_sessions
+    
+    # Get data directory from session state
+    data_dir = st.session_state.get('data_dir', 'JiffyData')
+    
+    # Get all active sessions by scanning config files and checking HTTP endpoints
+    try:
+        active_sessions = get_active_sessions(data_dir)
+    except Exception as e:
+        print(f"Error getting active sessions: {str(e)}")
+        active_sessions = []
+    
+    # Default status values (for the current client connection)
+    is_capturing = False
+    capture_fps = 0
+    last_save_time = None
+    client_connected = False
+    
+    # If we have an HTTP client connected, get its status
+    if hasattr(st.session_state, 'http_client'):
+        try:
+            client = st.session_state.http_client
+            if client.is_connected():
+                client_connected = True
+                # Get status from current client
+                if client.last_status:
+                    is_capturing = client.last_status.get('capturing', False)
+                    capture_fps = client.last_status.get('fps', 0)
+                    last_save_time = client.last_status.get('last_save_time', None)
+        except Exception as e:
+            print(f"Error checking HTTP client status: {str(e)}")
+            # Reset connection status on error
+            client_connected = False
+    
+    return active_sessions, is_capturing, capture_fps, last_save_time, client_connected
+
 def build_sidebar():
     """Build the sidebar UI elements."""
     # Setup main sections
@@ -737,8 +865,8 @@ def build_sidebar():
                     if st.session_state.session != st.session_state.selected_recording_key:
                          st.session_state.session = st.session_state.selected_recording_key
 
-        # Get the current server session for highlighting the active recording
-        server_session, _, _, _, _ = get_server_status()
+        # Get the current active sessions for highlighting
+        active_sessions, _, _, _, _ = get_server_status()
         
         # Create the recording selector
         create_recording_selector(
@@ -746,7 +874,7 @@ def build_sidebar():
             current_selection=st.session_state.get('selected_recording_key'),
             on_change_handler=on_recording_change,
             help_text="Select the recording session to view.",
-            server_session=server_session
+            active_sessions=active_sessions
         )
 
         # Status section header
@@ -763,21 +891,6 @@ def build_sidebar():
         error_placeholder = st.empty()
 
     return status_placeholder, error_placeholder, server_status_placeholder, capture_fps_placeholder, display_fps_placeholder, frames_detected_placeholder, last_save_time_placeholder
-
-def get_server_status():
-    """Get the server session from the session state."""
-    if hasattr(st.session_state, 'http_client'):
-        client = st.session_state.http_client
-        if client.is_connected():
-            client_connected = True
-            # Attempt to get server session from last known status
-            if client.last_status:
-                server_session = client.last_status.get('session') # Safely get session
-                is_capturing = client.last_status.get('capturing', False)
-                capture_fps = client.last_status.get('fps', 0)
-                last_save_time = client.last_status.get('last_save_time', None)
-                return server_session, is_capturing, capture_fps, last_save_time, client_connected
-    return None, False, 0, None, False
 
 def on_timeline_click(coords):
     """Handle clicks on the timeline image."""
@@ -1081,18 +1194,19 @@ def build_main_area():
     with time_cols[7]:
         # Check if client is connected and status is available
         client_connected = False
-        server_session, is_capturing, capture_fps, last_save_time, client_connected = get_server_status()
-
-        # Get UI session
-        ui_session = st.session_state.get('session')
-
-        # Determine if live button should be disabled
-        live_disabled = True # Default to disabled
-        button_help = ""
         
-        if client_connected and server_session is not None and ui_session is not None:
-            if server_session == ui_session:
-                # Only enable if connected, sessions match AND the date is today
+        try:
+            active_sessions, is_capturing, capture_fps, last_save_time, client_connected = get_server_status()
+            
+            # Get UI session
+            ui_session = st.session_state.get('session')
+    
+            # Determine if live button should be disabled
+            live_disabled = True # Default to disabled
+            button_help = ""
+            
+            if ui_session in active_sessions:
+                # Only enable if session is active AND the date is today
                 current_date = datetime.now().date()
                 browsing_date = st.session_state.get('browsing_date') or current_date
                 if browsing_date == current_date:
@@ -1100,14 +1214,24 @@ def build_main_area():
                 else:
                     live_disabled = True
                     button_help = "Live view is only available for current date"
-
+            else:
+                live_disabled = True
+                button_help = f"Session '{ui_session}' is not active on any server"
+        except Exception as e:
+            print(f"Error checking server status: {str(e)}")
+            live_disabled = True
+            button_help = "Error connecting to server"
+            active_sessions = []
+            ui_session = st.session_state.get('session')
+    
         # Create the live button with appropriate styling
         create_live_button(
             handler=toggle_live_pause,
             is_enabled=not live_disabled,
             is_live_mode=not st.session_state.in_playback_mode,
             help_text=button_help,
-            session_name=ui_session
+            session_name=ui_session,
+            active_sessions=active_sessions
         )
 
     # Time Arrow above timeline
@@ -1195,7 +1319,7 @@ def run_ui_update_loop():
             if current_time - server_status_update_time > 2:
                 server_status_update_time = current_time
                 connection_status = "Disconnected"
-                server_session, is_capturing, capture_fps, last_save_time, client_connected = get_server_status()
+                active_sessions, is_capturing, capture_fps, last_save_time, client_connected = get_server_status()
                 if is_capturing:
                     connection_status = "Recording"
                 
@@ -1246,10 +1370,11 @@ def run_ui_update_loop():
                 if (not st.session_state.in_playback_mode and 
                     hasattr(st.session_state, 'http_client')):
                     client = st.session_state.http_client
+                    current_session = st.session_state.session
                     is_viewing_live = (
                         client.is_connected() and
                         client.last_status and
-                        server_session == st.session_state.session
+                        current_session in active_sessions
                     )
                 
                 if is_viewing_live:
@@ -1292,6 +1417,7 @@ def run_ui_update_loop():
                     border=True
                 )
 
+                """
                 # Display Last Detectiond time (as string)
                 if last_save_time:
                     last_save_display = str(last_save_time)
@@ -1305,7 +1431,7 @@ def run_ui_update_loop():
                     help="Time of last image detection and save",
                     border=True
                 )
-                
+                """
             # Check for errors first
             check_errors = False
             
@@ -1345,9 +1471,15 @@ def run_ui_update_loop():
                     # Only get a new frame from the server if we're in live view mode
                     # This prevents unnecessary HTTP requests when in playback mode
                     if not st.session_state.in_playback_mode:
-                        frame = st.session_state.http_client.get_last_frame()
-                        if frame is not None:
-                            st.session_state.last_frame = frame
+                        try:
+                            frame = st.session_state.http_client.get_last_frame()
+                            if frame is not None:
+                                st.session_state.last_frame = frame
+                        except Exception as e:
+                            print(f"Error getting last frame: {str(e)}")
+                            error_placeholder.error(f"Connection error: {str(e)}")
+                            st.session_state.rt_capture = False
+                            is_capturing = False
 
                 if st.session_state.in_playback_mode:
                     # Playback Mode - Don't make any HTTP requests
@@ -1361,36 +1493,48 @@ def run_ui_update_loop():
 
                 else: # Live View Mode (Capture Running)
                     if hasattr(st.session_state, 'http_client'):
-                        # In live view mode, always get the latest frame
-                        frame, fps, _, _ = st.session_state.http_client.get_frame()
-                        
-                        # Update status information periodically
-                        #status_updated = st.session_state.http_client.update_status_if_needed()
-                        
-                        # Always update status to show we're using HTTP mode
-                        if frame is not None:
-                            status = st.session_state.http_client.last_status
-                            if status:
-                                fps = status.get('fps', 0)
-                                frame_count = status.get('frame_count', 0)
-                                new_status = f"Live View - Frames: {frame_count}"
+                        try:
+                            # In live view mode, always get the latest frame
+                            frame, fps, _, _ = st.session_state.http_client.get_frame()
+                            
+                            # Always update status to show we're using HTTP mode
+                            if frame is not None:
+                                status = st.session_state.http_client.last_status
+                                if status:
+                                    fps = status.get('fps', 0)
+                                    frame_count = status.get('frame_count', 0)
+                                    new_status = f"Live View - Frames: {frame_count}"
+                                else:
+                                    new_status = "Live View"
+                            
+                                st.session_state.last_frame = frame
+                                
+                                # Update time display and slider for live view
+                                current_time = datetime.now()
+                                time_display.markdown(f'<div class="time-display">{format_time_12h(current_time.hour, current_time.minute, current_time.second)}</div>', unsafe_allow_html=True)
+                                st.session_state.hour = current_time.hour
+                                st.session_state.minute = current_time.minute
+                                st.session_state.second = current_time.second
+                                
+                                # Display the frame
+                                new_image_display(frame)
                             else:
-                                new_status = "Live View"
-                    
-                    if frame is not None:
-                        st.session_state.last_frame = frame
-                        
-                        # Update time display and slider for live view
-                        current_time = datetime.now()
-                        time_display.markdown(f'<div class="time-display">{format_time_12h(current_time.hour, current_time.minute, current_time.second)}</div>', unsafe_allow_html=True)
-                        st.session_state.hour = current_time.hour
-                        st.session_state.minute = current_time.minute
-                        st.session_state.second = current_time.second
-                        
-                        # Display the frame
-                        new_image_display(frame)
+                                # No frame received
+                                new_status = "Live View - Waiting for frames"
+                        except Exception as e:
+                            # Handle errors gracefully
+                            print(f"Error getting frame from HTTP client: {str(e)}")
+                            error_placeholder.error(f"Error connecting to server: {str(e)}")
+                            st.session_state.rt_capture = False
+                            st.session_state.in_playback_mode = True
+                            is_capturing = False
+                    else:
+                        # No HTTP client available
+                        new_status = "Live View - No HTTP client"
+                        st.session_state.in_playback_mode = True
+                        is_capturing = False
 
-            else: # Capture Stopped
+            else: # Not capturing
                 if st.session_state.in_playback_mode:
                     # Playback Mode (Capture Stopped): Show paused frame
                     if st.session_state.last_frame is not None:
@@ -1444,3 +1588,188 @@ def run_ui_update_loop():
             time.sleep(1)  # Wait a bit before continuing
 
     print("exit run_ui_update_loop!")
+
+def initialize_session_state():
+    """Initialize session state variables."""
+    # Load config for default values
+    from jiffyconfig import JiffyConfig, RESOLUTIONS
+    from collections import OrderedDict
+    
+    config_manager = JiffyConfig()
+    config = config_manager.config
+    
+    # UI interaction state flags
+    if 'in_playback_mode' not in st.session_state: st.session_state.in_playback_mode = True
+    if 'rt_capture' not in st.session_state: st.session_state.rt_capture = False
+    if 'need_to_display_recent' not in st.session_state: st.session_state.need_to_display_recent = True
+    if 'live_button_clicked' not in st.session_state: st.session_state.live_button_clicked = False
+    if 'status_message' not in st.session_state: st.session_state.status_message = "Initializing..."
+    if 'image_just_saved' not in st.session_state: st.session_state.image_just_saved = False
+    if 'step_direction' not in st.session_state: st.session_state.step_direction = None
+    if 'autoplay_direction' not in st.session_state: st.session_state.autoplay_direction = None
+    
+    # Default to HTTP mode
+    if 'use_http_mode' not in st.session_state: st.session_state.use_http_mode = True
+    
+    # Initialize dataserver_port from config
+    if 'dataserver_port' not in st.session_state: 
+        st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
+    
+    # Set http_server_port to match dataserver_port for consistency
+    if 'http_server_port' not in st.session_state:
+        st.session_state.http_server_port = st.session_state.dataserver_port
+    
+    # Build HTTP server URL with the configured port
+    if 'http_server_url' not in st.session_state:
+        st.session_state.http_server_url = f"http://localhost:{st.session_state.dataserver_port}"
+    
+    # Configuration related state (derived from config)
+    # Ensure device_aliases is OrderedDict
+    aliases = config.get('device_aliases', {'Default': '0'})
+    if 'device_aliases' not in st.session_state: st.session_state.device_aliases = OrderedDict(aliases) 
+    else: st.session_state.device_aliases = OrderedDict(st.session_state.device_aliases) # Ensure type
+
+    if 'cam_name' not in st.session_state: st.session_state.cam_name = config.get('cam_name', 'cam0')
+    if 'data_dir' not in st.session_state:
+        st.session_state.data_dir = config.get('data_dir', 'JiffyData')
+        if not os.path.exists(st.session_state.data_dir):
+            os.makedirs(st.session_state.data_dir, exist_ok=True)
+    if 'resolution' not in st.session_state:
+        config_res = config.get('resolution', '1080p (1920x1080)')
+        matched_key = None
+        if isinstance(config_res, str) and 'x' in config_res:
+            for key, (w,h) in RESOLUTIONS.items():
+                if f"{w}x{h}" == config_res: matched_key = key; break
+        st.session_state.resolution = matched_key or config_res # Use key if found, else config value
+    if 'save_interval' not in st.session_state: st.session_state.save_interval = int(config.get('save_interval', 60))
+    
+    # Determine initial cam_device (path/ID) and selected_device_alias (UI key)
+    if 'selected_device_alias' not in st.session_state or 'cam_device' not in st.session_state:
+        config_device_val = config.get('cam_device', 'Default') # This is likely the alias key
+        available_aliases = st.session_state.device_aliases
+        
+        if config_device_val in available_aliases:
+            st.session_state.selected_device_alias = config_device_val
+            st.session_state.cam_device = available_aliases[config_device_val]
+        else: # Config value might be a direct path/ID (legacy or manual edit)
+            st.session_state.cam_device = config_device_val 
+            # Find the alias key that matches this path/ID
+            matching_alias = None
+            for alias, path in available_aliases.items():
+                if path == config_device_val:
+                    matching_alias = alias
+                    break
+            # Set selected alias to the match, or fallback to first available alias
+            st.session_state.selected_device_alias = matching_alias or list(available_aliases.keys())[0] 
+
+    if 'session' not in st.session_state: st.session_state.session = st.session_state.selected_device_alias
+    
+    # Time/Date related state
+    current_time = datetime.now()
+    if 'hour' not in st.session_state: st.session_state.hour = current_time.hour
+    if 'minute' not in st.session_state: st.session_state.minute = current_time.minute
+    if 'second' not in st.session_state: st.session_state.second = current_time.second
+    
+    # Default date to today (will be adjusted after timestamp range is determined)
+    if 'init_date' not in st.session_state: st.session_state.init_date = current_time.date()
+    
+    # Image/Timestamp state
+    if 'last_frame' not in st.session_state: st.session_state.last_frame = None
+    if 'actual_timestamp' not in st.session_state: st.session_state.actual_timestamp = None
+    if 'oldest_timestamp' not in st.session_state: st.session_state.oldest_timestamp = None
+    if 'newest_timestamp' not in st.session_state: st.session_state.newest_timestamp = None
+
+    # Add performance tracking variables
+    if 'capture_fps' not in st.session_state: st.session_state.capture_fps = 0
+    if 'display_fps' not in st.session_state: st.session_state.display_fps = 0
+    if 'last_display_time' not in st.session_state: st.session_state.last_display_time = time.time()
+    if 'display_frame_count' not in st.session_state: st.session_state.display_frame_count = 0
+    if 'frames_detected' not in st.session_state: st.session_state.frames_detected = 0
+    if 'last_frames_count_update' not in st.session_state: st.session_state.last_frames_count_update = 0
+    if 'last_displayed_timestamp' not in st.session_state: st.session_state.last_displayed_timestamp = None
+
+    # Check if we are supposed to use HTTP mode
+    if 'http_client' not in st.session_state and st.session_state.get('use_http_mode', False):
+        # Import the required modules first
+        try:
+            from jiffyget import get_active_sessions, get_session_port
+            from jiffyclient import JiffyCamClient
+            
+            # Get the current session and check if it's active
+            current_session = st.session_state.session
+            data_dir = st.session_state.data_dir
+            
+            # First check if data directory exists
+            if os.path.exists(data_dir):
+                # Check if session directory and config file exist before proceeding
+                session_config_path = os.path.join(data_dir, current_session, 'jiffycam.yaml')
+                if os.path.exists(session_config_path):
+                    # Read session-specific config to get port
+                    try:
+                        with open(session_config_path, 'r') as f:
+                            session_config = yaml.safe_load(f)
+                        if session_config and 'dataserver_port' in session_config:
+                            # Update port from session-specific config
+                            session_port = session_config['dataserver_port']
+                            st.session_state.dataserver_port = session_port
+                            st.session_state.http_server_port = session_port
+                            st.session_state.http_server_url = f"http://localhost:{session_port}"
+                    except Exception as e:
+                        print(f"Error reading session config: {str(e)}")
+                
+                # Get all active sessions
+                try:
+                    active_sessions = get_active_sessions(data_dir)
+                    
+                    # Only initialize HTTP client if the current session is active
+                    if current_session in active_sessions:
+                        port = get_session_port(current_session, data_dir)
+                        if port:
+                            # Update the server URL with the correct port
+                            st.session_state.http_server_url = f"http://localhost:{port}"
+                            
+                            # Initialize the client with the correct server URL but don't connect yet
+                            st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
+                            # No immediate connection check - will be done when actually needed
+                        else:
+                            print(f"No active server found for session '{current_session}'")
+                    else:
+                        print(f"Session '{current_session}' is not currently active")
+                except Exception as e:
+                    print(f"Error checking active sessions: {str(e)}")
+                    # Don't create HTTP client if there was an error
+            else:
+                print(f"Data directory does not exist: {data_dir}")
+                # Don't create HTTP client if data directory doesn't exist
+        except ImportError as e:
+            print(f"Could not import required modules: {str(e)}")
+            # Don't create HTTP client if imports fail
+        except Exception as e:
+            print(f"Unexpected error during HTTP client initialization: {str(e)}")
+            # Don't create HTTP client on any error
+
+    # Get initial timestamp range - only on first load
+    if 'oldest_timestamp' not in st.session_state or st.session_state.oldest_timestamp is None:
+        try:
+            oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
+            st.session_state.oldest_timestamp = oldest
+            st.session_state.newest_timestamp = newest
+            
+            # After getting timestamp range, ensure init_date is within valid range
+            current_date = st.session_state.init_date
+            min_date = oldest.date() if oldest else None
+            max_date = max(datetime.now().date(), newest.date() if newest else datetime.now().date())
+            
+            # Ensure init_date is within valid range
+            if min_date and current_date < min_date:
+                st.session_state.init_date = min_date
+            elif max_date and current_date > max_date:
+                st.session_state.init_date = max_date
+                
+        except Exception as e:
+            print(f"Error getting timestamp range: {str(e)}")
+
+    if 'browsing_date' not in st.session_state and 'init_date' in st.session_state: 
+        st.session_state.browsing_date = st.session_state.init_date
+    if 'date' not in st.session_state and 'init_date' in st.session_state:
+        st.session_state.date = st.session_state.init_date

@@ -16,13 +16,7 @@ class JiffyCamClient:
     
     def __init__(self, server_url="http://localhost:8080"):
         """Initialize the client with the server URL."""
-        # Ensure server_url has protocol and doesn't end with slash
-        if not server_url.startswith("http://") and not server_url.startswith("https://"):
-            server_url = "http://" + server_url
-        if server_url.endswith("/"):
-            server_url = server_url[:-1]
-            
-        self.server_url = server_url
+        self.set_server_url(server_url)
         self.connected = False
         self.last_error = None
         self.last_status = None
@@ -33,7 +27,31 @@ class JiffyCamClient:
         self.error_event = threading.Event()  # Event for error handling
         self.is_capturing_flag = False
         
-        print(f"Initialized HTTP client with server URL: {self.server_url}")
+        # Don't automatically log or try to connect - wait for explicit connection request
+        # print(f"Initialized HTTP client with server URL: {self.server_url}")
+    
+    def set_server_url(self, server_url):
+        """Update the server URL.
+        
+        Args:
+            server_url: New server URL
+        """
+        # Ensure server_url has protocol and doesn't end with slash
+        if not server_url.startswith("http://") and not server_url.startswith("https://"):
+            server_url = "http://" + server_url
+        if server_url.endswith("/"):
+            server_url = server_url[:-1]
+            
+        self.server_url = server_url
+        # Reset connection state when changing server
+        self.connected = False
+        self.connection_check_time = 0
+    
+    def disconnect(self):
+        """Disconnect from the server and clean up resources."""
+        self.connected = False
+        self.last_error = None
+        self.is_capturing_flag = False
     
     def check_connection(self, force=False):
         """Check if the server is available."""

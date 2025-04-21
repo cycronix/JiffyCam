@@ -28,21 +28,50 @@ RESOLUTIONS = {
 }
 
 class JiffyConfig:
-    def __init__(self, yaml_file: str = 'jiffycam.yaml'):
+    def __init__(self, yaml_file: str = 'jiffycam.yaml', session: str = None, data_dir: str = 'JiffyData', require_config_exists: bool = False):
         """Initialize configuration manager.
         
         Args:
-            yaml_file (str): Path to the YAML configuration file
+            yaml_file (str): Base name of the YAML configuration file (default: 'jiffycam.yaml')
+            session (str): Session name to use for configuration lookup
+            data_dir (str): Base directory for session data (default: 'JiffyData')
+            require_config_exists (bool): If True, raise FileNotFoundError when config file doesn't exist
         """
-        self.yaml_file = yaml_file
+        self.base_yaml_file = yaml_file
+        self.data_dir = data_dir
+        self.session = session
+        self.require_config_exists = require_config_exists
+        self.yaml_file = self._get_config_path(session)
         self.config = self.load_config()
         self.last_error = None
+
+    def _get_config_path(self, session: str = None) -> str:
+        """Get the path to the configuration file based on session.
+        
+        If a session is provided, construct the path to the session-specific
+        configuration file. If no session is provided, use the default base file.
+        
+        Args:
+            session (str, optional): Session name
+            
+        Returns:
+            str: Path to the configuration file
+        """
+        if session:
+            # Always return the session-specific path if session is provided
+            return os.path.join(self.data_dir, session, self.base_yaml_file)
+        
+        return self.base_yaml_file
 
     def load_config(self) -> Dict[str, Any]:
         """Load configuration from YAML file if it exists.
         
         Returns:
             Dict[str, Any]: Configuration dictionary
+            
+        Raises:
+            FileNotFoundError: If require_config_exists is True and the specified config file doesn't exist
+            ValueError: If the config file exists but can't be loaded
         """
         default_config = {
             'cam_device': '0',
@@ -50,7 +79,7 @@ class JiffyConfig:
             'cam_name': 'cam0',
             'resolution': '1920x1080',  # Combined resolution field
             'save_interval': 60,  # Changed to integer default
-            'data_dir': 'JiffyData',  # Default data directory
+            'data_dir': self.data_dir,  # Default data directory
             'dataserver_port': 8080,  # Default port for the JiffyCam data server
             'device_aliases': OrderedDict([   # Use OrderedDict for default device aliases
                 ('USB0', '0'),
@@ -59,46 +88,59 @@ class JiffyConfig:
             ])
         }
         
-        if os.path.exists(self.yaml_file):
-            try:
-                with open(self.yaml_file, 'r') as file:
-                    config = yaml.safe_load(file)
+        # Check if we should enforce the config file exists
+        if not os.path.exists(self.yaml_file):
+            # Only raise an error if we're requiring the config file to exist
+            if self.require_config_exists:
+                raise FileNotFoundError(f"Configuration file not found: {self.yaml_file}")
+            return default_config
+        
+        try:
+            with open(self.yaml_file, 'r') as file:
+                config = yaml.safe_load(file)
+                
+                if config is None:
+                    raise ValueError(f"Empty or invalid YAML in {self.yaml_file}")
                     
-                    if config:
-                        # Ensure save_interval is an integer
-                        if 'save_interval' in config:
-                            config['save_interval'] = int(config['save_interval'])
-                        
-                        # Ensure device_aliases exists and is an OrderedDict
-                        if 'device_aliases' not in config:
-                            config['device_aliases'] = default_config['device_aliases']
-                        
-                        # Handle legacy config with separate width and height
-                        if 'cam_width' in config and 'cam_height' in config and 'resolution' not in config:
-                            config['resolution'] = f"{config['cam_width']}x{config['cam_height']}"
-                            # Remove old fields
-                            config.pop('cam_width', None)
-                            config.pop('cam_height', None)
-                            
-                        # Handle legacy cam_path key
-                        if 'cam_path' in config and 'cam_device' not in config:
-                            config['cam_device'] = config.pop('cam_path')
-                            
-                        return config
-            except Exception as e:
-                self.last_error = f"Error loading configuration: {str(e)}"
-        return default_config
+                # Ensure save_interval is an integer
+                if 'save_interval' in config:
+                    config['save_interval'] = int(config['save_interval'])
+                
+                # Ensure device_aliases exists and is an OrderedDict
+                if 'device_aliases' not in config:
+                    config['device_aliases'] = default_config['device_aliases']
+                
+                # Handle legacy config with separate width and height
+                if 'cam_width' in config and 'cam_height' in config and 'resolution' not in config:
+                    config['resolution'] = f"{config['cam_width']}x{config['cam_height']}"
+                    # Remove old fields
+                    config.pop('cam_width', None)
+                    config.pop('cam_height', None)
+                    
+                # Handle legacy cam_path key
+                if 'cam_path' in config and 'cam_device' not in config:
+                    config['cam_device'] = config.pop('cam_path')
+                    
+                return config
+        except yaml.YAMLError as e:
+            error_msg = f"Error parsing YAML in {self.yaml_file}: {str(e)}"
+            self.last_error = error_msg
+            raise ValueError(error_msg)
+        except Exception as e:
+            error_msg = f"Error loading configuration: {str(e)}"
+            self.last_error = error_msg
+            raise ValueError(error_msg)
 
-    def save_config(self, config: Dict[str, Any]) -> bool:
+    def save_config(self, config: Dict[str, Any], session: str = None) -> bool:
         """Save configuration to YAML file.
         
         Args:
             config (Dict[str, Any]): Configuration dictionary to save
+            session (str, optional): Session name to use for saving
             
         Returns:
             bool: True if save was successful, False otherwise
         """
-        print(f"Saving configuration to {self.yaml_file}")      # shouildnt happen?
         try:
             # Create a copy to avoid modifying the original
             config = config.copy()
@@ -110,6 +152,17 @@ class JiffyConfig:
             # Convert device_aliases to OrderedDict to preserve order
             if 'device_aliases' in config and isinstance(config['device_aliases'], dict):
                 config['device_aliases'] = OrderedDict(config['device_aliases'])
+            
+            # If a new session is provided, update the yaml_file path
+            if session and session != self.session:
+                self.session = session
+                self.yaml_file = self._get_config_path(session)
+            
+            # If we're using a session-specific config path, ensure the directory exists
+            if self.session:
+                session_dir = os.path.dirname(self.yaml_file)
+                if not os.path.exists(session_dir):
+                    os.makedirs(session_dir, exist_ok=True)
             
             with open(self.yaml_file, 'w') as file:
                 yaml.dump(config, file, default_flow_style=False)

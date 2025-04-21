@@ -303,7 +303,7 @@ def create_playback_controls(handlers):
     
     return time_cols, time_display
 
-def create_live_button(handler, is_enabled, is_live_mode, help_text, session_name=None):
+def create_live_button(handler, is_enabled, is_live_mode, help_text, session_name=None, active_sessions=None):
     """Create the Live button with appropriate styling based on state.
     
     Args:
@@ -312,11 +312,19 @@ def create_live_button(handler, is_enabled, is_live_mode, help_text, session_nam
         is_live_mode: Whether we're currently in live mode (affects styling)
         help_text: Default help text (may be overridden based on state)
         session_name: Optional session name for additional context in help text
+        active_sessions: List of active sessions (to check if current session is active)
     
     Returns:
         The created button
     """
     button_text = "Live"
+    
+    # If active_sessions is provided but session_name isn't in it, disable the button
+    if active_sessions is not None and session_name is not None:
+        if isinstance(active_sessions, str):
+            active_sessions = [active_sessions]
+        if session_name not in active_sessions:
+            is_enabled = False
     
     if not is_live_mode:
         # Not in live mode - use secondary (gray) styling
@@ -359,7 +367,7 @@ def create_empty_timeline_arrow(width=1200, height=24):
     placeholder.image(initial_image, channels="RGB", use_container_width=True)
     return placeholder, initial_image
 
-def create_recording_selector(options, current_selection, on_change_handler, help_text="Select the recording session to view.", server_session=None):
+def create_recording_selector(options, current_selection, on_change_handler, help_text="Select the recording session to view.", active_sessions=None):
     """Create a selector for recordings with formatting for the active recording.
     
     Args:
@@ -367,12 +375,19 @@ def create_recording_selector(options, current_selection, on_change_handler, hel
         current_selection: Currently selected recording
         on_change_handler: Function to call when selection changes
         help_text: Tooltip text for the selector
-        server_session: Current active server session (to highlight)
+        active_sessions: List of currently active sessions (or single session string)
     
     Returns:
         The created selectbox
     """
-    format_func = lambda x: (x+" (Active)") if (x==server_session) else x
+    # Handle active_sessions as either a string, list, or None
+    if active_sessions is None:
+        active_sessions = []
+    elif isinstance(active_sessions, str):
+        active_sessions = [active_sessions]
+        
+    # Format function to mark active sessions
+    format_func = lambda x: (x+" (Live)") if (x in active_sessions) else x
     
     return st.selectbox(
         "Select Recording",

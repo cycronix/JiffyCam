@@ -3,6 +3,12 @@ jiffycapture.py: Video capture functionality for JiffyCam
 
 This module provides the core video capture functionality for the JiffyCam application.
 It can be used as a module or run as a standalone script with an optional HTTP server.
+
+Usage examples:
+    python jiffycapture.py WebCam                # Use device alias 'WebCam'
+    python jiffycapture.py --device WebCam       # Same as above
+    python jiffycapture.py WebCam --runtime 60   # Run for 60 seconds
+    python jiffycapture.py --interval 10         # Save frames every 10 seconds
 """
 
 import time
@@ -16,6 +22,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from queue import Queue
 from datetime import datetime
 from typing import Optional, Tuple
+import os
 
 import cv2
 import numpy as np
@@ -177,6 +184,9 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
             frame_data = global_capture_instance.get_frame()
             _, fps, width, height = frame_data if frame_data[0] is not None else (None, 0, 0, 0)
             
+            # Ensure we include the current session
+            current_session = global_capture_instance.current_session
+            
             status = {
                 "capturing": global_capture_instance.is_capturing(),
                 "frame_count": global_capture_instance.frame_count,
@@ -184,7 +194,8 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
                 "resolution": f"{width}x{height}",
                 "last_save_time": datetime.fromtimestamp(global_capture_instance.last_save_time).strftime('%Y-%m-%d %H:%M:%S') if global_capture_instance.last_save_time > 0 else None,
                 "error": global_capture_instance.last_error,
-                "session": global_capture_instance.current_session
+                "session": current_session,
+                "active_session": current_session  # More explicit name for UI
             }
             #print(f"status: {status}")
             self._send_json_response(status)
@@ -235,15 +246,30 @@ def run_http_server(port=8080):
     return server
 
 class VideoCapture:
-    def __init__(self, config_file='jiffycam.yaml'):
-        #print("Initializing VideoCapture")
-
-        """Initialize video capture functionality."""
+    def __init__(self, config_file='jiffycam.yaml', session=None, require_config_exists=False):
+        """Initialize video capture functionality.
+        
+        Args:
+            config_file (str): Base name of the configuration file (default: 'jiffycam.yaml')
+            session (str, optional): Session name for config lookup. If provided, will look for
+                                     config in JiffyData/<session>/config_file
+            require_config_exists (bool): If True, fail if config file doesn't exist
+        
+        Raises:
+            FileNotFoundError: If require_config_exists is True and the config file doesn't exist
+            ValueError: If the config file exists but is empty/invalid
+        """
         self.stop_event = threading.Event()
         self.frame_count = 0
-        self.capture_thread: Optional[threading.Thread] = None
-        self.config_manager = JiffyConfig(yaml_file=config_file)
+        
+        # Now load the configuration
+        self.config_manager = JiffyConfig(yaml_file=config_file, session=session, require_config_exists=require_config_exists)
         self.config = self.config_manager.config
+        
+        # Validate that we have a valid configuration
+        if not self.config:
+            raise ValueError(f"Empty or invalid configuration loaded")
+        
         self.frame_queue = Queue(maxsize=1)  # Only keep latest frame
         self.last_error = None
         self.error_event = threading.Event()  # Add error event
@@ -257,14 +283,15 @@ class VideoCapture:
         self.image_just_saved = False  # Flag to track when an image was just saved
         self.image_saved_time = 0  # Track when the image was saved
         self.last_frame = None
-        self.current_session = None # Track the currently active session name
+        self.current_session = session  # Initialize current_session with provided session value
+        self.running = False
+
     def handle_error(self, error_msg: str):
         """Handle errors by setting error message and stopping capture"""
         self.last_error = error_msg
         self.error_event.set()
         self.stop_event.set()
-        #with server_state_lock["is_capturing"]:
-        #    server_state.is_capturing = False
+        self.running = False
 
     def send_frame(self, cam_name: str, frame, ftime: float, session: str):
         """Send frame to server and optionally save to disk."""
@@ -286,11 +313,38 @@ class VideoCapture:
 
         return result
 
-    def capture_video_loop(self, source, cam_name: str, cam_width: int, cam_height: int, save_interval: int, session: str):
-        """Initialize and run video capture loop."""
+    def capture_video(self, cam_device, cam_name, width, height, save_interval, session):
+        """Initialize and run video capture loop - simplified direct version."""
         
+        # Check for runtime limit in config
+        runtime_limit = 0
+        if 'runtime' in self.config:
+            runtime_limit = int(self.config.get('runtime', 0))
+        start_time = time.time()
+        
+        # Reset state variables
+        self.stop_event.clear()
+        self.error_event.clear()
+        self.frame_count = 0
+        self.last_error = None
+        self.current_fps = 0
+        self.current_width = 0
+        self.current_height = 0
+        self.last_save_time = 0
+        self.save_status = ""
+        self.skip_first_save = True
+        self.image_just_saved = False
+        self.image_saved_time = 0
+        self.current_session = session
+        self.running = True
+        
+        # Handle numeric string sources by converting to integer
+        source = cam_device
         if isinstance(source, str) and source.isdigit():
             source = int(source)
+            
+        # For debugging
+        print(f"Opening video capture with source: {source}")
 
         cap = cv2.VideoCapture(source)
         if not cap.isOpened():
@@ -299,10 +353,10 @@ class VideoCapture:
 
         # Configure camera
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        if cam_width != 0:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, cam_width)
-        if cam_height != 0:
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cam_height)
+        if width != 0:
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        if height != 0:
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 
         # Get actual resolution
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -315,140 +369,80 @@ class VideoCapture:
         current_fps = 0
         consecutive_failures = 0  # Track consecutive read failures
         frame_count_since_start = 0  # Counter for frames since starting capture
-
-        while not self.stop_event.is_set():
-            ret, frame = cap.read()
-            if ret:
-                consecutive_failures = 0  # Reset failure counter on success
-                current_time = time.time()
-                frame_count_since_start += 1  # Increment frame counter
-
-                # Regular interval saving for subsequent frames
-                if save_interval > 0 and (current_time - self.last_save_time) >= save_interval:
-                    save_frame = True
-                    self.last_save_time = current_time
-
-                # Update FPS calculation
-                frames_this_second += 1
-                if current_time - last_fps_time >= 1.0:
-                    current_fps = frames_this_second
-                    frames_this_second = 0
-                    last_fps_time = current_time
-
-                if save_frame:
-                    frame = self.send_frame(cam_name, frame, time.time(), session)
-                if self.error_event.is_set():  # Check if error occurred in send_frame
-                    break
-                save_frame = False
-                self.frame_count += 1
-
-                # Update frame queue
-                if not self.frame_queue.full():
-                    self.frame_queue.put((frame, current_fps, width, height))
-                else:
-                    try:
-                        self.frame_queue.get_nowait()  # Remove old frame
-                        self.frame_queue.put((frame, current_fps, width, height))
-                    except:
-                        pass
-
-                if frame is not None:
-                    self.last_frame = frame
-                    #print(f"last_frame: {self.last_frame is not None}")
-
-                time.sleep(0.01)  # Small delay to prevent overwhelming the system
-            else:
-                consecutive_failures += 1
-                if consecutive_failures >= 10:  # Stop after 10 consecutive failures
-                    self.handle_error("Video capture failed repeatedly - stopping capture")
-                    break
-                self.last_error = "Video capture read failed"
-                time.sleep(1)
-
-        cap.release()
-
-    def start_capture(self, resolution_str=None, session=None, cam_device=None, cam_name=None, 
-                      save_interval=None, device_aliases=None, selected_device_alias=None):
-        """Start video capture with the given parameters.
         
-        Args:
-            resolution_str: Resolution string in format "widthxheight" or a key from RESOLUTIONS
-            session: Session name
-            cam_device: Camera device identifier
-            cam_name: Camera name
-            save_interval: Interval between saved frames
-            device_aliases: Dictionary of device aliases
-            selected_device_alias: Currently selected device alias
-        """
-        # Set up configuration with provided or default values
-        if cam_device is None:
-            cam_device = self.config.get('cam_device', '0')
-        if device_aliases is None:
-            device_aliases = self.config.get('device_aliases', {'USB0': '0', 'USB1': '1', 'Default': '0'})
-        if session is None:
-            # Use selected_device_alias if provided, otherwise try to find camera alias from cam_device
-            if selected_device_alias:
-                session = selected_device_alias
-            else:
-                # Find alias for the camera device (if exists)
-                session = 'Default'  # fallback
-                for alias, device in device_aliases.items():
-                    if device == cam_device:
-                        session = alias
-                        break
-        if cam_name is None:
-            cam_name = self.config.get('cam_name', 'cam0')
-        if save_interval is None:
-            save_interval = int(self.config.get('save_interval', 60))
-        
-        # Process resolution
-        if resolution_str is None:
-            resolution_str = self.config.get('resolution', '1920x1080')
-            
-        # Create configuration dictionary
-        config = {
-            'cam_device': selected_device_alias or cam_device,
-            'cam_name': cam_name,
-            'save_interval': save_interval,
-            'device_aliases': device_aliases
-        }
-        
-        # Preserve data_dir if it exists in the current config
-        if hasattr(self, 'config') and isinstance(self.config, dict) and 'data_dir' in self.config:
-            config['data_dir'] = self.config['data_dir']
-        
-        # Add resolution to config
-        config['resolution'] = resolution_str
-        
-        # Save configuration
-        self.config = config
-        #self.config_manager.save_config(self.config)
-        
-        # Parse resolution string for capture thread
+        last_status_time = 0  # For periodic status updates
+
         try:
-            width, height = map(int, resolution_str.split('x'))
-        except (ValueError, AttributeError, IndexError):
-            # Default to 1080p if parsing fails
-            width, height = 1920, 1080
-        
-        # Start capture thread
-        self.start_capture_thread(
-            cam_device=cam_device,
-            width=width,
-            height=height,
-            session=session,
-            cam_name=cam_name,
-            save_interval=save_interval
-        )
+            while not self.stop_event.is_set():
+                # Check runtime limit
+                if runtime_limit > 0 and (time.time() - start_time) >= runtime_limit:
+                    print(f"Runtime limit of {runtime_limit} seconds reached. Stopping capture.")
+                    break
+                    
+                # Periodic status update (every 60 seconds)
+                current_time = time.time()
+                if current_time - last_status_time >= 60:
+                    print(f"Capturing at {current_fps} FPS, {width}x{height}, Total frames: {self.frame_count}")
+                    last_status_time = current_time
+                
+                # Read frame
+                ret, frame = cap.read()
+                if ret:
+                    consecutive_failures = 0  # Reset failure counter on success
+                    current_time = time.time()
+                    frame_count_since_start += 1  # Increment frame counter
+
+                    # Regular interval saving for subsequent frames
+                    if save_interval > 0 and (current_time - self.last_save_time) >= save_interval:
+                        save_frame = True
+                        self.last_save_time = current_time
+
+                    # Update FPS calculation
+                    frames_this_second += 1
+                    if current_time - last_fps_time >= 1.0:
+                        current_fps = frames_this_second
+                        frames_this_second = 0
+                        last_fps_time = current_time
+
+                    if save_frame:
+                        frame = self.send_frame(cam_name, frame, time.time(), session)
+                    if self.error_event.is_set():  # Check if error occurred in send_frame
+                        break
+                    save_frame = False
+                    self.frame_count += 1
+
+                    # Update frame queue
+                    if not self.frame_queue.full():
+                        self.frame_queue.put((frame, current_fps, width, height))
+                    else:
+                        try:
+                            self.frame_queue.get_nowait()  # Remove old frame
+                            self.frame_queue.put((frame, current_fps, width, height))
+                        except:
+                            pass
+
+                    if frame is not None:
+                        self.last_frame = frame
+
+                    time.sleep(0.01)  # Small delay to prevent overwhelming the system
+                else:
+                    consecutive_failures += 1
+                    if consecutive_failures >= 10:  # Stop after 10 consecutive failures
+                        self.handle_error("Video capture failed repeatedly - stopping capture")
+                        break
+                    self.last_error = "Video capture read failed"
+                    time.sleep(1)
+        finally:
+            self.running = False
+            cap.release()
+            print("Camera released")
 
     def stop_capture(self):
-        """Stop the capture thread."""
+        """Stop the capture."""
         print("stopping capture")
         self.stop_event.set()
-        if self.capture_thread:
-            self.capture_thread.join(timeout=1.0)
-        self.capture_thread = None
-        self.current_session = None # Clear current session on stop
+        self.running = False
+        
         # Clear the frame queue
         while not self.frame_queue.empty():
             try:
@@ -457,55 +451,10 @@ class VideoCapture:
                 pass
 
         try:
-            # Release PyTorch resources explicitly
-            if hasattr(self, 'model') and self.model is not None:
-                self.model = None
-                
             # Force garbage collection
             gc.collect()
-            
         except Exception as e:
             print(f"Warning during cleanup: {e}")
-            # Continue shutdown despite errors
-        
-       # with server_state_lock["is_capturing"]:
-       #     server_state.is_capturing = False
-
-    def start_capture_thread(self, cam_device, width, height, session, cam_name, save_interval):
-        """Start video capture in a separate thread."""
-        if self.capture_thread and self.capture_thread.is_alive():
-            return
-
-        self.stop_event.clear()
-        self.error_event.clear()  # Clear error event
-        self.frame_count = 0
-        self.last_error = None
-        self.current_fps = 0
-        self.current_width = 0
-        self.current_height = 0
-        self.last_save_time = 0
-        self.save_status = ""
-        self.skip_first_save = True  # Reset the skip flag when starting capture
-        self.image_just_saved = False  # Reset the image_just_saved flag
-        self.image_saved_time = 0  # Reset the image_saved_time variable
-        self.current_session = session # Store the active session name
-        
-        # Start capture thread
-        self.capture_thread = threading.Thread(
-            target=self.capture_video_loop,
-            args=(
-                cam_device,
-                cam_name,
-                width,
-                height,
-                int(save_interval),
-                session
-            ),
-            daemon=True
-        )
-        self.capture_thread.start()
-        #with server_state_lock["is_capturing"]:
-        #    server_state.is_capturing = True
 
     def get_last_frame(self):
         """Get the last frame from the queue."""
@@ -528,53 +477,44 @@ class VideoCapture:
         """Check if capture is currently running.
         
         Returns:
-            bool: True if capture thread is running, False otherwise
+            bool: True if capture is running, False otherwise
         """
-        return self.capture_thread and self.capture_thread.is_alive()
-        #with server_state_lock["is_capturing"]:
-        #    return server_state.is_capturing 
+        return self.running
 
 def parse_args():
     """Parse command line arguments for standalone mode."""
-    parser = argparse.ArgumentParser(description='JiffyCam Video Capture')
+    parser = argparse.ArgumentParser(
+        description='JiffyCam Video Capture - a tool for capturing and storing video frames.',
+        epilog='Example usage: python jiffycapture.py WebCam     # Use device alias "WebCam"'
+    )
+    
+    parser.add_argument('device', type=str, nargs='?', default=None, metavar='DEVICE',
+                        help='Camera device alias or direct ID/path (can be provided without a flag)')
     parser.add_argument('--config', type=str, default='jiffycam.yaml',
-                        help='Path to YAML configuration file')
-    parser.add_argument('--device', type=str,
-                        help='Override camera device (use device alias or direct ID/path)')
+                        help='Base name of the YAML configuration file')
+    parser.add_argument('--device', type=str, dest='device_flag',
+                        help='Camera device alias or direct ID/path (overrides unflagged device)')
     parser.add_argument('--name', type=str,
                         help='Override camera name')
-    parser.add_argument('--session', type=str, default='Default',
-                        help='Session name for captured frames')
     parser.add_argument('--resolution', type=str,
                         help='Resolution in format WxH (e.g. 1920x1080)')
     parser.add_argument('--interval', type=int,
                         help='Interval between saved frames in seconds')
     parser.add_argument('--data-dir', type=str,
                         help='Directory to save captured frames')
-    parser.add_argument('--list-devices', action='store_true',
-                        help='List available camera devices and exit')
     parser.add_argument('--runtime', type=int, default=0,
                         help='Run for specified number of seconds then exit (0 for indefinite)')
-    parser.add_argument('--http', action='store_true',
-                        help='Start an HTTP server to serve the latest frame')
     parser.add_argument('--port', type=int, default=8080,
                         help='Port for the HTTP server (default: from config or 8080)')
     
-    return parser.parse_args()
-
-def list_available_cameras():
-    """List available camera devices."""
-    available_cameras = []
-    for i in range(10):  # Check first 10 indices
-        cap = cv2.VideoCapture(i)
-        if cap.isOpened():
-            available_cameras.append(i)
-            cap.release()
+    args = parser.parse_args()
     
-    print("Available camera devices:")
-    for idx in available_cameras:
-        print(f"  {idx}")
-    print("Note: Network cameras require full URLs (e.g. rtsp://...)")
+    # If both positional and flag device are provided, flag takes precedence
+    if args.device_flag is not None:
+        args.device = args.device_flag
+    
+    return args
+
 
 def run_standalone():
     """Run JiffyCam in standalone mode."""
@@ -582,42 +522,74 @@ def run_standalone():
     
     args = parse_args()
     
-    if args.list_devices:
-        list_available_cameras()
-        return
+    # First, try to load the WebCam config which we know has device aliases defined
+    try:
+        # For standalone mode, require the config file to exist
+        webcam_config_manager = JiffyConfig(yaml_file=args.config, session="WebCam", require_config_exists=True)
+        webcam_config = webcam_config_manager.config
+        if not webcam_config:
+            raise ValueError("Empty configuration")
+    except FileNotFoundError as e:
+        print(f"Error: {str(e)}")
+        print("Please ensure a valid configuration file exists before starting JiffyCam.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: Failed to load WebCam configuration: {str(e)}")
+        print("Please ensure a valid configuration file exists with device aliases defined.")
+        sys.exit(1)
+        
+    device_aliases = webcam_config.get('device_aliases', {})
     
-    # Initialize video capture with config file
-    capture = VideoCapture(config_file=args.config)
-    global_capture_instance = capture  # Set the global instance for HTTP access
+    if not device_aliases:
+        print("Error: No device aliases found in configuration.")
+        print("Please ensure the configuration includes a 'device_aliases' section.")
+        sys.exit(1)
+    
+    print(f"Device aliases loaded from WebCam config: {device_aliases}")
+    
+    # Determine device to use and session
+    if args.device:
+        # When --device is provided, it's treated as a device alias
+        # Use the alias string directly as the session folder name
+        session = args.device
+        
+        # Use the device corresponding to the alias for video capture
+        if args.device in device_aliases:
+            cam_device = device_aliases[args.device]
+            print(f"Using device '{cam_device}' for alias '{args.device}'")
+        else:
+            # If the alias isn't found in device_aliases, use the alias value directly as device
+            cam_device = args.device
+            print(f"Warning: Device alias '{args.device}' not found in configuration, using as direct device ID.")
+    else:
+        # Default to a standard device
+        cam_device = "0"
+        session = "Default"
+    
+    # Now initialize with the determined session
+    try:
+        capture = VideoCapture(config_file=args.config, session=session, require_config_exists=True)
+        global_capture_instance = capture  # Set the global instance for HTTP access
+    except FileNotFoundError as e:
+        print(f"Error: {str(e)}")
+        print("Please create a valid configuration file before starting JiffyCam.")
+        sys.exit(1)
+    except ValueError as e:
+        print(f"Error: {str(e)}")
+        print("Please ensure the configuration file contains valid settings.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error initializing video capture: {str(e)}")
+        sys.exit(1)
     
     # Override config with command line arguments
     config = capture.config
     
-    if args.device:
-        # Check if the device is an alias in the config
-        if args.device in config.get('device_aliases', {}):
-            cam_device = config['device_aliases'][args.device]
-            # Use device alias as session if session not specified
-            if args.session == 'Default':
-                args.session = args.device
-        else:
-            cam_device = args.device
-    else:
-        # Use device from config, resolving alias if needed
-        cam_device_cfg = config.get('cam_device', '0')
-        if cam_device_cfg in config.get('device_aliases', {}):
-            cam_device = config['device_aliases'][cam_device_cfg]
-            # Use device alias as session if session not specified
-            if args.session == 'Default':
-                for alias, device in config.get('device_aliases', {}).items():
-                    if device == cam_device:
-                        args.session = alias
-                        break
-        else:
-            cam_device = cam_device_cfg
-    
+    # Ensure device_aliases are set in the config
+    if 'device_aliases' not in config or not config['device_aliases']:
+        config['device_aliases'] = device_aliases
+        
     cam_name = args.name or config.get('cam_name', 'cam0')
-    session = args.session
     
     resolution_str = args.resolution or config.get('resolution', '1920x1080')
     try:
@@ -630,57 +602,44 @@ def run_standalone():
     
     if args.data_dir:
         config['data_dir'] = args.data_dir
+        
+    # Set runtime limit if specified
+    if args.runtime > 0:
+        config['runtime'] = args.runtime
+        capture.config = config
     
     print(f"Starting capture with:")
-    print(f"  Camera: {cam_device} (alias: {args.device if args.device else config.get('cam_device', 'Default')})")
+    print(f"  Camera Device: {cam_device}")
+    if args.device and args.device != cam_device:
+        print(f"  Device Alias: {args.device} (using as session name)")
     print(f"  Camera Name: {cam_name}")
     print(f"  Session: {session}")
     print(f"  Resolution: {width}x{height}")
     print(f"  Save Interval: {save_interval} seconds")
     print(f"  Data Directory: {config.get('data_dir', 'JiffyData')}")
+    print(f"  Config File: {capture.config_manager.yaml_file}")
     print(f"  Runtime: {args.runtime if args.runtime > 0 else 'Indefinite'} seconds")
     
-    # Start HTTP server if requested
-    http_server = None
-    if True or args.http:                           # mjm always start http server
-        # Use port from arguments or from config if available
-        port = args.port if args.port != 8080 else int(config.get('dataserver_port', 8080))
-        http_server = run_http_server(port)
-        print(f"HTTP server started on port {port}")
+    # Start HTTP server
+    port = args.port
+    if 'dataserver_port' in config:
+        port = int(config['dataserver_port'])  # Use port from config if available
     
-    # Start capture
-    capture.start_capture_thread(
-        cam_device=cam_device,
-        width=width,
-        height=height,
-        session=session,
-        cam_name=cam_name,
-        save_interval=save_interval
-    )
+    http_server = run_http_server(port)
+    print(f"HTTP server started on port {port}")
     
+    # Start capture in the main thread
+    start_time = time.time()
     try:
-        start_time = time.time()
-        
-        while capture.is_capturing():
-            # Check if we should exit due to runtime limit
-            if args.runtime > 0 and time.time() - start_time >= args.runtime:
-                print(f"Runtime limit of {args.runtime} seconds reached. Stopping capture.")
-                break
-                
-            # Print status every 60 seconds
-            if int(time.time()) % 60 == 0:
-                frame_data = capture.get_frame()
-                if frame_data[0] is not None:
-                    _, fps, width, height = frame_data
-                    print(f"Capturing at {fps} FPS, {width}x{height}, Total frames: {capture.frame_count}")
-                
-            # Check for errors
-            if capture.error_event.is_set():
-                print(f"Error: {capture.last_error}")
-                break
-                
-            time.sleep(1)
-            
+        # Run the capture directly (not in a thread)
+        capture.capture_video(
+            cam_device=cam_device,
+            cam_name=cam_name,
+            width=width,
+            height=height,
+            save_interval=save_interval,
+            session=session
+        )
     except KeyboardInterrupt:
         print("\nCapture stopped by user")
     finally:
@@ -688,10 +647,9 @@ def run_standalone():
         capture.stop_capture()
         print("Capture stopped")
         
-        # Stop HTTP server if it was started
-        if http_server:
-            print("Stopping HTTP server...")
-            http_server.shutdown()
+        # Stop HTTP server
+        http_server.shutdown()
+        print("HTTP server stopped")
         
         # Clear global reference
         global_capture_instance = None

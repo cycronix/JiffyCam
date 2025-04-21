@@ -7,12 +7,134 @@ This module provides functions to find and load saved camera images,
 import os
 import glob
 import time
+import yaml
+import requests
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict, Any
 import cv2
 
 global timestamps
 timestamps = None
+
+# Cache for active sessions to reduce HTTP requests
+cached_active_sessions = {}
+cache_expiry_time = 0
+
+def get_active_sessions(data_dir: str, cache_timeout: int = 5) -> List[str]:
+    """Check which sessions are currently active by querying their HTTP endpoints.
+    
+    Args:
+        data_dir: Base data directory containing session folders
+        cache_timeout: Number of seconds to cache results (default: 5)
+    
+    Returns:
+        List of active session names
+    """
+    global cached_active_sessions, cache_expiry_time
+    
+    # Check if we have a valid cache
+    current_time = time.time()
+    if current_time < cache_expiry_time and cached_active_sessions:
+        return list(cached_active_sessions.keys())
+    
+    # Reset cache
+    cached_active_sessions = {}
+    cache_expiry_time = current_time + cache_timeout
+    
+    # Get all session directories
+    if not os.path.exists(data_dir):
+        return []
+    
+    session_dirs = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
+    active_sessions = []
+    
+    for session in session_dirs:
+        # Check if session has a config file
+        config_path = os.path.join(data_dir, session, 'jiffycam.yaml')
+        if not os.path.exists(config_path):
+            continue
+        
+        # Read config to get HTTP server port
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            # Get server port from config
+            port = config.get('dataserver_port', 8080)
+            
+            # Try to connect to the server
+            server_url = f"http://localhost:{port}/status"
+            try:
+                response = requests.get(server_url, timeout=0.5)
+                if response.status_code == 200:
+                    # Server is active - save both session name and port
+                    status_data = response.json()
+                    
+                    # Make sure the session claimed by the server matches this session
+                    server_session = status_data.get('session')
+                    active_session = status_data.get('active_session', server_session)
+                    
+                    if active_session == session:
+                        cached_active_sessions[session] = {
+                            'port': port,
+                            'status': status_data
+                        }
+                        active_sessions.append(session)
+            except requests.RequestException:
+                # Connection failed - server not active
+                pass
+                
+        except Exception as e:
+            # Error reading config or connecting - continue to next session
+            print(f"Error checking session {session}: {str(e)}")
+            continue
+    
+    return active_sessions
+
+def get_session_port(session: str, data_dir: str) -> Optional[int]:
+    """Get the HTTP server port for a session.
+    
+    Args:
+        session: Session name
+        data_dir: Base data directory containing session folders
+    
+    Returns:
+        Port number if session is active, None otherwise
+    """
+    global cached_active_sessions, cache_expiry_time
+    
+    # Check if we need to refresh the cache
+    current_time = time.time()
+    if current_time >= cache_expiry_time:
+        get_active_sessions(data_dir)
+    
+    # Check if session is in the cache
+    if session in cached_active_sessions:
+        return cached_active_sessions[session]['port']
+    
+    # If not in cache but cache is still valid, session is not active
+    if current_time < cache_expiry_time:
+        return None
+    
+    # Otherwise, try to read the config file directly
+    config_path = os.path.join(data_dir, session, 'jiffycam.yaml')
+    if not os.path.exists(config_path):
+        # If the session-specific config doesn't exist, don't return a default port
+        print(f"No config file found for session '{session}' at {config_path}")
+        return None
+        
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        # Only return the port if it's explicitly specified in the config
+        if config and 'dataserver_port' in config:
+            return config['dataserver_port']
+        else:
+            print(f"No dataserver_port specified in config for session '{session}'")
+            return None
+    except Exception as e:
+        print(f"Error reading config for session '{session}': {str(e)}")
+        return None
 
 def jiffyget(time_posix: float, cam_name: str, 
              session: str, data_dir: str, 
@@ -117,6 +239,7 @@ def jiffyget(time_posix: float, cam_name: str,
     
     return None, None, eof
 
+#import inspect
 def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Optional[datetime], Optional[datetime]]:
     """Get the oldest and newest timestamps available for the camera across all dates.
     
@@ -130,6 +253,7 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
     """
     global timestamps
     
+    #print(f"get_timestamp_range, caller: {inspect.stack()[1].function}")
     # Force a fresh scan to ensure we have up-to-date information
     timestamps = None
     

@@ -6,11 +6,11 @@ from a camera and send it to a CloudTurbine (CT) server.
 """
 
 import os
-# import threading # Keep only if other non-UI threads are used
-from typing import Optional, Dict, Any
+import sys
 import time
-
-# from queue import Queue # No longer needed here
+import yaml
+import threading
+from typing import Optional, Dict, Any
 from datetime import datetime, time as datetime_time
 from collections import OrderedDict
 
@@ -77,7 +77,24 @@ def main():
     
     # Initialize dataserver_port from config
     if 'dataserver_port' not in st.session_state: 
-        st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
+        current_session = config.get('session', 'Default')
+        data_dir = config.get('data_dir', 'JiffyData')
+        session_config_path = os.path.join(data_dir, current_session, 'jiffycam.yaml')
+        
+        # First check if session-specific config exists and has dataserver_port
+        if os.path.exists(session_config_path):
+            try:
+                with open(session_config_path, 'r') as f:
+                    session_config = yaml.safe_load(f)
+                if session_config and 'dataserver_port' in session_config:
+                    st.session_state.dataserver_port = int(session_config['dataserver_port'])
+                else:
+                    st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
+            except Exception as e:
+                print(f"Error reading session config: {str(e)}")
+                st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
+        else:
+            st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
     
     # Set http_server_port to match dataserver_port for consistency
     if 'http_server_port' not in st.session_state:
@@ -147,7 +164,7 @@ def main():
     if 'newest_timestamp' not in st.session_state: st.session_state.newest_timestamp = None
 
     # Get initial timestamp range
-    if 'oldest_timestamp' not in st.session_state or st.session_state.oldest_timestamp is None:
+    if False and ('oldest_timestamp' not in st.session_state or st.session_state.oldest_timestamp is None):
         try:
             oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
             st.session_state.oldest_timestamp = oldest
