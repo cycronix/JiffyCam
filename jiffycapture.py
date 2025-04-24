@@ -347,6 +347,9 @@ class VideoCapture:
         # For debugging
         print(f"Opening video capture with source: {source}")
 
+        # Set the RTSP transport protocol to TCP or UDP
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"  # or "rtsp_transport;udp"
+
         cap = cv2.VideoCapture(source)
         if not cap.isOpened():
             self.handle_error(f"Error: Could not open video source: {source}")
@@ -354,6 +357,7 @@ class VideoCapture:
 
         # Configure camera
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
         if width != 0:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         if height != 0:
@@ -427,6 +431,7 @@ class VideoCapture:
 
                     time.sleep(0.01)  # Small delay to prevent overwhelming the system
                 else:
+                    #print(f"Video capture read failed")
                     consecutive_failures += 1
                     if consecutive_failures >= 10:  # Stop after 10 consecutive failures
                         self.handle_error("Video capture failed repeatedly - stopping capture")

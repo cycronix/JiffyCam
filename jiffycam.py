@@ -20,7 +20,7 @@ import streamlit as st
 
 # Import Jiffy modules
 # from jiffyput import jiffyput # Not directly used here
-from jiffyget import get_timestamp_range # get_frame moved to jiffyui 
+from jiffyget import get_timestamp_range, get_active_sessions, get_session_port # get_frame moved to jiffyui 
 from jiffyconfig import RESOLUTIONS, JiffyConfig
 
 # Import UI functions from the new modules
@@ -96,23 +96,38 @@ def main():
     if 'dataserver_port' not in st.session_state: 
         current_session = config.get('session', 'Default')
         data_dir = config.get('data_dir', 'JiffyData')
-        #print(f"data_dir: {data_dir}")
-        session_config_path = os.path.join(data_dir, current_session, 'jiffycam.yaml')
-        
-        # First check if session-specific config exists and has dataserver_port
-        if os.path.exists(session_config_path):
-            try:
-                with open(session_config_path, 'r') as f:
-                    session_config = yaml.safe_load(f)
-                if session_config and 'dataserver_port' in session_config:
-                    st.session_state.dataserver_port = int(session_config['dataserver_port'])
+        try:
+            # Check if the current session is active
+            active_sessions = get_active_sessions(data_dir)
+            if current_session in active_sessions:
+                # Get port from active session
+                port = get_session_port(current_session, data_dir)
+                if port:
+                    st.session_state.dataserver_port = port
                 else:
+                    # Fallback to config if no active port found
                     st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
-            except Exception as e:
-                print(f"Error reading session config: {str(e)}")
+            else:
+                # Session not active, use configured port
                 st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
-        else:
-            st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
+        except ImportError:
+            # Fallback if jiffyget functions not available
+            session_config_path = os.path.join(data_dir, current_session, 'jiffycam.yaml')
+            
+            # First check if session-specific config exists and has dataserver_port
+            if os.path.exists(session_config_path):
+                try:
+                    with open(session_config_path, 'r') as f:
+                        session_config = yaml.safe_load(f)
+                    if session_config and 'dataserver_port' in session_config:
+                        st.session_state.dataserver_port = int(session_config['dataserver_port'])
+                    else:
+                        st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
+                except Exception as e:
+                    print(f"Error reading session config: {str(e)}")
+                    st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
+            else:
+                st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
     
     # Set http_server_port to match dataserver_port for consistency
     if 'http_server_port' not in st.session_state:
@@ -122,9 +137,12 @@ def main():
     if 'http_server_url' not in st.session_state:
         st.session_state.http_server_url = f"http://localhost:{st.session_state.dataserver_port}"
     
-    # Initialize HTTP client if in HTTP mode
+    # Initialize HTTP client if in HTTP mode and we have a valid URL
     if st.session_state.use_http_mode and 'http_client' not in st.session_state:
-        st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
+        try:
+            st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
+        except Exception as e:
+            print(f"Error initializing HTTP client: {str(e)}")
     
     # Configuration related state (derived from config)
     # Ensure device_aliases is OrderedDict

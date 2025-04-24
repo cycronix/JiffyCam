@@ -14,8 +14,11 @@ import cv2
 class JiffyCamClient:
     """Client for connecting to the standalone jiffycapture.py HTTP server."""
     
-    def __init__(self, server_url="http://localhost:8080"):
+    def __init__(self, server_url):
         """Initialize the client with the server URL."""
+        if not server_url:
+            raise ValueError("Server URL must be provided - no default port is available")
+            
         self.set_server_url(server_url)
         self.connected = False
         self.last_error = None
@@ -101,6 +104,7 @@ class JiffyCamClient:
         """Get the server status."""
         current_time = time.time()
         self.status_check_time = current_time
+        print(f"Getting status from {self.server_url}/status")
         
         try:
             response = requests.get(f"{self.server_url}/status", timeout=2)

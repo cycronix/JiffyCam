@@ -160,7 +160,7 @@ def jiffyget(time_posix: float, cam_name: str,
 
     # Construct the base directory path
     base_dir = os.path.join(data_dir, session, str(browse_date_posix))
-    #print(f"base_dir: {base_dir}, cam_name: {cam_name}, session: {session}, data_dir: {data_dir}")
+    #print(f"get_timestamps, base_dir: {base_dir}, cam_name: {cam_name}, session: {session}, data_dir: {data_dir}, browse_date_posix: {browse_date_posix}")
     if not os.path.exists(base_dir):
         return None, None, True
     
@@ -261,7 +261,7 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
     all_timestamps = get_timestamps(cam_name, session, data_dir, None)
     
     if all_timestamps is None or len(all_timestamps) == 0:
-        print(f"No valid timestamps found for {cam_name} in session {session}")
+        #print(f"No valid timestamps found for {cam_name} in session {session}")    # warning printed in get_timestamps
         return None, None
 
     # Convert to datetime objects
@@ -282,6 +282,7 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
     
     return oldest, newest
 
+import inspect
 def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int):
     """Get all timestamps for the camera.
     
@@ -297,6 +298,8 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int)
 
     # Get all timestamps for the session
     if browse_date is None:
+        # mjm:  this actually gets called from get_timestamp_range with browse_date = None
+        #print(f"get_timestamps: browsing all dates in {session}, caller: {inspect.stack()[1].function}")
         # When browsing_date is None, we need to scan all date directories
         base_dir = os.path.join(data_dir, session)
         if not os.path.exists(base_dir):

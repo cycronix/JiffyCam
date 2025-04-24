@@ -21,7 +21,7 @@ from jiffyget import (
     jiffyget, 
     get_locations, 
     get_timestamp_range, 
-    get_active_sessions, 
+    get_active_sessions,
     get_session_port
 )
 from jiffyvis import generate_timeline_image, generate_timeline_arrow, format_time_12h
@@ -93,7 +93,7 @@ def on_recording_change():
     st.session_state.session = new_session
 
     # Check if the new session is active
-    from jiffyget import get_active_sessions, get_session_port
+    from jiffyget import get_active_sessions
     data_dir = st.session_state.get('data_dir', 'JiffyData')
     active_sessions = get_active_sessions(data_dir)
     
@@ -787,10 +787,11 @@ def get_server_status():
         Tuple of (active_sessions, is_capturing, capture_fps, last_save_time, client_connected)
         where active_sessions is a list of active sessions (may be empty)
     """
-    from jiffyget import get_active_sessions
+    from jiffyget import get_active_sessions, get_session_port
     
     # Get data directory from session state
     data_dir = st.session_state.get('data_dir', 'JiffyData')
+    current_session = st.session_state.get('session')
     
     # Get all active sessions by scanning config files and checking HTTP endpoints
     try:
@@ -805,11 +806,35 @@ def get_server_status():
     last_save_time = None
     client_connected = False
     
+    # Check if current session is active and has the correct port
+    if current_session in active_sessions:
+        # Get the correct port for this session
+        correct_port = get_session_port(current_session, data_dir)
+        current_port = st.session_state.get('http_server_port')
+        
+        # If the port has changed, update the client
+        if correct_port and correct_port != current_port:
+            print(f"Updating HTTP port from {current_port} to {correct_port}")
+            # Update session state
+            st.session_state.dataserver_port = correct_port
+            st.session_state.http_server_port = correct_port
+            st.session_state.http_server_url = f"http://localhost:{correct_port}"
+            
+            # Recreate the client with the new URL if it exists
+            if hasattr(st.session_state, 'http_client'):
+                try:
+                    from jiffyclient import JiffyCamClient
+                    st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
+                    print(f"Reconnected HTTP client to {st.session_state.http_server_url}")
+                except Exception as e:
+                    print(f"Error reconnecting HTTP client: {str(e)}")
+    
     # If we have an HTTP client connected, get its status
     if hasattr(st.session_state, 'http_client'):
         try:
             client = st.session_state.http_client
-            if client.is_connected():
+            # Force a connection check to get updated status
+            if client.check_connection(force=True):
                 client_connected = True
                 # Get status from current client
                 if client.last_status:
@@ -828,54 +853,13 @@ def build_sidebar():
     # Setup main sections
     with st.sidebar:
         # Apply CSS styling for metrics
-        from jiffyui_components import apply_metrics_css, create_metric_display, create_fps_metrics_row, create_detection_metrics, create_recording_selector
+        from jiffyui_components import apply_metrics_css, create_metric_display, create_fps_metrics_row, create_detection_metrics
         
         apply_metrics_css()
         
         st.title("JiffyCam")
         
-        # Recording Selection
-        st.header("Recordings")
-        # Get data_dir from session state (e.g., loaded from config)
-        data_dir = st.session_state.get('data_dir', 'JiffyData') # Default if not set
-
-        # Scan for recordings only if not already cached in session state
-        if 'available_recordings' not in st.session_state or not st.session_state.available_recordings:
-            st.session_state.available_recordings = get_available_recordings(data_dir)
-
-        # Use the cached/scanned recordings
-        available_recordings = st.session_state.available_recordings
-        recording_keys = list(available_recordings.keys())
-
-        if not recording_keys:
-            st.warning(f"No recordings found in '{data_dir}'.")
-            # Initialize session to avoid errors later, assume cam_name is set elsewhere
-            if 'session' not in st.session_state: st.session_state.session = "DefaultRecording"
-        else:
-            # Initialize the selectbox widget state key if it doesn't exist
-            # This ensures the widget has a starting value without overriding user selection later
-            if 'selected_recording_key' not in st.session_state:
-                # Try to use the current session if it's valid, otherwise default to first key
-                current_session = st.session_state.get('session', '')
-                if current_session in recording_keys:
-                    st.session_state.selected_recording_key = current_session
-                else:
-                    st.session_state.selected_recording_key = recording_keys[0]
-                    # If we defaulted the widget key, also update the main session state
-                    if st.session_state.session != st.session_state.selected_recording_key:
-                         st.session_state.session = st.session_state.selected_recording_key
-
-        # Get the current active sessions for highlighting
-        active_sessions, _, _, _, _ = get_server_status()
-        
-        # Create the recording selector
-        create_recording_selector(
-            options=recording_keys,
-            current_selection=st.session_state.get('selected_recording_key'),
-            on_change_handler=on_recording_change,
-            help_text="Select the recording session to view.",
-            active_sessions=active_sessions
-        )
+        # Recording Selection removed from here - moved to main area
 
         # Status section header
         st.header("Status")
@@ -931,7 +915,9 @@ def build_main_area():
         create_date_navigation, 
         create_playback_controls, 
         create_live_button,
-        create_empty_timeline_arrow
+        create_empty_timeline_arrow,
+        create_recording_selector,
+        create_navigation_button
     )
     
     # Apply CSS for main area styling
@@ -947,15 +933,83 @@ def build_main_area():
     if 'valid_dates' in st.session_state and len(st.session_state.valid_dates) == 1:
         single_day_recording = True
     
-    # Create date navigation
-    date_cols, date_picker_placeholder = create_date_navigation(
-        prev_handler=on_prev_day_button,
-        next_handler=on_next_day_button,
-        single_day_mode=single_day_recording
-    )
+    # Create a row for recordings and date navigation
+    # Use a wider first column for the recording selector to match time display column width
+    date_nav_cols = st.columns([3, 0.7, 4, 0.7])
+    
+    # Add recording selector in the first column
+    with date_nav_cols[0]:
+        # Get data_dir from session state
+        data_dir = st.session_state.get('data_dir', 'JiffyData') # Default if not set
+
+        # Add vertical space to align with date picker
+        st.write("")  # Space for alignment
+
+        # Scan for recordings only if not already cached in session state
+        if 'available_recordings' not in st.session_state or not st.session_state.available_recordings:
+            st.session_state.available_recordings = get_available_recordings(data_dir)
+
+        # Use the cached/scanned recordings
+        available_recordings = st.session_state.available_recordings
+        recording_keys = list(available_recordings.keys())
+
+        if not recording_keys:
+            st.warning(f"No recordings found in '{data_dir}'.")
+            # Initialize session to avoid errors later, assume cam_name is set elsewhere
+            if 'session' not in st.session_state: st.session_state.session = "DefaultRecording"
+        else:
+            # Initialize the selectbox widget state key if it doesn't exist
+            if 'selected_recording_key' not in st.session_state:
+                # Try to use the current session if it's valid, otherwise default to first key
+                current_session = st.session_state.get('session', '')
+                if current_session in recording_keys:
+                    st.session_state.selected_recording_key = current_session
+                else:
+                    st.session_state.selected_recording_key = recording_keys[0]
+                    # If we defaulted the widget key, also update the main session state
+                    if st.session_state.session != st.session_state.selected_recording_key:
+                         st.session_state.session = st.session_state.selected_recording_key
+
+        # Get the current active sessions for highlighting
+        active_sessions, _, _, _, _ = get_server_status()
+        
+        # Create the recording selector
+        create_recording_selector(
+            options=recording_keys,
+            current_selection=st.session_state.get('selected_recording_key'),
+            on_change_handler=on_recording_change,
+            help_text="Select the recording session to view.",
+            active_sessions=active_sessions
+        )
+    
+    # Previous day button
+    with date_nav_cols[1]:
+        st.write("")  # Space for alignment
+        create_navigation_button(
+            "◀", 
+            "prev_day_button",
+            "Previous Day" if not single_day_recording else "No previous days available",
+            on_prev_day_button,
+            disabled=single_day_recording
+        )
+    
+    # Date picker placeholder
+    with date_nav_cols[2]:
+        date_picker_placeholder = st.empty()
+    
+    # Next day button
+    with date_nav_cols[3]:
+        st.write("")  # Space for alignment
+        create_navigation_button(
+            "▶", 
+            "next_day_button",
+            "Next Day" if not single_day_recording else "No more days available",
+            on_next_day_button,
+            disabled=single_day_recording
+        )
     
     # Handle date picker creation - moved from the inline code in the column
-    with date_cols[1]:
+    with date_nav_cols[2]:
         # Ensure we have the latest timestamp range data before setting up date picker
         if (st.session_state.oldest_timestamp is None or 
             st.session_state.newest_timestamp is None or 
@@ -1206,14 +1260,20 @@ def build_main_area():
             button_help = ""
             
             if ui_session in active_sessions:
-                # Only enable if session is active AND the date is today
-                current_date = datetime.now().date()
-                browsing_date = st.session_state.get('browsing_date') or current_date
-                if browsing_date == current_date:
-                    live_disabled = False
+                # Check if we can get a valid dataserver port for this session
+                port = get_session_port(ui_session, data_dir)
+                if port:
+                    # Only enable if session is active, has a port, AND the date is today
+                    current_date = datetime.now().date()
+                    browsing_date = st.session_state.get('browsing_date') or current_date
+                    if browsing_date == current_date:
+                        live_disabled = False
+                    else:
+                        live_disabled = True
+                        button_help = "Live view is only available for current date"
                 else:
                     live_disabled = True
-                    button_help = "Live view is only available for current date"
+                    button_help = f"No dataserver port configured for session '{ui_session}'"
             else:
                 live_disabled = True
                 button_help = f"Session '{ui_session}' is not active on any server"
@@ -1618,14 +1678,15 @@ def initialize_session_state():
     
     # Initialize dataserver_port from config
     if 'dataserver_port' not in st.session_state: 
-        st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
+        # Try to get the dataserver_port from config, but use None if not found
+        st.session_state.dataserver_port = int(config.get('dataserver_port', 0)) or None
     
     # Set http_server_port to match dataserver_port for consistency
     if 'http_server_port' not in st.session_state:
         st.session_state.http_server_port = st.session_state.dataserver_port
     
-    # Build HTTP server URL with the configured port
-    if 'http_server_url' not in st.session_state:
+    # Build HTTP server URL with the configured port (if available)
+    if 'http_server_url' not in st.session_state and st.session_state.dataserver_port:
         st.session_state.http_server_url = f"http://localhost:{st.session_state.dataserver_port}"
     
     # Configuration related state (derived from config)
@@ -1706,23 +1767,7 @@ def initialize_session_state():
             
             # First check if data directory exists
             if os.path.exists(data_dir):
-                # Check if session directory and config file exist before proceeding
-                session_config_path = os.path.join(data_dir, current_session, 'jiffycam.yaml')
-                if os.path.exists(session_config_path):
-                    # Read session-specific config to get port
-                    try:
-                        with open(session_config_path, 'r') as f:
-                            session_config = yaml.safe_load(f)
-                        if session_config and 'dataserver_port' in session_config:
-                            # Update port from session-specific config
-                            session_port = session_config['dataserver_port']
-                            st.session_state.dataserver_port = session_port
-                            st.session_state.http_server_port = session_port
-                            st.session_state.http_server_url = f"http://localhost:{session_port}"
-                    except Exception as e:
-                        print(f"Error reading session config: {str(e)}")
-                
-                # Get all active sessions
+                # Check if the current session is active
                 try:
                     active_sessions = get_active_sessions(data_dir)
                     
@@ -1730,6 +1775,10 @@ def initialize_session_state():
                     if current_session in active_sessions:
                         port = get_session_port(current_session, data_dir)
                         if port:
+                            # Update session state with the correct port
+                            st.session_state.dataserver_port = port
+                            st.session_state.http_server_port = port
+                            
                             # Update the server URL with the correct port
                             st.session_state.http_server_url = f"http://localhost:{port}"
                             
@@ -1737,7 +1786,7 @@ def initialize_session_state():
                             st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
                             # No immediate connection check - will be done when actually needed
                         else:
-                            print(f"No active server found for session '{current_session}'")
+                            print(f"No valid port found for session '{current_session}'")
                     else:
                         print(f"Session '{current_session}' is not currently active")
                 except Exception as e:

@@ -29,6 +29,11 @@ def apply_general_css():
     div[data-testid="stDateInput"] input { padding: 2px 0px !important; height: 32px !important; font-size: 14px !important; background-color: #2e2e2e !important; color: #fff !important; border: 1px solid #555 !important; border-radius: 5px !important; text-align: center !important; font-weight: bold !important; margin: 0 !important; }
     div[data-testid="stDateInput"] svg { fill: #fff !important; }
 
+    /* Recording Selector in Main Area */
+    .top-controls div[data-testid="stSelectbox"] { display: flex !important; align-items: center !important; height: 32px !important; margin-top: 21px !important; width: 100% !important; }
+    .top-controls div[data-testid="stSelectbox"] > div { border: 1px solid #555 !important; border-radius: 5px !important; width: 100% !important; }
+    .top-controls div[data-testid="stSelectbox"] label { display: none !important; }
+
     /* Live button styling */
     button[data-testid="baseButton-primary"]:has(div:contains("Live")) {
         background-color: #ff4b4b !important;
