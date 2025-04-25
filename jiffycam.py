@@ -50,7 +50,8 @@ def main():
     st.set_page_config(
         page_title="JiffyCam",
         page_icon="🎥",
-        layout="wide"
+        layout="wide",
+        initial_sidebar_state="collapsed"
     )
     
     # Load config with the data_dir from command line if provided
@@ -73,7 +74,7 @@ def main():
     if 'step_direction' not in st.session_state: st.session_state.step_direction = None
     if 'autoplay_direction' not in st.session_state: st.session_state.autoplay_direction = None
     if 'autoplay_step' not in st.session_state: st.session_state.autoplay_step = False
-    if 'autoplay_interval' not in st.session_state: st.session_state.autoplay_interval = 0.05
+    if 'autoplay_interval' not in st.session_state: st.session_state.autoplay_interval = 0.02
 
     # Default to HTTP mode
     if 'use_http_mode' not in st.session_state: st.session_state.use_http_mode = True

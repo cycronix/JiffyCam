@@ -23,7 +23,8 @@ from jiffyget import (
     get_locations, 
     get_timestamp_range, 
     get_active_sessions,
-    get_session_port
+    get_session_port,
+    get_timestamps
 )
 from jiffyvis import generate_timeline_image, generate_timeline_arrow, format_time_12h
 
@@ -145,7 +146,7 @@ def on_recording_change():
         st.session_state.valid_dates = []
     
     # Explicitly reset timestamps in jiffyget to ensure fresh data
-    import jiffyget
+    #import jiffyget
     jiffyget.timestamps = None
     
     # Get the new date range for this recording with proper error handling
@@ -314,7 +315,7 @@ def on_date_change():
     st.session_state.in_playback_mode = True
     
     # Completely reset timestamps cache to force fresh data load
-    import jiffyget
+    #import jiffyget
     jiffyget.timestamps = None
     
     # Update browsing date to match selected date
@@ -326,10 +327,11 @@ def on_date_change():
     # Count frames for the new date - with robust error handling
     try:
         browse_date = st.session_state.date
+        #print(f"browse_date: {browse_date}")
         browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
         
         # Get timestamps for this date
-        timestamps = jiffyget.get_timestamps(
+        timestamps = get_timestamps(
             st.session_state.cam_name, 
             st.session_state.session, 
             st.session_state.data_dir, 
@@ -417,7 +419,7 @@ def change_day(direction):
         direction: "next" or "prev" indicating which day to navigate to
     """
     # Completely reset timestamps cache to force fresh data
-    import jiffyget
+    #import jiffyget
     jiffyget.timestamps = None
     
     # Get current date from the session state
@@ -568,7 +570,7 @@ def on_day_navigation_button(direction):
     
     try:
         # Explicitly update timestamp range before changing days
-        import jiffyget
+        #import jiffyget
         jiffyget.timestamps = None  # Clear cached timestamps
         oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
         st.session_state.oldest_timestamp = oldest
@@ -582,7 +584,7 @@ def on_day_navigation_button(direction):
     except Exception as e:
         print(f"Error changing to {direction} day: {str(e)}")
         # Reset key state on error to prevent deadlocks
-        import jiffyget
+        #import jiffyget
         jiffyget.timestamps = None
         st.session_state.step_direction = "None"
         st.session_state.last_frame = None
@@ -643,7 +645,7 @@ def update_image_display(direction=None):
 
     # Find the closest image using jiffyget directly
     #print(f"update_image_display, {st.session_state.last_frame is None}, {direction}")
-    if(direction == "current" and st.session_state.last_frame is not None):
+    if( False and direction == "current" and st.session_state.last_frame is not None):
         closest_image = st.session_state.last_frame
         timestamp = st.session_state.last_timestamp
         #print(f"update_image_display, using last frame, {timestamp}")
@@ -728,7 +730,7 @@ def display_most_recent_image():
         
         # If we don't have a newest timestamp, try to get it again
         try:
-            import jiffyget
+            #import jiffyget
             jiffyget.timestamps = None
             oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
             if newest:
@@ -752,7 +754,7 @@ def display_most_recent_image():
         st.session_state.step_direction = "down"
     
     # Reset jiffyget timestamps to force reload for current date
-    import jiffyget
+    #import jiffyget
     jiffyget.timestamps = None
     
     # Count frames for today
@@ -761,7 +763,7 @@ def display_most_recent_image():
         browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
         
         # Get timestamps for this date
-        timestamps = jiffyget.get_timestamps(
+        timestamps = get_timestamps(
             st.session_state.cam_name, 
             st.session_state.session, 
             st.session_state.data_dir, 
@@ -1022,7 +1024,7 @@ def build_main_area():
             st.session_state.get('needs_date_update', False)):
             try:
                 # Force a fresh recalculation of the timestamp range
-                import jiffyget
+                #import jiffyget
                 jiffyget.timestamps = None
                 oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
                 st.session_state.oldest_timestamp = oldest
@@ -1372,8 +1374,8 @@ def run_ui_update_loop():
     #if(not st.session_state.autoplay_direction):
     if st.session_state.need_to_display_recent and not is_capturing:
         display_most_recent_image() # Fetches placeholders from session_state
-    #elif st.session_state.last_frame is not None:
-    #    update_image_display(st.session_state.step_direction)
+    elif st.session_state.last_frame is not None:
+        update_image_display(st.session_state.step_direction)
 
     # Initialize server status update counter
     server_status_update_time = 0
@@ -1407,8 +1409,8 @@ def run_ui_update_loop():
                         browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
                         
                         # Get timestamps for this date
-                        import jiffyget
-                        timestamps = jiffyget.get_timestamps(
+                        #import jiffyget
+                        timestamps = get_timestamps(
                             st.session_state.cam_name, 
                             st.session_state.session, 
                             st.session_state.data_dir, 
