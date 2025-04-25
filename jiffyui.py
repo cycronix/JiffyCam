@@ -15,6 +15,7 @@ import cv2
 import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
 import yaml
+import inspect
 
 from jiffyconfig import RESOLUTIONS   # Import necessary components from other modules
 from jiffyget import (
@@ -48,13 +49,17 @@ import threading
 # --- UI Helper Functions ---
 
 def heartbeat():
-    #print(f"heartbeat: {server_state.last_frame is not None}")
-
     """Heartbeat to check if the UI is still running.""" 
-    if(st.session_state.autoplay_direction == "forward"):
+    if(st.session_state.autoplay_direction == "up"):
         on_next_button(False)
-    elif(st.session_state.autoplay_direction == "reverse"):
-        on_prev_button(False)   
+        time.sleep(st.session_state.autoplay_interval)
+    elif(st.session_state.autoplay_direction == "down"):
+        on_prev_button(False)
+        time.sleep(st.session_state.autoplay_interval)
+
+    if(st.session_state.autoplay_step != None):
+        on_navigation_button(st.session_state.autoplay_step, False)
+        st.session_state.autoplay_step = None
 
 def set_autoplay(direction):
     """Set autoplay direction."""
@@ -226,7 +231,7 @@ def on_recording_change():
         st.session_state.minute = 59
         st.session_state.second = 59
     
-    set_autoplay("None")
+    set_autoplay(None)
     st.session_state.in_playback_mode = True # Default to playback when changing recording
     
     # Reset UI state to avoid stale frames
@@ -302,7 +307,7 @@ def toggle_rt_capture():
 
 def on_date_change():
     """Handle date picker change."""
-    set_autoplay("None")
+    set_autoplay(None)
     
     # Ensure we're not in a deadlock by forcibly resetting key state
     st.session_state.step_direction = "None"
@@ -360,33 +365,41 @@ def on_date_change():
     # Reset flag to avoid duplicate loading
     st.session_state.need_to_display_recent = False
 
-def on_navigation_button(direction, stopAuto=True):
+def on_navigation_button(direction, onclick=True):
     """Handle image navigation button click.
     
     Args:
         direction: "up" for next image or "down" for previous image
         stopAuto: Whether to stop autoplay mode when navigating
     """
-    if stopAuto:
-        set_autoplay("None")
+    #print(f"on_navigation_button: {direction}, {onclick}, {inspect.stack()[1].function}")
     st.session_state.in_playback_mode = True
-    
+
     # Increment/decrement time logic
     tweek_time(direction)
+    #print(f"on_navigation_button: {direction}, {stopAuto}")
+    if onclick:
+        set_autoplay(None)
+        st.session_state.autoplay_step = direction
+        return
+    
+    #tweek_time(direction)
+
+    st.session_state.in_playback_mode = True
 
     # Fetch placeholders from session_state inside the update function
-    if stopAuto:
+    if onclick:
         st.session_state.step_direction = direction  # let rerun handle the update  
     else:
         update_image_display(direction=direction)
 
-def on_prev_button(stopAuto=True):
+def on_prev_button(onclick=True):
     """Handle previous image button click."""
-    on_navigation_button('down', stopAuto)
+    on_navigation_button('down', onclick)
 
-def on_next_button(stopAuto=True):
+def on_next_button(onclick=True):
     """Handle next image button click."""
-    on_navigation_button('up', stopAuto)
+    on_navigation_button('up', onclick)
 
 def tweek_time(direction):
     """Tweek the time by 1 second in the given direction."""
@@ -484,6 +497,8 @@ def change_day(direction):
 def toggle_live_pause():
     """Handle Live/Pause button click."""
     
+    st.session_state.autoplay_direction = None  # reset autoplay direction
+
     if st.session_state.in_playback_mode:
         # Go Live
         # Check if current browsing date is today
@@ -517,27 +532,24 @@ def toggle_live_pause():
 
 def on_pause_button():
     """Handle pause button click."""
-    set_autoplay("None")
+    set_autoplay(None)
     st.session_state.in_playback_mode = True
     st.session_state.step_direction = "None"
     
     # Force display update when pausing
     st.session_state.last_displayed_timestamp = None
-    
-    # No longer immediately reset FPS Display - let it decay naturally
-    # when no more frames are being displayed
-    #print(f"on_pause_button: {get_is_capturing()}")
+    st.session_state.autoplay_step = "current"
 
 def on_fast_reverse_button():
     """Handle fast reverse button click."""
-    set_autoplay("reverse")
+    set_autoplay("down")
     tweek_time('down')
     # Set to playback mode like other buttons do
     st.session_state.in_playback_mode = True
 
 def on_fast_forward_button():
     """Handle fast forward button click."""
-    set_autoplay("forward")
+    set_autoplay("up")
     tweek_time('up')
     # Set to playback mode like other buttons do
     st.session_state.in_playback_mode = True
@@ -548,7 +560,7 @@ def on_day_navigation_button(direction):
     Args:
         direction: "next" or "prev" indicating which day to navigate to
     """
-    set_autoplay("None")
+    set_autoplay(None)
     
     # In-line function to force playback controls to work right after day change
     st.session_state.in_playback_mode = True
@@ -599,8 +611,16 @@ def new_image_display(frame):
         st.session_state.display_frame_count = 0
         st.session_state.last_display_time = current_time
     
-    video_placeholder = st.session_state.video_placeholder
-    video_placeholder.image(frame, channels="BGR", use_container_width=True)
+    #print(f"new_image_display: {inspect.stack()[1].function}")
+    if(not st.session_state.video_placeholder):     # delay creation to avoid flickering
+        #print(f"new_image_display: video_placeholder is None, {inspect.stack()[1].function}")
+        st.session_state.video_placeholder = st.image(frame, channels="BGR", use_container_width=True)
+    else:
+        #print(f"new_image_display: video_placeholder is not None, {inspect.stack()[1].function}")
+        st.session_state.video_placeholder.image(frame, channels="BGR", use_container_width=True)
+    
+    #video_placeholder = st.session_state.video_placeholder
+    #video_placeholder.image(frame, channels="BGR", use_container_width=True)
 
     timearrow_placeholder = st.session_state.timearrow_placeholder
     ta_img = generate_timeline_arrow()
@@ -608,7 +628,7 @@ def new_image_display(frame):
     
 def update_image_display(direction=None):
     """Update the image display based on the current date and time."""
-    #print(f"update_image_display: {direction}")
+    #print(f"update_image_display: {direction}, {inspect.stack()[1].function}")
 
     # Fetch placeholders from session state
     video_placeholder = st.session_state.video_placeholder
@@ -622,18 +642,24 @@ def update_image_display(direction=None):
     # --- End state retrieval ---
 
     # Find the closest image using jiffyget directly
-    time_posix = datetime.combine(browse_date, datetime.min.time()) + timedelta(hours=st.session_state.hour, minutes=st.session_state.minute, seconds=st.session_state.second)
-    time_posix = float(time_posix.timestamp())
+    #print(f"update_image_display, {st.session_state.last_frame is None}, {direction}")
+    if(direction == "current" and st.session_state.last_frame is not None):
+        closest_image = st.session_state.last_frame
+        timestamp = st.session_state.last_timestamp
+        #print(f"update_image_display, using last frame, {timestamp}")
+    else:
+        time_posix = datetime.combine(browse_date, datetime.min.time()) + timedelta(hours=st.session_state.hour, minutes=st.session_state.minute, seconds=st.session_state.second)
+        time_posix = float(time_posix.timestamp())
 
-    closest_image, timestamp, eof = jiffyget(
-        time_posix,
-        st.session_state.cam_name,
-        session,       # Pass session variable
-        data_dir,      # Pass data_dir variable
-        direction
-    )
-    if(eof):
-        set_autoplay("None")
+        closest_image, timestamp, eof = jiffyget(
+            time_posix,
+            st.session_state.cam_name,
+            session,       # Pass session variable
+            data_dir,      # Pass data_dir variable
+            direction
+        )
+        if(eof):
+            set_autoplay(None)
 
     success = False
     if closest_image is not None:
@@ -642,6 +668,7 @@ def update_image_display(direction=None):
             st.session_state.last_frame = closest_image.copy()
             dts = datetime.fromtimestamp(timestamp/1000)
             st.session_state.actual_timestamp = dts
+            st.session_state.last_timestamp = timestamp
 
             # Update time state to match the found image
             st.session_state.hour = dts.hour
@@ -650,6 +677,7 @@ def update_image_display(direction=None):
             st.session_state.browsing_date = dts.date() # Keep browsing date in sync with found image
 
             # Update UI placeholders
+            #print(f"update_image_display: {inspect.stack()[1].function}")
             new_image_display(closest_image)
 
             # Update time display text
@@ -669,14 +697,14 @@ def update_image_display(direction=None):
             st.session_state.status_message = f"Error displaying image: {str(e)}"
     
     if not success:
-        set_autoplay("None")
+        set_autoplay(None)
 
         # No image found or error displaying
         # status_placeholder.markdown("<div style='padding: 5px 0;'>No image found near specified time</div>", unsafe_allow_html=True)
         st.session_state.status_message = f"No image found near specified time"
         # Clear the last frame and the display placeholder
         st.session_state.last_frame = None
-        video_placeholder.empty()
+        #video_placeholder.empty()
 
     return success
 
@@ -749,36 +777,12 @@ def display_most_recent_image():
         print(f"Error counting frames: {str(e)}")
         st.session_state.frames_detected = 0
     
+    
     # Search backwards ("down") for the latest image before now
     update_image_display(direction="down")
     st.session_state.need_to_display_recent = False # Mark as done
 
 # --- UI Building Functions ---
-def reset_session_state():
-    """Reset session state to recover from potential deadlocks."""
-    # Clear timestamps cache
-    import jiffyget
-    jiffyget.timestamps = None
-    
-    # Reset playback control state
-    st.session_state.step_direction = "None"
-    st.session_state.in_playback_mode = True
-    st.session_state.autoplay_direction = None
-    st.session_state.last_displayed_timestamp = None
-    
-    # Reset image state
-    st.session_state.last_frame = None
-    st.session_state.need_to_display_recent = True
-    
-    # Set today's date
-    st.session_state.date = datetime.now().date()
-    st.session_state.browsing_date = st.session_state.date
-    
-    # Reset time to now
-    current_time = datetime.now()
-    st.session_state.hour = current_time.hour
-    st.session_state.minute = current_time.minute
-    st.session_state.second = current_time.second
 
 def get_server_status():
     """Get the server status information for all active sessions.
@@ -814,7 +818,7 @@ def get_server_status():
         
         # If the port has changed, update the client
         if correct_port and correct_port != current_port:
-            print(f"Updating HTTP port from {current_port} to {correct_port}")
+            #print(f"Updating HTTP port from {current_port} to {correct_port}")
             # Update session state
             st.session_state.dataserver_port = correct_port
             st.session_state.http_server_port = correct_port
@@ -825,9 +829,9 @@ def get_server_status():
                 try:
                     from jiffyclient import JiffyCamClient
                     st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
-                    print(f"Reconnected HTTP client to {st.session_state.http_server_url}")
+                    print(f"Connected dataserver client at {st.session_state.http_server_url}")
                 except Exception as e:
-                    print(f"Error reconnecting HTTP client: {str(e)}")
+                    print(f"Error connecting dataserver client: {str(e)}")
     
     # If we have an HTTP client connected, get its status
     if hasattr(st.session_state, 'http_client'):
@@ -878,7 +882,7 @@ def build_sidebar():
 
 def on_timeline_click(coords):
     """Handle clicks on the timeline image."""
-    set_autoplay("None")
+    set_autoplay(None)
     if coords is None or 'x' not in coords:
         return
     
@@ -905,7 +909,9 @@ def on_timeline_click(coords):
     st.session_state.in_playback_mode = True
     st.session_state.last_displayed_timestamp = None  # Force display update for new position
     st.session_state.step_direction = "None"  # Reset step direction
-    set_autoplay("none")
+    st.session_state.autoplay_step = "None"
+
+    set_autoplay(None)
 
 def build_main_area():
     """Create the main UI area elements and return placeholders."""
@@ -1325,7 +1331,8 @@ def build_main_area():
     st.markdown("</div>", unsafe_allow_html=True) # Close centered container
 
     # Create Video Placeholder *after* the controls container
-    video_placeholder = st.empty() 
+    #video_placeholder = st.empty()   # delay creation to avoid flickering
+    video_placeholder = None
 
     # Return placeholders needed outside this build function (by callbacks and main loop)
     return video_placeholder, time_display, timearrow_placeholder
@@ -1362,10 +1369,11 @@ def run_ui_update_loop():
             # In playback mode, don't check connection
             is_capturing = st.session_state.rt_capture
     
+    #if(not st.session_state.autoplay_direction):
     if st.session_state.need_to_display_recent and not is_capturing:
         display_most_recent_image() # Fetches placeholders from session_state
-    elif st.session_state.last_frame is not None:
-        update_image_display(st.session_state.step_direction)
+    #elif st.session_state.last_frame is not None:
+    #    update_image_display(st.session_state.step_direction)
 
     # Initialize server status update counter
     server_status_update_time = 0
@@ -1534,8 +1542,11 @@ def run_ui_update_loop():
                     if not st.session_state.in_playback_mode:
                         try:
                             frame = st.session_state.http_client.get_last_frame()
+                            timestamp = datetime.now().timestamp() * 1000   # meh, this is not the actual timestamp
+                            #print(f"timestamp: {timestamp}")
                             if frame is not None:
                                 st.session_state.last_frame = frame
+                                st.session_state.last_timestamp = timestamp
                         except Exception as e:
                             print(f"Error getting last frame: {str(e)}")
                             error_placeholder.error(f"Connection error: {str(e)}")
@@ -1550,7 +1561,8 @@ def run_ui_update_loop():
                         new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback Mode"
                     else:
                         new_status = "Playback Mode (No Frame)"
-                        video_placeholder.empty() # Clear if no frame to show
+                        if(video_placeholder):
+                            video_placeholder.empty() # Clear if no frame to show
 
                 else: # Live View Mode (Capture Running)
                     if hasattr(st.session_state, 'http_client'):
@@ -1567,16 +1579,16 @@ def run_ui_update_loop():
                                     new_status = f"Live View - Frames: {frame_count}"
                                 else:
                                     new_status = "Live View"
-                            
-                                st.session_state.last_frame = frame
-                                
+
                                 # Update time display and slider for live view
                                 current_time = datetime.now()
                                 time_display.markdown(f'<div class="time-display">{format_time_12h(current_time.hour, current_time.minute, current_time.second)}</div>', unsafe_allow_html=True)
                                 st.session_state.hour = current_time.hour
                                 st.session_state.minute = current_time.minute
                                 st.session_state.second = current_time.second
-                                
+                                                            
+                                st.session_state.last_frame = frame
+                                st.session_state.last_timestamp = current_time.timestamp() * 1000
                                 # Display the frame
                                 new_image_display(frame)
                             else:
@@ -1615,11 +1627,11 @@ def run_ui_update_loop():
                         
                         if need_display_update:
                             # Only display if we need to update the image
-                            new_image_display(st.session_state.last_frame)
+                            #new_image_display(st.session_state.last_frame)
                             st.session_state.last_displayed_timestamp = st.session_state.actual_timestamp
                             
                             # Reset step_direction to prevent continuous updates
-                            if st.session_state.step_direction not in ["forward", "reverse"]:
+                            if st.session_state.step_direction not in ["up", "down"]:
                                 st.session_state.step_direction = "None"
 
                         ts = st.session_state.actual_timestamp
@@ -1629,7 +1641,7 @@ def run_ui_update_loop():
                         video_placeholder.empty()
                 else:
                     # Not capturing and not in playback mode - show message to start capture
-                    video_placeholder.info("Connect to JiffyCam server and start capture, or select a date/time to browse.")
+                    #video_placeholder.info("Connect to JiffyCam server and start capture, or select a date/time to browse.")
                     if st.session_state.last_frame is not None:
                         new_image_display(st.session_state.last_frame)
                     new_status = "Status: Idle"

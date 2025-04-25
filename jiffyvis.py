@@ -39,7 +39,7 @@ def generate_timeline_image(width=1200, height=60):
 
     # Create a blank image (dark gray background)
     background_color = (51, 51, 51)  # Dark gray
-    mark_color = (255, 0, 0)  # Red in BGR format (Blue = 0, Green = 0, Red = 255) 
+    mark_color = (255, 20, 20)  # Red in BGR format (Blue = 0, Green = 0, Red = 255) 
     hour_marker_color = (180, 180, 180)  # Light gray for hour markers
     special_marker_color = (255, 255, 0)  # Yellow in BGR format
     text_color = (220, 220, 220)  # Brighter light gray for text

@@ -53,22 +53,6 @@ def main():
         layout="wide"
     )
     
-    # --- Initialize Session State --- 
-    # Needs to happen *before* accessing state in UI build or logic
-    #if 'is_capturing' not in server_state:
-    #    server_state.is_capturing = False   
-    #if 'last_frame' not in server_state:
-    #    server_state.last_frame = None
-    #if 'timestamp' not in server_state:
-    #    server_state.timestamp = datetime.now()
-
-    # Core components
-    #if('slave_mode' not in st.session_state):                          # new session
-    #    st.session_state.slave_mode = server_state.is_capturing        # some other session is capturing, so we're in slave mode
-
-    #print(f"server_state: {server_state.is_capturing}")
-    #print(f"st.session_state.slave_mode: {st.session_state.slave_mode}")
-
     # Load config with the data_dir from command line if provided
     data_dir = args.data_dir if args.data_dir else 'JiffyData'
     config_manager = JiffyConfig(data_dir=data_dir)
@@ -88,7 +72,9 @@ def main():
     if 'image_just_saved' not in st.session_state: st.session_state.image_just_saved = False
     if 'step_direction' not in st.session_state: st.session_state.step_direction = None
     if 'autoplay_direction' not in st.session_state: st.session_state.autoplay_direction = None
-    
+    if 'autoplay_step' not in st.session_state: st.session_state.autoplay_step = False
+    if 'autoplay_interval' not in st.session_state: st.session_state.autoplay_interval = 0.05
+
     # Default to HTTP mode
     if 'use_http_mode' not in st.session_state: st.session_state.use_http_mode = True
     
@@ -195,6 +181,7 @@ def main():
     
     # Image/Timestamp state
     if 'last_frame' not in st.session_state: st.session_state.last_frame = None
+    if 'last_timestamp' not in st.session_state: st.session_state.last_timestamp = 0
     if 'actual_timestamp' not in st.session_state: st.session_state.actual_timestamp = None
     if 'oldest_timestamp' not in st.session_state: st.session_state.oldest_timestamp = None
     if 'newest_timestamp' not in st.session_state: st.session_state.newest_timestamp = None
@@ -246,12 +233,12 @@ def main():
     st.session_state.video_placeholder, st.session_state.time_display, st.session_state.timearrow_placeholder = \
         build_main_area()
 
-    st.session_state.video_placeholder.info("Initialize capture or select time.")
+    #st.session_state.video_placeholder.info("Initialize capture or select time.")
     # st.session_state.status_placeholder.markdown("<div style='padding: 5px 0;'>Status: Idle</div>", unsafe_allow_html=True)
     st.session_state.status_message = "Status: Idle"
 
     # --- Run Main UI Update Loop --- 
-    #print(f"is_capturing: {get_is_capturing()}")
+    #print(f"running main ui update loop")
     run_ui_update_loop() # Loop fetches placeholders from session_state
 
 # --- Entry Point --- 

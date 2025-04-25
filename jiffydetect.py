@@ -33,8 +33,8 @@ TARGETS = Vehicle + Animal + Person
 PutDate = False
 PutDetect = False				# put cropped image of detection (e.g. 'vehicle.jpg')
 
-MDET = 0.1                                      # motion detect trigger level (linear 0-1) (was .1)
-MTHRESH = 1                                     # motion detect noise reject threshold (per raw pixel) (was 4)
+MDET = 0.2                                      # motion detect trigger level (linear 0-1) (was .1)
+MTHRESH = 2                                     # motion detect noise reject threshold (per raw pixel) (was 4)
 
 hide_labels = False
 hide_conf = True
