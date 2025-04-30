@@ -57,11 +57,8 @@ class JiffyConfig:
         Returns:
             str: Path to the configuration file
         """
-        if session:
-            # Always return the session-specific path if session is provided
-            return os.path.join(self.data_dir, session, self.base_yaml_file)
-        
-        return self.base_yaml_file
+        # The data_dir already contains the session name, so we don't need to add it again
+        return os.path.join(self.data_dir, self.base_yaml_file)
 
     def load_config(self) -> Dict[str, Any]:
         """Load configuration from YAML file if it exists.

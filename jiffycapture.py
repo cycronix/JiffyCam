@@ -491,23 +491,19 @@ def parse_args():
     """Parse command line arguments for standalone mode."""
     parser = argparse.ArgumentParser(
         description='JiffyCam Video Capture - a tool for capturing and storing video frames.',
-        epilog='Example usage: python jiffycapture.py WebCam     # Use device alias "WebCam"'
+        epilog='Example usage: python jiffycapture.py /path/to/data/folder     # Use data path containing jiffycam.yaml'
     )
     
-    parser.add_argument('device', type=str, nargs='?', default=None, metavar='DEVICE',
-                        help='Camera device alias or direct ID/path (can be provided without a flag)')
+    parser.add_argument('data_path', type=str, metavar='DATA_PATH',
+                        help='Path to folder containing jiffycam.yaml and data folders')
     parser.add_argument('--config', type=str, default='jiffycam.yaml',
                         help='Base name of the YAML configuration file')
-    parser.add_argument('--device', type=str, dest='device_flag',
-                        help='Camera device alias or direct ID/path (overrides unflagged device)')
     parser.add_argument('--name', type=str,
                         help='Override camera name')
     parser.add_argument('--resolution', type=str,
                         help='Resolution in format WxH (e.g. 1920x1080)')
     parser.add_argument('--interval', type=int,
                         help='Interval between saved frames in seconds')
-    parser.add_argument('--data-dir', type=str,
-                        help='Directory to save captured frames')
     parser.add_argument('--runtime', type=int, default=0,
                         help='Run for specified number of seconds then exit (0 for indefinite)')
     parser.add_argument('--port', type=int, default=8080,
@@ -515,12 +511,7 @@ def parse_args():
     
     args = parser.parse_args()
     
-    # If both positional and flag device are provided, flag takes precedence
-    if args.device_flag is not None:
-        args.device = args.device_flag
-    
     return args
-
 
 def run_standalone():
     """Run JiffyCam in standalone mode."""
@@ -528,170 +519,55 @@ def run_standalone():
     
     args = parse_args()
     
-    # Get the data_dir if provided via command line
-    data_dir = args.data_dir if args.data_dir else 'JiffyData'
+    # Get the data directory from the data_path argument
+    data_dir = args.data_path
     
-    # Determine which device/session to use
-    device_alias = args.device_flag if args.device_flag is not None else args.device
+    # Extract session name from data_path
+    session = os.path.basename(data_dir)
     
-    # First check if we can directly load the session config for the specified device
-    if device_alias:
-        # Try loading the config file for the specified device/session
-        try:
-            session_config_manager = JiffyConfig(yaml_file=args.config, session=device_alias, data_dir=data_dir, require_config_exists=False)
-            if os.path.exists(session_config_manager.yaml_file):
-                # If we found a config for the specified session, use it
-                session_config = session_config_manager.config
-                device_aliases = session_config.get('device_aliases', {})
-                
-                # We managed to load this config, so proceed with this session
-                print(f"Loaded configuration from {session_config_manager.yaml_file}")
-                
-                # Determine device to use based on the given alias
-                session = device_alias
-                
-                if device_alias in device_aliases:
-                    cam_device = device_aliases[device_alias]
-                    print(f"Using device '{cam_device}' for alias '{device_alias}'")
-                else:
-                    # If the alias isn't found in device_aliases, use the alias value directly as device
-                    cam_device = device_alias
-                    print(f"Using '{device_alias}' directly as device ID.")
-                    
-                capture = VideoCapture(config_file=args.config, session=session, data_dir=data_dir, require_config_exists=False)
-                global_capture_instance = capture
-                config = capture.config
-                
-                # Ensure device_aliases are set in the config
-                if 'device_aliases' not in config or not config['device_aliases']:
-                    config['device_aliases'] = device_aliases
-                
-                # Continue with normal setup flow from here
-                goto_normal_setup = True
-            else:
-                goto_normal_setup = False
-        except Exception as e:
-            print(f"Warning: Could not load session config for '{device_alias}': {str(e)}")
-            goto_normal_setup = False
+    # Initialize cam_device with default value
+    cam_device = '0'
+    
+    # Try loading the config file for the specified session
+    try:
+        # Construct the config path without duplicating the session name
+        config_path = os.path.join(data_dir, args.config)
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Configuration file not found at {config_path}")
             
-        if not goto_normal_setup:
-            # If we couldn't load the specific session config, fall back to the standard approach
-            print(f"Falling back to base config for device '{device_alias}'")
-            
-            # Try to load the base config or WebCam config to get device aliases
-            try:
-                # First try the base config
-                base_config_manager = JiffyConfig(yaml_file=args.config, session=None, data_dir=data_dir, require_config_exists=False)
-                if os.path.exists(base_config_manager.yaml_file):
-                    config = base_config_manager.config
-                    device_aliases = config.get('device_aliases', {})
-                else:
-                    # Fall back to the WebCam config which is known to have device aliases
-                    webcam_config_manager = JiffyConfig(yaml_file=args.config, session="WebCam", data_dir=data_dir, require_config_exists=True)
-                    webcam_config = webcam_config_manager.config
-                    if not webcam_config:
-                        raise ValueError("Empty configuration")
-                    device_aliases = webcam_config.get('device_aliases', {})
-            except FileNotFoundError as e:
-                print(f"Error: {str(e)}")
-                print("Please ensure a valid configuration file exists before starting JiffyCam.")
-                sys.exit(1)
-            except Exception as e:
-                print(f"Error: Failed to load configuration: {str(e)}")
-                print("Please ensure a valid configuration file exists with device aliases defined.")
-                sys.exit(1)
-                
-            if not device_aliases:
-                print("Error: No device aliases found in configuration.")
-                print("Please ensure the configuration includes a 'device_aliases' section.")
-                sys.exit(1)
-            
-            print(f"Device aliases loaded from config: {device_aliases}")
-            
-            # Use the device alias to get the actual device
-            session = device_alias
-            
-            if device_alias in device_aliases:
-                cam_device = device_aliases[device_alias]
-                print(f"Using device '{cam_device}' for alias '{device_alias}'")
-            else:
-                # If the alias isn't found in device_aliases, use the alias value directly as device
-                cam_device = device_alias
-                print(f"Warning: Device alias '{device_alias}' not found in configuration, using as direct device ID.")
-                
-            # Now initialize with the determined session and data_dir
-            try:
-                capture = VideoCapture(config_file=args.config, session=session, data_dir=data_dir, require_config_exists=False)
-                global_capture_instance = capture  # Set the global instance for HTTP access
-            except Exception as e:
-                print(f"Error initializing video capture: {str(e)}")
-                sys.exit(1)
-                
-            # Override config with command line arguments
-            config = capture.config
-            
-            # Ensure device_aliases are set in the config
-            if 'device_aliases' not in config or not config['device_aliases']:
-                config['device_aliases'] = device_aliases
-    else:
-        # No device specified, use default approach
-        try:
-            # For standalone mode with no device, first try the base config to get device aliases
-            base_config_manager = JiffyConfig(yaml_file=args.config, session=None, data_dir=data_dir, require_config_exists=False)
-            if os.path.exists(base_config_manager.yaml_file):
-                config = base_config_manager.config
-                device_aliases = config.get('device_aliases', {})
-            else:
-                # Fall back to the WebCam config
-                webcam_config_manager = JiffyConfig(yaml_file=args.config, session="WebCam", data_dir=data_dir, require_config_exists=True)
-                webcam_config = webcam_config_manager.config
-                if not webcam_config:
-                    raise ValueError("Empty configuration")
-                device_aliases = webcam_config.get('device_aliases', {})
-        except FileNotFoundError as e:
-            print(f"Error: {str(e)}")
-            print("Please ensure a valid configuration file exists before starting JiffyCam.")
-            sys.exit(1)
-        except Exception as e:
-            print(f"Error: Failed to load configuration: {str(e)}")
-            print("Please ensure a valid configuration file exists with device aliases defined.")
-            sys.exit(1)
-            
-        if not device_aliases:
-            print("Error: No device aliases found in configuration.")
-            print("Please ensure the configuration includes a 'device_aliases' section.")
-            sys.exit(1)
+        session_config_manager = JiffyConfig(yaml_file=args.config, session=session, data_dir=data_dir, require_config_exists=True)
+        session_config = session_config_manager.config
+        device_aliases = session_config.get('device_aliases', {})
         
-        print(f"Device aliases loaded from config: {device_aliases}")
+        # We managed to load this config, so proceed with this session
+        print(f"Loaded configuration from {config_path}")
         
-        # Default to a standard device
-        cam_device = "0"
-        session = "Default"
-        
-        # Now initialize with the determined session and data_dir
-        try:
-            capture = VideoCapture(config_file=args.config, session=session, data_dir=data_dir, require_config_exists=False)
-            global_capture_instance = capture  # Set the global instance for HTTP access
-        except FileNotFoundError as e:
-            print(f"Error: {str(e)}")
-            print("Please create a valid configuration file before starting JiffyCam.")
-            sys.exit(1)
-        except ValueError as e:
-            print(f"Error: {str(e)}")
-            print("Please ensure the configuration file contains valid settings.")
-            sys.exit(1)
-        except Exception as e:
-            print(f"Error initializing video capture: {str(e)}")
-            sys.exit(1)
-        
-        # Override config with command line arguments
+        # Determine device to use based on the session name
+        if session in device_aliases:
+            cam_device = device_aliases[session]
+            print(f"Using device '{cam_device}' for session '{session}'")
+        else:
+            # If the session name isn't found in device_aliases, use the default device
+            cam_device = device_aliases.get('Default', '0')
+            print(f"Using default device '{cam_device}' for session '{session}'")
+            
+        capture = VideoCapture(config_file=args.config, session=session, data_dir=data_dir, require_config_exists=True)
+        global_capture_instance = capture
         config = capture.config
         
         # Ensure device_aliases are set in the config
         if 'device_aliases' not in config or not config['device_aliases']:
             config['device_aliases'] = device_aliases
-            
-    # Common setup code regardless of which path we took
+    except FileNotFoundError as e:
+        print(f"Error: {str(e)}")
+        print("Please ensure the data path contains a valid jiffycam.yaml configuration file.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error loading configuration: {str(e)}")
+        print("Please ensure the configuration file is valid.")
+        sys.exit(1)
+    
+    # Common setup code
     cam_name = args.name or config.get('cam_name', 'cam0')
     
     resolution_str = args.resolution or config.get('resolution', '1920x1080')
@@ -703,23 +579,18 @@ def run_standalone():
     
     save_interval = args.interval if args.interval is not None else int(config.get('save_interval', 60))
     
-    if args.data_dir:
-        config['data_dir'] = args.data_dir
-        
     # Set runtime limit if specified
     if args.runtime > 0:
         config['runtime'] = args.runtime
         capture.config = config
     
     print(f"Starting capture with:")
-    print(f"  Camera Device: {cam_device}")
-    if device_alias and device_alias != cam_device:
-        print(f"  Device Alias: {device_alias} (using as session name)")
-    print(f"  Camera Name: {cam_name}")
+    print(f"  Data Path: {data_dir}")
     print(f"  Session: {session}")
+    print(f"  Camera Device: {cam_device}")
+    print(f"  Camera Name: {cam_name}")
     print(f"  Resolution: {width}x{height}")
     print(f"  Save Interval: {save_interval} seconds")
-    print(f"  Data Directory: {config.get('data_dir', 'JiffyData')}")
     print(f"  Config File: {capture.config_manager.yaml_file}")
     print(f"  Runtime: {args.runtime if args.runtime > 0 else 'Indefinite'} seconds")
     
