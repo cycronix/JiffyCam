@@ -12,7 +12,6 @@ from datetime import time as datetime_time
 import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
 
-from jiffyconfig import RESOLUTIONS   # Import necessary components from other modules
 from jiffyget import (
     jiffyget, 
     get_timestamp_range, 
@@ -1692,7 +1691,7 @@ def run_ui_update_loop():
 def initialize_session_state():
     """Initialize session state variables."""
     # Load config for default values
-    from jiffyconfig import JiffyConfig, RESOLUTIONS
+    from jiffyconfig import JiffyConfig
     from collections import OrderedDict
     
     # Check if data_dir is already set in session state (from command line arguments)
@@ -1739,13 +1738,7 @@ def initialize_session_state():
         st.session_state.data_dir = config.get('data_dir', 'JiffyData')
         if not os.path.exists(st.session_state.data_dir):
             os.makedirs(st.session_state.data_dir, exist_ok=True)
-    if 'resolution' not in st.session_state:
-        config_res = config.get('resolution', '1080p (1920x1080)')
-        matched_key = None
-        if isinstance(config_res, str) and 'x' in config_res:
-            for key, (w,h) in RESOLUTIONS.items():
-                if f"{w}x{h}" == config_res: matched_key = key; break
-        st.session_state.resolution = matched_key or config_res # Use key if found, else config value
+
     if 'save_interval' not in st.session_state: st.session_state.save_interval = int(config.get('save_interval', 60))
     
     # Determine initial cam_device (path/ID) and selected_device_alias (UI key)
