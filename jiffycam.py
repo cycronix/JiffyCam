@@ -21,7 +21,7 @@ import streamlit as st
 # Import Jiffy modules
 # from jiffyput import jiffyput # Not directly used here
 from jiffyget import get_timestamp_range, get_active_sessions, get_session_port # get_frame moved to jiffyui 
-from jiffyconfig import RESOLUTIONS, JiffyConfig
+from jiffyconfig import JiffyConfig
 
 # Import UI functions from the new modules
 from jiffyui import (
