@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from datetime import time as datetime_time
 import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
+import inspect
 
 from jiffyget import (
     jiffyget, 
@@ -216,6 +217,20 @@ def on_recording_change():
         # Update browsing_date directly (this isn't a widget)
         st.session_state.browsing_date = target_date
     except Exception as e:
+        import sys, traceback
+        # Get the traceback information
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+
+        # Extract the line number from the traceback
+        line_number = exc_traceback.tb_lineno
+
+        # Print the exception and line number
+        print(f"Exception: {e}")
+        print(f"Line Number: {line_number}")
+
+
+
+
         print(f"Error setting date range for new recording: {str(e)}")
         # Fall back to today's date if there's an error
         today = datetime.now().date()
@@ -1058,7 +1073,7 @@ def build_main_area():
                     st.session_state.valid_dates = []
                 
             except Exception as e:
-                print(f"Error recalculating timestamp range: {str(e)}")
+                print(f"Error recalculating timestamp range: {str(e)}, {inspect.stack()[1][3]}")
                 st.session_state.valid_dates = []
         
         # Initialize min/max dates for the date picker

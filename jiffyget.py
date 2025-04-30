@@ -243,7 +243,6 @@ def jiffyget(time_posix: float, cam_name: str,
     
     return None, None, eof
 
-#import inspect
 def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Optional[datetime], Optional[datetime]]:
     """Get the oldest and newest timestamps available for the camera across all dates.
     
@@ -265,8 +264,8 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
     all_timestamps = get_timestamps(cam_name, session, data_dir, None)
     
     if all_timestamps is None or len(all_timestamps) == 0:
-        #print(f"No valid timestamps found for {cam_name} in session {session}")    # warning printed in get_timestamps
-        return None, None
+        #print(f"No valid timestamps found for session {session}")    # warning printed in get_timestamps
+        return None, None, None
 
     # Convert to datetime objects
     oldest = datetime.fromtimestamp(all_timestamps[0][0] / 1000)
@@ -286,7 +285,6 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
     
     return oldest, newest, timestamps
 
-import inspect
 def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int):
     """Get all timestamps for the camera.
     
@@ -367,12 +365,12 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int)
                 continue
                 
         if len(all_timestamps) == 0:
-            print(f"No timestamps found for camera {cam_name} in session {session}")
+            print(f"No timestamps found for session: {session}")
             return None
-            
-        # Sort all timestamps from all date directories
-        all_timestamps.sort()
-        #print(f"session: {session}, all_timestamps: {len(all_timestamps)}")
+        else:
+            # Sort all timestamps from all date directories
+            all_timestamps.sort()
+
         return all_timestamps
     else:
         # Regular case: browsing within a specific date
