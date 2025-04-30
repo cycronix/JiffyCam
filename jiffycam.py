@@ -75,7 +75,7 @@ def main():
     if 'autoplay_direction' not in st.session_state: st.session_state.autoplay_direction = None
     if 'autoplay_step' not in st.session_state: st.session_state.autoplay_step = False
     if 'autoplay_interval' not in st.session_state: st.session_state.autoplay_interval = 0.02
-
+    if 'needs_date_update' not in st.session_state: st.session_state.needs_date_update = False
     # Default to HTTP mode
     if 'use_http_mode' not in st.session_state: st.session_state.use_http_mode = True
     
@@ -188,7 +188,7 @@ def main():
     if 'newest_timestamp' not in st.session_state: st.session_state.newest_timestamp = None
 
     # Get initial timestamp range
-    if False and ('oldest_timestamp' not in st.session_state or st.session_state.oldest_timestamp is None):
+    if ('oldest_timestamp' not in st.session_state or st.session_state.oldest_timestamp is None):
         try:
             oldest, newest = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
             st.session_state.oldest_timestamp = oldest

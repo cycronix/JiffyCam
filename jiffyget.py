@@ -136,6 +136,10 @@ def get_session_port(session: str, data_dir: str) -> Optional[int]:
         print(f"Error reading config for session '{session}': {str(e)}")
         return None
 
+def reset_timestamps():
+    global timestamps
+    timestamps = None
+
 def jiffyget(time_posix: float, cam_name: str, 
              session: str, data_dir: str, 
              direction: str = "down"):
@@ -280,7 +284,7 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
     # Log the date range we found
     #print(f"Valid date range for {session}: {oldest.date()} to {newest.date()} ({len(unique_dates)} days with data)")
     
-    return oldest, newest
+    return oldest, newest, timestamps
 
 import inspect
 def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int):
@@ -368,6 +372,7 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int)
             
         # Sort all timestamps from all date directories
         all_timestamps.sort()
+        #print(f"session: {session}, all_timestamps: {len(all_timestamps)}")
         return all_timestamps
     else:
         # Regular case: browsing within a specific date
@@ -394,6 +399,7 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int)
             except ValueError:
                 continue    
 
+        #print(f"base_dir: {base_dir}, session: {session}, date_timestamps: {len(timestamps)}, caller: {inspect.stack()[1].function}")
         if len(timestamps) == 0:
             return None
 

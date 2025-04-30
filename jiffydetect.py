@@ -33,8 +33,8 @@ TARGETS = Vehicle + Animal + Person
 PutDate = False
 PutDetect = False				# put cropped image of detection (e.g. 'vehicle.jpg')
 
-MDET = 0.2                                      # motion detect trigger level (linear 0-1) (was .1)
-MTHRESH = 2                                     # motion detect noise reject threshold (per raw pixel) (was 4)
+MDET = 0.15                                      # motion detect trigger level (linear 0-1) (was .1)
+MTHRESH = 1                                     # motion detect noise reject threshold (per raw pixel) (was 4)
 
 hide_labels = False
 hide_conf = True
@@ -71,7 +71,6 @@ def detect(image, previmage):
                 else:
                     bd = MDET    # fake it
 
-                #print(f"bd: {bd}, MDET: {MDET}")
                 if(bd >= MDET):
                     if(PutDetect):
                         bname = 'vehicle' if(cname in Vehicle) else 'animal' if(cname in Animal) else 'person' if(cname in Person) else cname
@@ -84,7 +83,7 @@ def detect(image, previmage):
                     label = None if hide_labels else (cname if hide_conf else status)
                     newimage = box_label(thisimage.copy(), xyxy, label)  	# this clobbers prior box_label if any
                     #cv2.imwrite('jiffycamDetect.jpg', newimage)
-                    #print('detect: '+status+', newimage: '+ str(newimage.shape))
+                    print('detect: '+status+', newimage: '+ str(newimage.shape), flush=True)
                     return newimage  
                  
     return None  
