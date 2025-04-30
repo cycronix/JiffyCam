@@ -42,24 +42,24 @@ def jiffyput(cam_name, frame, time_posix: float, session, data_dir):
             prevframe = frame
             frame = tryframe
 
-        # Create save directory using session and timestamp
-        save_dir = os.path.join(data_dir, session, os.path.dirname(cam_name))
-        os.makedirs(save_dir, exist_ok=True)
-
-        # Save frame as JPEG
+        # Create save directory using timestamp
         timestamp_ms = int(time_posix * 1000)
         browse_date = datetime.fromtimestamp(time_posix).date()
         browse_date_ms = int(time.mktime(browse_date.timetuple()) * 1000)
         browse_delta_ms = int(time_posix * 1000 - browse_date_ms)
 
-        #save_path = os.path.join(save_dir, str(timestamp_ms))
-        save_path = os.path.join(save_dir, str(browse_date_ms), str(browse_delta_ms))
+        # The data_dir already contains the session, so we don't need to add it again
+        save_dir = os.path.join(data_dir, str(browse_date_ms))
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Save frame as JPEG
+        save_path = os.path.join(save_dir, str(browse_delta_ms))
         os.makedirs(save_path, exist_ok=True)
 
         # Save the image
         image_path = os.path.join(save_path, os.path.basename(cam_name) + '.jpg')
         cv2.imwrite(image_path, frame, encode_param)
-        #print(f"save to image_path: {image_path}")
+        print(f"Saved image to: {image_path}")
 
     except Exception as e:
         error_msg = f"Error sending frame: {str(e)}"

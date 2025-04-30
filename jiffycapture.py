@@ -297,15 +297,15 @@ class VideoCapture:
     def send_frame(self, cam_name: str, frame, ftime: float, session: str):
         """Send frame to server and optionally save to disk."""
         try:
-            # Call jiffyput function
-            result = jiffyput(cam_name, frame, ftime, session, self.config.get('data_dir', 'JiffyData'))
+            # Call jiffyput function with the full data_dir path
+            result = jiffyput(cam_name, frame, ftime, session, self.config_manager.data_dir)
             if result is None:
                 return None
         
             # Update class attributes
             self.image_just_saved = True
             self.image_saved_time = self.last_save_time = time.time()
-            print(f"Frame saved: {datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')}")
+            #print(f"Frame saved: {datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')}")
             self.save_status = f"Frame saved: {datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')}"
                 
         except Exception as e:
@@ -522,9 +522,6 @@ def run_standalone():
     # Get the data directory from the data_path argument
     data_dir = args.data_path
     
-    # Extract session name from data_path
-    session = os.path.basename(data_dir)
-    
     # Initialize cam_device with default value
     cam_device = '0'
     
@@ -535,12 +532,15 @@ def run_standalone():
         if not os.path.exists(config_path):
             raise FileNotFoundError(f"Configuration file not found at {config_path}")
             
-        session_config_manager = JiffyConfig(yaml_file=args.config, session=session, data_dir=data_dir, require_config_exists=True)
+        session_config_manager = JiffyConfig(yaml_file=args.config, session=None, data_dir=data_dir, require_config_exists=True)
         session_config = session_config_manager.config
         device_aliases = session_config.get('device_aliases', {})
         
         # We managed to load this config, so proceed with this session
         print(f"Loaded configuration from {config_path}")
+        
+        # Get the session name from the data directory
+        session = os.path.basename(data_dir)
         
         # Determine device to use based on the session name
         if session in device_aliases:
@@ -551,7 +551,7 @@ def run_standalone():
             cam_device = device_aliases.get('Default', '0')
             print(f"Using default device '{cam_device}' for session '{session}'")
             
-        capture = VideoCapture(config_file=args.config, session=session, data_dir=data_dir, require_config_exists=True)
+        capture = VideoCapture(config_file=args.config, session=None, data_dir=data_dir, require_config_exists=True)
         global_capture_instance = capture
         config = capture.config
         
