@@ -5,22 +5,16 @@ This module contains the main UI code for the JiffyCam browser interface.
 """
 
 import os
-import sys
 import time
-import threading
+#import threading
 from datetime import datetime, timedelta
 from datetime import time as datetime_time
-import numpy as np
-import cv2
 import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
-import yaml
-import inspect
 
 from jiffyconfig import RESOLUTIONS   # Import necessary components from other modules
 from jiffyget import (
     jiffyget, 
-    get_locations, 
     get_timestamp_range, 
     get_active_sessions,
     get_session_port,
@@ -36,17 +30,17 @@ except ImportError:
     print("Warning: JiffyCamClient module not found. HTTP mode will be unavailable.")
     
 # For normal rerun prevention in callback context
-no_rerun = threading.Lock()
+#no_rerun = threading.Lock()
 
 # Import UI components (may be imported within individual functions as needed)
 # import jiffyui_components
 
 # following just to avoid error when importing YOLO
-import torch
-torch.classes.__path__ = [] # add this line to manually set it to empty. 
+#import torch
+#torch.classes.__path__ = [] # add this line to manually set it to empty. 
 
 # Add threading module for compatibility
-import threading
+#import threading
 
 # --- UI Helper Functions ---
 

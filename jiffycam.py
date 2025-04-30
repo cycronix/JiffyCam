@@ -6,10 +6,10 @@ from a camera and send it to a CloudTurbine (CT) server.
 """
 
 import os
-import sys
+#import sys
 import time
 import yaml
-import threading
+#import threading
 import argparse
 from typing import Optional, Dict, Any
 from datetime import datetime, time as datetime_time
@@ -31,7 +31,7 @@ from jiffyui import (
     # Callbacks and helpers are internal to jiffyui now
 )
 # UI components are imported directly in the relevant functions
-import jiffyui_components
+#import jiffyui_components
 from jiffyclient import JiffyCamClient
 
 # --- Parse Command Line Arguments ---

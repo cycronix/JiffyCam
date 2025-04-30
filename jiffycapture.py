@@ -16,7 +16,7 @@ import threading
 import gc
 import sys
 import argparse
-import io
+#import io
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from queue import Queue
@@ -25,7 +25,7 @@ from typing import Optional, Tuple
 import os
 
 import cv2
-import numpy as np
+#import numpy as np
 #from streamlit_server_state import server_state, server_state_lock, no_rerun
 
 from jiffyput import jiffyput
