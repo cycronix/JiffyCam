@@ -4,5 +4,5 @@ ghat.txt
 .DS_Store
 private.yaml
 __pycache__/
-
+.venv
 

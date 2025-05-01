@@ -1,0 +1,5 @@
+cam_device: '0'
+cam_name: cam0
+save_interval: 5
+dataserver_port: 8081
+weights: 'models/yolov8l.pt'
