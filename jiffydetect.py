@@ -39,7 +39,9 @@ MTHRESH = 1                                     # motion detect noise reject thr
 hide_labels = False
 hide_conf = True
 
-Weights='models/yolov8s.pt'                        # model.pt path(s)
+#Weights='models/yolov8s.pt'                        # model.pt path(s)
+Weights='models/yolov8l.pt'                        # model.pt path(s)
+
 Model = YOLO(Weights, task='detect')               # Load model
 Names = Model.names
 

@@ -534,8 +534,7 @@ def run_standalone():
             
         session_config_manager = JiffyConfig(yaml_file=args.config, session=None, data_dir=data_dir, require_config_exists=True)
         session_config = session_config_manager.config
-        device_aliases = session_config.get('device_aliases', {})
-        
+
         # We managed to load this config, so proceed with this session
         print(f"Loaded configuration from {config_path}")
         
@@ -543,21 +542,21 @@ def run_standalone():
         session = os.path.basename(data_dir)
         
         # Determine device to use based on the session name
-        if session in device_aliases:
-            cam_device = device_aliases[session]
-            print(f"Using device '{cam_device}' for session '{session}'")
-        else:
-            # If the session name isn't found in device_aliases, use the default device
-            cam_device = device_aliases.get('Default', '0')
-            print(f"Using default device '{cam_device}' for session '{session}'")
-            
+        #if session in device_aliases:
+        #    cam_device = device_aliases[session]
+        #    print(f"Using device '{cam_device}' for session '{session}'")
+        #else:
+        # If the session name isn't found in device_aliases, use the default device
+        #cam_device = device_aliases.get('Default', '0')
+        #print(f"Using default device '{cam_device}' for session '{session}'")
+
         capture = VideoCapture(config_file=args.config, session=None, data_dir=data_dir, require_config_exists=True)
         global_capture_instance = capture
         config = capture.config
         
         # Ensure device_aliases are set in the config
-        if 'device_aliases' not in config or not config['device_aliases']:
-            config['device_aliases'] = device_aliases
+        #if 'device_aliases' not in config or not config['device_aliases']:
+        #    config['device_aliases'] = device_aliases
     except FileNotFoundError as e:
         print(f"Error: {str(e)}")
         print("Please ensure the data path contains a valid jiffycam.yaml configuration file.")
@@ -569,7 +568,9 @@ def run_standalone():
     
     # Common setup code
     cam_name = args.name or config.get('cam_name', 'cam0')
-    
+    cam_device = session_config.get('cam_device', '0')
+    print(f"cam_device: {cam_device}")
+
     resolution_str = args.resolution or config.get('resolution', '1920x1080')
     try:
         width, height = map(int, resolution_str.split('x'))

@@ -1744,9 +1744,9 @@ def initialize_session_state():
     
     # Configuration related state (derived from config)
     # Ensure device_aliases is OrderedDict
-    aliases = config.get('device_aliases', {'Default': '0'})
-    if 'device_aliases' not in st.session_state: st.session_state.device_aliases = OrderedDict(aliases) 
-    else: st.session_state.device_aliases = OrderedDict(st.session_state.device_aliases) # Ensure type
+    #aliases = config.get('device_aliases', {'Default': '0'})
+    #if 'device_aliases' not in st.session_state: st.session_state.device_aliases = OrderedDict(aliases) 
+    #else: st.session_state.device_aliases = OrderedDict(st.session_state.device_aliases) # Ensure type
 
     if 'cam_name' not in st.session_state: st.session_state.cam_name = config.get('cam_name', 'cam0')
     if 'data_dir' not in st.session_state:
@@ -1757,7 +1757,7 @@ def initialize_session_state():
     if 'save_interval' not in st.session_state: st.session_state.save_interval = int(config.get('save_interval', 60))
     
     # Determine initial cam_device (path/ID) and selected_device_alias (UI key)
-    if 'selected_device_alias' not in st.session_state or 'cam_device' not in st.session_state:
+    if False and ('selected_device_alias' not in st.session_state or 'cam_device' not in st.session_state):
         config_device_val = config.get('cam_device', 'Default') # This is likely the alias key
         available_aliases = st.session_state.device_aliases
         
@@ -1775,7 +1775,7 @@ def initialize_session_state():
             # Set selected alias to the match, or fallback to first available alias
             st.session_state.selected_device_alias = matching_alias or list(available_aliases.keys())[0] 
 
-    if 'session' not in st.session_state: st.session_state.session = st.session_state.selected_device_alias
+    #if 'session' not in st.session_state: st.session_state.session = st.session_state.selected_device_alias
     
     # Time/Date related state
     current_time = datetime.now()
