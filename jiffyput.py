@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from jiffydetect import detect
 
 prevframe = None
-def jiffyput(cam_name, frame, time_posix: float, session, data_dir):
+def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path='models/yolov8l.pt'):
     """
     Process and save a video frame.
 
@@ -22,6 +22,7 @@ def jiffyput(cam_name, frame, time_posix: float, session, data_dir):
         ftime (float): The frame timestamp
         session (str): The session name
         data_dir (str): The data directory
+        weights_path (str): Path to the YOLO weights file
 
     Returns:
         The processed frame (which may be modified by detection)
@@ -35,7 +36,7 @@ def jiffyput(cam_name, frame, time_posix: float, session, data_dir):
 
         detect_mode = True
         if detect_mode:
-            tryframe = detect(frame, prevframe)  # pass previous frame to reject no-motion detections
+            tryframe = detect(frame, prevframe, weights_path)  # pass previous frame to reject no-motion detections
             if tryframe is None:       # ONLY save detections!  (to do: heartbeat saves)
                 return None
                 

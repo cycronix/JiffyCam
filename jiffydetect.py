@@ -39,15 +39,19 @@ MTHRESH = 1                                     # motion detect noise reject thr
 hide_labels = False
 hide_conf = True
 
-#Weights='models/yolov8s.pt'                        # model.pt path(s)
-Weights='models/yolov8l.pt'                        # model.pt path(s)
-
-Model = YOLO(Weights, task='detect')               # Load model
-Names = Model.names
+# Global YOLO model instance
+Model = None
+Names = None
 
 # ---------------------------------------------------------------------------------------------------------------------
 # @torch.no_grad()
-def detect(image, previmage):
+def detect(image, previmage, weights_path='models/yolov8l.pt'):
+    global Model, Names
+    
+    # Initialize model if not already done
+    if Model is None:
+        Model = YOLO(weights_path, task='detect')  # Load model
+        Names = Model.names
 
     #data='data/coco128.yaml'                    # dataset.yaml path
     imgsz=(640, 640) 	 				# inference size (height, width)

@@ -295,24 +295,19 @@ class VideoCapture:
         self.running = False
 
     def send_frame(self, cam_name: str, frame, ftime: float, session: str):
-        """Send frame to server and optionally save to disk."""
+        """Send a frame to the data server."""
         try:
-            # Call jiffyput function with the full data_dir path
-            result = jiffyput(cam_name, frame, ftime, session, self.config_manager.data_dir)
-            if result is None:
-                return None
-        
-            # Update class attributes
-            self.image_just_saved = True
-            self.image_saved_time = self.last_save_time = time.time()
-            #print(f"Frame saved: {datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')}")
-            self.save_status = f"Frame saved: {datetime.fromtimestamp(ftime).strftime('%Y-%m-%d %H:%M:%S')}"
-                
+            # Process and save the frame
+            result = jiffyput(cam_name, frame, ftime, session, self.config_manager.data_dir, self.config.get('weights', 'models/yolov8l.pt'))
+            if result is not None:
+                self.frame_count += 1
+                self.last_save_time = ftime
+                return True
+            return False
         except Exception as e:
-            self.handle_error(f"Error sending frame: {str(e)}")
-            return None
-
-        return result
+            error_msg = f"Error sending frame: {str(e)}"
+            self.handle_error(error_msg)
+            return False
 
     def capture_video(self, cam_device, cam_name, width, height, save_interval, session):
         """Initialize and run video capture loop - simplified direct version."""
