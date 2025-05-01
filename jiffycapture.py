@@ -391,6 +391,7 @@ class VideoCapture:
                     consecutive_failures = 0  # Reset failure counter on success
                     current_time = time.time()
                     frame_count_since_start += 1  # Increment frame counter
+                    frame_copy = frame.copy()
 
                     # Regular interval saving for subsequent frames
                     if save_interval > 0 and (current_time - self.last_save_time) >= save_interval:
@@ -422,7 +423,7 @@ class VideoCapture:
                             pass
 
                     if frame is not None:
-                        self.last_frame = frame
+                        self.last_frame = frame_copy   # mjm framecopy in hopes of stop flashing imager   
 
                     time.sleep(0.01)  # Small delay to prevent overwhelming the system
                 else:
