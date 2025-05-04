@@ -242,72 +242,6 @@ def on_recording_change():
     st.session_state.needs_date_update = True
     st.session_state.init_date = st.session_state.browsing_date
 
-
-def toggle_rt_capture():
-    """Toggle real-time capture on/off"""
-    st.session_state.rt_capture = not st.session_state.rt_capture
-    #print(f"toggle_rt_capture: {st.session_state.rt_capture}")
-
-    if st.session_state.rt_capture:
-        st.session_state.in_playback_mode = False
-        #st.session_state.browsing_saved_images = False
-        st.session_state.date = datetime.now().date()
-
-        # Get session info
-        current_session = st.session_state.session
-        data_dir = st.session_state.get('data_dir', 'JiffyData')
-        
-        # Get active sessions
-        active_sessions = get_active_sessions(data_dir)
-        
-        # Check if current session is active
-        if current_session not in active_sessions:
-            st.warning(f"Session '{current_session}' is not currently active on any server. Please select an active session or start a server for this session.")
-            st.session_state.rt_capture = False
-            return
-        
-        # Get the port for this session
-        port = get_session_port(current_session, data_dir)
-        if not port:
-            st.error(f"Could not determine the server port for session '{current_session}'.")
-            st.session_state.rt_capture = False
-            return
-        
-        # Set the HTTP server URL
-        server_url = f"http://localhost:{port}"
-        st.session_state.http_server_url = server_url
-        
-        # Get HTTP client
-        try:
-            if not hasattr(st.session_state, 'http_client'):
-                from jiffyclient import JiffyCamClient
-                st.session_state.http_client = JiffyCamClient(server_url)
-            else:
-                # Update URL if client exists
-                st.session_state.http_client.set_server_url(server_url)
-            
-            # Force a connection check
-            if not st.session_state.http_client.check_connection(force=True):
-                st.error(f"Failed to connect to JiffyCam server at {server_url}: {st.session_state.http_client.last_error}")
-                st.session_state.rt_capture = False
-                return
-            
-            # Start capture
-            st.session_state.http_client.start_capture()
-        except Exception as e:
-            st.error(f"Error connecting to JiffyCam server at {server_url}: {str(e)}")
-            st.session_state.rt_capture = False
-            return
-    else:
-        # Stop capture
-        if hasattr(st.session_state, 'http_client'):
-            try:
-                st.session_state.http_client.stop_capture()
-                # No need for full disconnect, just stop the capture
-            except Exception as e:
-                print(f"Error stopping capture: {str(e)}")
-        st.session_state.in_playback_mode = True
-
 def on_date_change():
     """Handle date picker change."""
     set_autoplay(None)
@@ -455,7 +389,8 @@ def change_day(direction):
             # We're at the end of the list, can't navigate further
             #print(f"At {'end' if direction == 'next' else 'beginning'} of valid dates, can't change days")
             # Just refresh the current date's display
-            st.session_state.step_direction = "down"
+            st.session_state.browsing_date = current_date
+            st.session_state.step_direction = "up"
             st.session_state.last_displayed_timestamp = None
             return
         
@@ -509,19 +444,12 @@ def toggle_live_pause():
 
     if st.session_state.in_playback_mode:
         # Go Live
-        # Check if current browsing date is today
-        current_date = datetime.now().date()
-        browsing_date = st.session_state.get('browsing_date') or current_date
-        
-       #if browsing_date != current_date:
-            # Don't toggle to live mode if date isn't today
-            #return
-            
         # Update browsing date/time to current (will be reflected in loop)
         current_time = datetime.now()
-        st.session_state.browsing_date = current_time.date()
+        st.session_state.browsing_date = st.session_state.target_browsing_date = current_time.date()
         st.session_state.in_playback_mode = False
-        
+        st.session_state.needs_date_update = True
+
         # If in HTTP mode, make sure rt_capture is turned on and check connection
         if st.session_state.get('use_http_mode', False):
             st.session_state.rt_capture = True
@@ -1389,7 +1317,7 @@ def run_ui_update_loop():
     
     #if(not st.session_state.autoplay_direction):
     if st.session_state.needs_date_update:
-        #change_day("down")
+        change_day("down")
         update_image_display("current")
         st.session_state.needs_date_update = False
     elif (st.session_state.need_to_display_recent and not is_capturing):
