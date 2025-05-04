@@ -1372,17 +1372,12 @@ def run_ui_update_loop():
     """The main loop to update the UI based on capture state and interactions."""
     # Fetch placeholders from session state at the start of the loop
     video_placeholder = st.session_state.video_placeholder
-    status_placeholder = st.session_state.status_placeholder
     error_placeholder = st.session_state.error_placeholder
     time_display = st.session_state.time_display
-    server_status_placeholder = st.session_state.server_status_placeholder
-    capture_fps_placeholder = st.session_state.capture_fps_placeholder
-    display_fps_placeholder = st.session_state.display_fps_placeholder
-    frames_detected_placeholder = st.session_state.frames_detected_placeholder
-    last_save_time_placeholder = st.session_state.get('last_save_time_placeholder', None)
+
     # --- Initial Image Display --- 
     is_capturing = False
-    
+
     if hasattr(st.session_state, 'http_client'):
         # Only check connection status if we're not in playback mode
         if not st.session_state.in_playback_mode:
@@ -1394,8 +1389,8 @@ def run_ui_update_loop():
     
     #if(not st.session_state.autoplay_direction):
     if st.session_state.needs_date_update:
-        update_image_display("down")
         #change_day("down")
+        update_image_display("current")
         st.session_state.needs_date_update = False
     elif (st.session_state.need_to_display_recent and not is_capturing):
         display_most_recent_image() # Fetches placeholders from session_state
@@ -1412,145 +1407,15 @@ def run_ui_update_loop():
 
             # Update server connection status display (every 2 seconds)
             current_time = time.time()
-            if current_time - server_status_update_time > 2:
+            if (not st.session_state.autoplay_direction) and (current_time - server_status_update_time > 2):
+                check_errors = update_status()
                 server_status_update_time = current_time
-                connection_status = "Disconnected"
-                active_sessions, is_capturing, capture_fps, last_save_time, client_connected = get_server_status()
-                if is_capturing:
-                    connection_status = "Recording"
-                
-                # Store FPS Camera in session state
-                st.session_state.capture_fps = capture_fps
-                
-                # Count frames for current date
-                if False and current_time - st.session_state.last_frames_count_update > 5:  # Update every 5 seconds
-                    st.session_state.last_frames_count_update = current_time
-                    try:
-                        # Get current date in posix milliseconds
-                        if st.session_state.in_playback_mode:
-                            browse_date = st.session_state.browsing_date
-                        else:
-                            browse_date = datetime.now().date()
-                        
-                        #print(f"browse_date: {browse_date}")
-                        browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
-                        
-                        # Get timestamps for this date
-                        #import jiffyget
-                        timestamps = get_timestamps(
-                            st.session_state.cam_name, 
-                            st.session_state.session, 
-                            st.session_state.data_dir, 
-                            browse_date_posix
-                        )
-                        
-                        # Count the number of frames
-                        if timestamps is not None:
-                            st.session_state.frames_detected = len(timestamps)
-                        else:
-                            st.session_state.frames_detected = 0
-                    except Exception as e:
-                        print(f"Error counting frames: {str(e)}")
-                        st.session_state.frames_detected = 0
-                
-                # Display server status
-                # status_html = f"""
-                # <div style="padding: 5px 0;">
-                #     <div><b>Recording:</b> <span style="color: {'blue' if server_session != None else 'gray'}">{server_session if server_session != None else 'Idle'}</span></div>
-                # </div>
-                # """
-                # server_status_placeholder.markdown(status_html, unsafe_allow_html=True)
-                
-                # Update FPS metrics
-                # Only show FPS Camera when connected to and viewing live data
-                is_viewing_live = False
-                if (not st.session_state.in_playback_mode and 
-                    hasattr(st.session_state, 'http_client')):
-                    client = st.session_state.http_client
-                    current_session = st.session_state.session
-                    is_viewing_live = (
-                        client.is_connected() and
-                        client.last_status and
-                        current_session in active_sessions
-                    )
-                
-                if is_viewing_live:
-                    # Format to 1 decimal place and show the metric
-                    capture_fps_placeholder.metric(
-                        "FPS Camera",
-                        f"{st.session_state.capture_fps:.0f}",
-                        delta=None,
-                        #help="Frames per second being captured by the camera",
-                        border=True
-                    )
-                else:
-                    # Reset and hide FPS Camera when not viewing live
-                    st.session_state.capture_fps = 0
-                    capture_fps_placeholder.metric(
-                        "FPS Camera",
-                        "  ---",
-                        delta=None,
-                        #help="Frames per second being captured by the camera",
-                        border=True
-                    )
-                
-                # Set FPS Display to 0 when in playback mode and no frames displayed recently
-                if st.session_state.in_playback_mode and (current_time - st.session_state.last_display_time > 2.0):
-                    st.session_state.display_fps = 0
-                    
-                display_fps_placeholder.metric(
-                    "FPS Display",
-                    f"{st.session_state.display_fps:.0f}",
-                    delta=None,
-                    #help="Frames per second being displayed",
-                    border=True
-                )
-                
-                frames_detected_placeholder.metric(
-                    "Detections",
-                    st.session_state.frames_detected,
-                    delta=None,
-                    #help="Number of frames detected for current date",
-                    border=True
-                )
-
-                # Display Last Detectiond time (as string)
-                if last_save_time:
-                    last_save_display = str(last_save_time)
-                else:
-                    last_save_display = "---"
-                    
-                # Last Detection UI component has been removed, but keep the data flow
-                # The last_save_time_placeholder will be None, so we should skip updating it
-                if last_save_time_placeholder is not None:
-                    last_save_time_placeholder.metric(
-                        "Last Detection",
-                        last_save_display,
-                        delta=None,
-                        help="Time of last image detection and save",
-                        border=True
-                    )
-            # Check for errors first
-            check_errors = False
-            
-            if hasattr(st.session_state, 'http_client'):
-                # Only check connection if we're not in playback mode
-                if (st.session_state.rt_capture and 
-                    not st.session_state.in_playback_mode and
-                    not st.session_state.http_client.is_connected()):
-                    
-                    error_placeholder.error(st.session_state.http_client.last_error or "Connection lost to JiffyCam server")
-                    # status_placeholder.markdown("<div style='padding: 5px 0;'>Status: Connection Error</div>", unsafe_allow_html=True)
-                    st.session_state.status_message = "Status: Connection Error"
-                    check_errors = True
-            
-            if check_errors:
+                if check_errors:
                 # Keep last frame visible on error if possible
-                break # Exit loop
+                    break # Exit loop
         
             # Check if we're capturing
             is_capturing = False
-            
             if hasattr(st.session_state, 'http_client'):
                 # Only check connection if we're not in playback mode
                 if not st.session_state.in_playback_mode:
@@ -1657,7 +1522,7 @@ def run_ui_update_loop():
                         
                         if need_display_update:
                             # Only display if we need to update the image
-                            #new_image_display(st.session_state.last_frame)
+                            new_image_display(st.session_state.last_frame)    #???
                             st.session_state.last_displayed_timestamp = st.session_state.actual_timestamp
                             
                             # Reset step_direction to prevent continuous updates
@@ -1692,6 +1557,139 @@ def run_ui_update_loop():
             time.sleep(1)  # Wait a bit before continuing
 
     print("exit run_ui_update_loop!")
+
+def update_status():
+    capture_fps_placeholder = st.session_state.capture_fps_placeholder
+    display_fps_placeholder = st.session_state.display_fps_placeholder
+    frames_detected_placeholder = st.session_state.frames_detected_placeholder
+    last_save_time_placeholder = st.session_state.get('last_save_time_placeholder', None)
+    error_placeholder = st.session_state.error_placeholder
+    current_time = time.time()
+    connection_status = "Disconnected"
+    active_sessions, is_capturing, capture_fps, last_save_time, client_connected = get_server_status()
+    if is_capturing:
+        connection_status = "Recording"
+    
+    # Store FPS Camera in session state
+    st.session_state.capture_fps = capture_fps
+    
+    # Count frames for current date
+    if True and current_time - st.session_state.last_frames_count_update > 5:  # Update every 5 seconds
+        st.session_state.last_frames_count_update = current_time
+        try:
+            # Get current date in posix milliseconds
+            if st.session_state.in_playback_mode:
+                browse_date = st.session_state.browsing_date
+            else:
+                browse_date = datetime.now().date()
+            
+            #print(f"browse_date: {browse_date}")
+            browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
+            
+            # Get timestamps for this date
+            #import jiffyget
+            timestamps = get_timestamps(
+                st.session_state.cam_name, 
+                st.session_state.session, 
+                st.session_state.data_dir, 
+                browse_date_posix
+            )
+            
+            # Count the number of frames
+            if timestamps is not None:
+                st.session_state.frames_detected = len(timestamps)
+            else:
+                st.session_state.frames_detected = 0
+        except Exception as e:
+            print(f"Error counting frames: {str(e)}")
+            st.session_state.frames_detected = 0
+    
+    # Update FPS metrics
+    # Only show FPS Camera when connected to and viewing live data
+    is_viewing_live = False
+    if (not st.session_state.in_playback_mode and 
+        hasattr(st.session_state, 'http_client')):
+        client = st.session_state.http_client
+        current_session = st.session_state.session
+        is_viewing_live = (
+            client.is_connected() and
+            client.last_status and
+            current_session in active_sessions
+        )
+    
+    if is_viewing_live:
+        # Format to 1 decimal place and show the metric
+        capture_fps_placeholder.metric(
+            "FPS Camera",
+            f"{st.session_state.capture_fps:.0f}",
+            delta=None,
+            #help="Frames per second being captured by the camera",
+            border=True
+        )
+    else:
+        # Reset and hide FPS Camera when not viewing live
+        st.session_state.capture_fps = 0
+        capture_fps_placeholder.metric(
+            "FPS Camera",
+            "  ---",
+            delta=None,
+            #help="Frames per second being captured by the camera",
+            border=True
+        )
+    
+        # Check for errors first
+        check_errors = False
+        if hasattr(st.session_state, 'http_client'):
+            # Only check connection if we're not in playback mode
+            if (st.session_state.rt_capture and 
+                not st.session_state.in_playback_mode and
+                not st.session_state.http_client.is_connected()):
+                
+                error_placeholder.error(st.session_state.http_client.last_error or "Connection lost to JiffyCam server")
+                # status_placeholder.markdown("<div style='padding: 5px 0;'>Status: Connection Error</div>", unsafe_allow_html=True)
+                st.session_state.status_message = "Status: Connection Error"
+                check_errors = True
+
+        return check_errors
+    
+    # Set FPS Display to 0 when in playback mode and no frames displayed recently
+    if st.session_state.in_playback_mode and (current_time - st.session_state.last_display_time > 2.0):
+        st.session_state.display_fps = 0
+        
+    display_fps_placeholder.metric(
+        "FPS Display",
+        f"{st.session_state.display_fps:.0f}",
+        delta=None,
+        #help="Frames per second being displayed",
+        border=True
+    )
+    
+    frames_detected_placeholder.metric(
+        "Detections",
+        st.session_state.frames_detected,
+        delta=None,
+        #help="Number of frames detected for current date",
+        border=True
+    )
+
+    # Display Last Detectiond time (as string)
+    if last_save_time:
+        last_save_display = str(last_save_time)
+    else:
+        last_save_display = "---"
+        
+    # Last Detection UI component has been removed, but keep the data flow
+    # The last_save_time_placeholder will be None, so we should skip updating it
+    if last_save_time_placeholder is not None:
+        last_save_time_placeholder.metric(
+            "Last Detection",
+            last_save_display,
+            delta=None,
+            help="Time of last image detection and save",
+            border=True
+        )
+
+
 
 def initialize_session_state():
     """Initialize session state variables."""

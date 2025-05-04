@@ -74,7 +74,7 @@ def main():
     if 'autoplay_direction' not in st.session_state: st.session_state.autoplay_direction = None
     if 'autoplay_step' not in st.session_state: st.session_state.autoplay_step = False
     if 'autoplay_interval' not in st.session_state: st.session_state.autoplay_interval = 0.02
-    if 'needs_date_update' not in st.session_state: st.session_state.needs_date_update = False
+    if 'needs_date_update' not in st.session_state: st.session_state.needs_date_update = True
     # Default to HTTP mode
     if 'use_http_mode' not in st.session_state: st.session_state.use_http_mode = True
     
@@ -155,9 +155,9 @@ def main():
 
     if 'browsing_date' not in st.session_state and 'init_date' in st.session_state: 
         st.session_state.browsing_date = st.session_state.init_date
-    #if 'time_slider' not in st.session_state: 
-    #    st.session_state.time_slider = datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second)
     
+    #print(f"st.session_state: {st.session_state}")
+
     # Add performance tracking variables
     if 'capture_fps' not in st.session_state: st.session_state.capture_fps = 0
     if 'display_fps' not in st.session_state: st.session_state.display_fps = 0
