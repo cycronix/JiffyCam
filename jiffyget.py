@@ -13,9 +13,6 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple, List, Dict, Any
 import cv2
 
-global timestamps
-timestamps = None
-
 # Cache for active sessions to reduce HTTP requests
 cached_active_sessions = {}
 cache_expiry_time = 0
@@ -137,8 +134,7 @@ def get_session_port(session: str, data_dir: str) -> Optional[int]:
         return None
 
 def reset_timestamps():
-    global timestamps
-    timestamps = None
+    return   # foo
 
 def jiffyget(time_posix: float, cam_name: str, 
              session: str, data_dir: str, 
@@ -155,7 +151,6 @@ def jiffyget(time_posix: float, cam_name: str,
     Returns:
         Tuple of (frame, timestamp) or None if no image found
     """
-    global timestamps
     #print(f"jiffyget: time_posix: {time_posix}, cam_name: {cam_name}, session: {session}, data_dir: {data_dir}, direction: {direction}")
     # Create target datetime for the selected time
     target_timestamp = time_posix * 1000.
@@ -164,18 +159,11 @@ def jiffyget(time_posix: float, cam_name: str,
 
     # Construct the base directory path
     base_dir = os.path.join(data_dir, session, str(browse_date_posix))
-    #print(f"get_timestamps, base_dir: {base_dir}, cam_name: {cam_name}, session: {session}, data_dir: {data_dir}, browse_date_posix: {browse_date_posix}")
     if not os.path.exists(base_dir):
         return None, None, True
     
     # Get timestamps data if not already available
-    timestamp_data = timestamps
-    #timestamps = None   # foo on timestamp cache
-    if not timestamp_data:
-        timestamp_data = get_timestamps(cam_name, session, data_dir, browse_date_posix)
-        # Update the global timestamps
-        timestamps = timestamp_data
-        
+    timestamp_data = get_timestamps(cam_name, session, data_dir, browse_date_posix)        
     if not timestamp_data:
         return None, None, True
     
@@ -258,12 +246,7 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
     Returns:
         Tuple of (oldest_timestamp, newest_timestamp) as datetime objects, or (None, None) if no images
     """
-    global timestamps
-    
-    #print(f"get_timestamp_range, caller: {inspect.stack()[1].function}")
-    # Force a fresh scan to ensure we have up-to-date information
-    timestamps = None
-    
+        
     # Get all valid timestamps for this recording
     all_timestamps = get_timestamps(cam_name, session, data_dir, None)
     
@@ -280,17 +263,12 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
     for ts, _ in all_timestamps:
         dt = datetime.fromtimestamp(ts / 1000)
         unique_dates.add(dt.date())
-    
-    # Store the timestamps in the global variable for future reference
-    timestamps = all_timestamps
-    
-    # Log the date range we found
-    #print(f"Valid date range for {session}: {oldest.date()} to {newest.date()} ({len(unique_dates)} days with data)")
-    
-    return oldest, newest, timestamps
+            
+    return oldest, newest, all_timestamps
 
-#import inspect
-def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int):
+import inspect
+timestamp_cache = None
+def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date):
     """Get all timestamps for the camera.
     
     Args:
@@ -301,11 +279,11 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int)
     Returns:
         List of timestamp tuples (timestamp, dir_path) for specified browse_date
     """
-    global timestamps
+    global timestamp_cache
 
     # Get all timestamps for the session
     if browse_date is None:
-        # mjm:  this actually gets called from get_timestamp_range with browse_date = None
+        # mjm:  this gets called from get_timestamp_range with browse_date = None
         #print(f"get_timestamps: browsing all dates in {session}")
         # When browsing_date is None, we need to scan all date directories
         base_dir = os.path.join(data_dir, session)
@@ -376,6 +354,7 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int)
             # Sort all timestamps from all date directories
             all_timestamps.sort()
 
+        timestamp_cache = None      # no cache for browsing all dates
         return all_timestamps
     else:
         # Regular case: browsing within a specific date
@@ -383,6 +362,11 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int)
         if not os.path.exists(base_dir):
             return None
             
+        if(timestamp_cache and timestamp_cache[1] == base_dir):
+            return timestamp_cache[0]
+        
+        #print(f"get_timestamps: base_dir: {base_dir}, browse_date: {browse_date}, caller: {inspect.stack()[1].function}")
+
         dirpaths = glob.glob(os.path.join(base_dir, "*"))
         #print(f"get_timestamps: session: {session}, browse_date: {browse_date}, base_dir: {base_dir}, caller: {inspect.stack()[1].function}")
         base_name = os.path.basename(cam_name)
@@ -408,6 +392,7 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date: int)
             return None
 
         timestamps.sort()
+        timestamp_cache = timestamps, base_dir
         return timestamps
 
 def get_locations(cam_name: str, session: str, data_dir: str, browse_date: int):
@@ -421,14 +406,10 @@ def get_locations(cam_name: str, session: str, data_dir: str, browse_date: int):
     Returns:
         List of float detection positions 0-1 for specified browse_date
     """
-    global timestamps
 
     timestamp_data = get_timestamps(cam_name, session, data_dir, browse_date)
     if timestamp_data is None:
         return None
-
-    # Store the data in global timestamps for other functions to access
-    timestamps = timestamp_data
 
     locations = []       
     for timestamp in timestamp_data:
