@@ -76,13 +76,9 @@ class JiffyConfig:
             'cam_name': 'cam0',
             'resolution': '1920x1080',  # Combined resolution field
             'save_interval': 60,  # Changed to integer default
+            'detect_interval': 5,  # Changed to integer default
             'data_dir': self.data_dir,  # Default data directory
             'dataserver_port': 8080,  # Default port for the JiffyCam data server
-            'device_aliases': OrderedDict([   # Use OrderedDict for default device aliases
-                ('USB0', '0'),
-                ('USB1', '1'),
-                ('Default', '0')
-            ])
         }
         
         # Check if we should enforce the config file exists
@@ -103,9 +99,8 @@ class JiffyConfig:
                 if 'save_interval' in config:
                     config['save_interval'] = int(config['save_interval'])
                 
-                # Ensure device_aliases exists and is an OrderedDict
-                if 'device_aliases' not in config:
-                    config['device_aliases'] = default_config['device_aliases']
+                if 'detect_interval' in config:
+                    config['detect_interval'] = int(config['detect_interval'])
                 
                 # Handle legacy config with separate width and height
                 if 'cam_width' in config and 'cam_height' in config and 'resolution' not in config:
@@ -146,10 +141,6 @@ class JiffyConfig:
             if 'data_dir' not in config and hasattr(self, 'config') and isinstance(self.config, dict) and 'data_dir' in self.config:
                 config['data_dir'] = self.config['data_dir']
             
-            # Convert device_aliases to OrderedDict to preserve order
-            if 'device_aliases' in config and isinstance(config['device_aliases'], dict):
-                config['device_aliases'] = OrderedDict(config['device_aliases'])
-            
             # If a new session is provided, update the yaml_file path
             if session and session != self.session:
                 self.session = session
@@ -163,6 +154,7 @@ class JiffyConfig:
             
             with open(self.yaml_file, 'w') as file:
                 yaml.dump(config, file, default_flow_style=False)
+            print(f"Saved configuration to: {self.yaml_file}")
             return True
         except Exception as e:
             self.last_error = f"Failed to save configuration: {str(e)}"

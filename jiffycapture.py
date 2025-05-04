@@ -281,7 +281,7 @@ class VideoCapture:
         self.last_save_time = 0  # Track last save time
         self.save_status = ""  # Track save status message
         self.skip_first_save = True  # Flag to skip the first save
-        self.image_just_saved = False  # Flag to track when an image was just saved
+        #self.image_just_saved = False  # Flag to track when an image was just saved
         self.image_saved_time = 0  # Track when the image was saved
         self.last_frame = None
         self.current_session = session  # Initialize current_session with provided session value
@@ -329,7 +329,7 @@ class VideoCapture:
         self.last_save_time = 0
         self.save_status = ""
         self.skip_first_save = True
-        self.image_just_saved = False
+        #self.image_just_saved = False
         self.image_saved_time = 0
         self.current_session = session
         self.running = True

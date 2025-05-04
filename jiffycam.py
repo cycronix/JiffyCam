@@ -66,10 +66,10 @@ def main():
     # UI interaction state flags
     if 'in_playback_mode' not in st.session_state: st.session_state.in_playback_mode = True
     if 'rt_capture' not in st.session_state: st.session_state.rt_capture = False
-    if 'need_to_display_recent' not in st.session_state: st.session_state.need_to_display_recent = True
-    if 'live_button_clicked' not in st.session_state: st.session_state.live_button_clicked = False
+    if 'need_to_display_recent' not in st.session_state: st.session_state.need_to_display_recent = False # mjm:  False for now
+    #if 'live_button_clicked' not in st.session_state: st.session_state.live_button_clicked = False
     if 'status_message' not in st.session_state: st.session_state.status_message = "Initializing..."
-    if 'image_just_saved' not in st.session_state: st.session_state.image_just_saved = False
+   #if 'image_just_saved' not in st.session_state: st.session_state.image_just_saved = False
     if 'step_direction' not in st.session_state: st.session_state.step_direction = None
     if 'autoplay_direction' not in st.session_state: st.session_state.autoplay_direction = None
     if 'autoplay_step' not in st.session_state: st.session_state.autoplay_step = False
@@ -155,8 +155,8 @@ def main():
 
     if 'browsing_date' not in st.session_state and 'init_date' in st.session_state: 
         st.session_state.browsing_date = st.session_state.init_date
-    if 'time_slider' not in st.session_state: 
-         st.session_state.time_slider = datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second)
+    #if 'time_slider' not in st.session_state: 
+    #    st.session_state.time_slider = datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second)
     
     # Add performance tracking variables
     if 'capture_fps' not in st.session_state: st.session_state.capture_fps = 0

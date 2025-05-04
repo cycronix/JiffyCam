@@ -92,6 +92,7 @@ def on_recording_change():
 
     # Update the main session variable used by other parts of the app
     st.session_state.session = new_session
+    #print(f"on_recording_change: {new_session}")
 
     # Check if the new session is active
     from jiffyget import get_active_sessions
@@ -217,20 +218,6 @@ def on_recording_change():
         # Update browsing_date directly (this isn't a widget)
         st.session_state.browsing_date = target_date
     except Exception as e:
-        import sys, traceback
-        # Get the traceback information
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-
-        # Extract the line number from the traceback
-        line_number = exc_traceback.tb_lineno
-
-        # Print the exception and line number
-        print(f"Exception: {e}")
-        print(f"Line Number: {line_number}")
-
-
-
-
         print(f"Error setting date range for new recording: {str(e)}")
         # Fall back to today's date if there's an error
         today = datetime.now().date()
@@ -244,7 +231,6 @@ def on_recording_change():
     
     set_autoplay(None)
     st.session_state.in_playback_mode = True # Default to playback when changing recording
-    st.session_state.needs_date_update = True
 
     # Reset UI state to avoid stale frames
     st.session_state.last_frame = None
@@ -260,10 +246,11 @@ def on_recording_change():
 def toggle_rt_capture():
     """Toggle real-time capture on/off"""
     st.session_state.rt_capture = not st.session_state.rt_capture
+    #print(f"toggle_rt_capture: {st.session_state.rt_capture}")
 
     if st.session_state.rt_capture:
         st.session_state.in_playback_mode = False
-        st.session_state.browsing_saved_images = False
+        #st.session_state.browsing_saved_images = False
         st.session_state.date = datetime.now().date()
 
         # Get session info
@@ -517,7 +504,7 @@ def change_day(direction):
 
 def toggle_live_pause():
     """Handle Live/Pause button click."""
-    
+    #print(f"toggle_live_pause: {st.session_state.in_playback_mode}")
     st.session_state.autoplay_direction = None  # reset autoplay direction
 
     if st.session_state.in_playback_mode:
@@ -526,9 +513,9 @@ def toggle_live_pause():
         current_date = datetime.now().date()
         browsing_date = st.session_state.get('browsing_date') or current_date
         
-        if browsing_date != current_date:
+       #if browsing_date != current_date:
             # Don't toggle to live mode if date isn't today
-            return
+            #return
             
         # Update browsing date/time to current (will be reflected in loop)
         current_time = datetime.now()
@@ -676,7 +663,8 @@ def update_image_display(direction=None):
     #print(f"update_image_display, {st.session_state.last_frame is None}, {direction}")
     if( False and direction == "current" and st.session_state.last_frame is not None):
         closest_image = st.session_state.last_frame
-        timestamp = st.session_state.last_timestamp
+        #timestamp = st.session_state.last_timestamp
+        timestamp = st.session_state.actual_timestamp
         #print(f"update_image_display, using last frame, {timestamp}")
     else:
         time_posix = datetime.combine(browse_date, datetime.min.time()) + timedelta(hours=st.session_state.hour, minutes=st.session_state.minute, seconds=st.session_state.second)
@@ -690,6 +678,7 @@ def update_image_display(direction=None):
             direction
         )
         if(eof):
+            #print(f"update_image_display: eof: {eof}")
             set_autoplay(None)
 
     success = False
@@ -699,7 +688,7 @@ def update_image_display(direction=None):
             st.session_state.last_frame = closest_image.copy()
             dts = datetime.fromtimestamp(timestamp/1000)
             st.session_state.actual_timestamp = dts
-            st.session_state.last_timestamp = timestamp
+            #st.session_state.last_timestamp = timestamp
 
             # Update time state to match the found image
             st.session_state.hour = dts.hour
@@ -1306,7 +1295,7 @@ def build_main_area():
                     # Only enable if session is active, has a port, AND the date is today
                     current_date = datetime.now().date()
                     browsing_date = st.session_state.get('browsing_date') or current_date
-                    if browsing_date == current_date:
+                    if True or browsing_date == current_date:
                         live_disabled = False
                     else:
                         live_disabled = True
@@ -1434,7 +1423,7 @@ def run_ui_update_loop():
                 st.session_state.capture_fps = capture_fps
                 
                 # Count frames for current date
-                if current_time - st.session_state.last_frames_count_update > 5:  # Update every 5 seconds
+                if False and current_time - st.session_state.last_frames_count_update > 5:  # Update every 5 seconds
                     st.session_state.last_frames_count_update = current_time
                     try:
                         # Get current date in posix milliseconds
@@ -1586,7 +1575,8 @@ def run_ui_update_loop():
                             #print(f"timestamp: {timestamp}")
                             if frame is not None:
                                 st.session_state.last_frame = frame
-                                st.session_state.last_timestamp = timestamp
+                                #st.session_state.last_timestamp = timestamp
+                                st.session_state.actual_timestamp = timestamp
                         except Exception as e:
                             print(f"Error getting last frame: {str(e)}")
                             error_placeholder.error(f"Connection error: {str(e)}")
@@ -1628,7 +1618,7 @@ def run_ui_update_loop():
                                 st.session_state.second = current_time.second
                                                             
                                 st.session_state.last_frame = frame
-                                st.session_state.last_timestamp = current_time.timestamp() * 1000
+                                st.session_state.actual_timestamp = current_time.timestamp() * 1000
                                 # Display the frame
                                 new_image_display(frame)
                             else:
@@ -1720,9 +1710,9 @@ def initialize_session_state():
     if 'in_playback_mode' not in st.session_state: st.session_state.in_playback_mode = True
     if 'rt_capture' not in st.session_state: st.session_state.rt_capture = False
     if 'need_to_display_recent' not in st.session_state: st.session_state.need_to_display_recent = True
-    if 'live_button_clicked' not in st.session_state: st.session_state.live_button_clicked = False
+    #if 'live_button_clicked' not in st.session_state: st.session_state.live_button_clicked = False
     if 'status_message' not in st.session_state: st.session_state.status_message = "Initializing..."
-    if 'image_just_saved' not in st.session_state: st.session_state.image_just_saved = False
+    #if 'image_just_saved' not in st.session_state: st.session_state.image_just_saved = False
     if 'step_direction' not in st.session_state: st.session_state.step_direction = None
     if 'autoplay_direction' not in st.session_state: st.session_state.autoplay_direction = None
     
@@ -1743,39 +1733,13 @@ def initialize_session_state():
         st.session_state.http_server_url = f"http://localhost:{st.session_state.dataserver_port}"
     
     # Configuration related state (derived from config)
-    # Ensure device_aliases is OrderedDict
-    #aliases = config.get('device_aliases', {'Default': '0'})
-    #if 'device_aliases' not in st.session_state: st.session_state.device_aliases = OrderedDict(aliases) 
-    #else: st.session_state.device_aliases = OrderedDict(st.session_state.device_aliases) # Ensure type
-
     if 'cam_name' not in st.session_state: st.session_state.cam_name = config.get('cam_name', 'cam0')
     if 'data_dir' not in st.session_state:
         st.session_state.data_dir = config.get('data_dir', 'JiffyData')
         if not os.path.exists(st.session_state.data_dir):
             os.makedirs(st.session_state.data_dir, exist_ok=True)
 
-    if 'save_interval' not in st.session_state: st.session_state.save_interval = int(config.get('save_interval', 60))
-    
-    # Determine initial cam_device (path/ID) and selected_device_alias (UI key)
-    if False and ('selected_device_alias' not in st.session_state or 'cam_device' not in st.session_state):
-        config_device_val = config.get('cam_device', 'Default') # This is likely the alias key
-        available_aliases = st.session_state.device_aliases
-        
-        if config_device_val in available_aliases:
-            st.session_state.selected_device_alias = config_device_val
-            st.session_state.cam_device = available_aliases[config_device_val]
-        else: # Config value might be a direct path/ID (legacy or manual edit)
-            st.session_state.cam_device = config_device_val 
-            # Find the alias key that matches this path/ID
-            matching_alias = None
-            for alias, path in available_aliases.items():
-                if path == config_device_val:
-                    matching_alias = alias
-                    break
-            # Set selected alias to the match, or fallback to first available alias
-            st.session_state.selected_device_alias = matching_alias or list(available_aliases.keys())[0] 
-
-    #if 'session' not in st.session_state: st.session_state.session = st.session_state.selected_device_alias
+    #if 'save_interval' not in st.session_state: st.session_state.save_interval = int(config.get('save_interval', 60))
     
     # Time/Date related state
     current_time = datetime.now()
