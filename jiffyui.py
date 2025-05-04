@@ -1501,8 +1501,8 @@ def update_status():
     # Store FPS Camera in session state
     st.session_state.capture_fps = capture_fps
     
-    # Count frames for current date
-    if True and current_time - st.session_state.last_frames_count_update > 5:  # Update every 5 seconds
+    # Count frames for current date  (disabled due to strange behavior switching recorings at eof)
+    if False and current_time - st.session_state.last_frames_count_update > 5:  # Update every 5 seconds
         st.session_state.last_frames_count_update = current_time
         try:
             # Get current date in posix milliseconds
