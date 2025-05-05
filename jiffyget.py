@@ -134,7 +134,9 @@ def get_session_port(session: str, data_dir: str) -> Optional[int]:
         return None
 
 def reset_timestamps():
-    return   # foo
+    global timestamp_cache
+    timestamp_cache = None
+    return   
 
 def jiffyget(time_posix: float, cam_name: str, 
              session: str, data_dir: str, 
@@ -230,6 +232,7 @@ def jiffyget(time_posix: float, cam_name: str,
         #print(f"jiffyget: image_path: {image_path}, closest_timestamp: {closest_timestamp}")
         # Read the image and convert timestamp to datetime for display
         frame = cv2.imread(image_path)
+        #print(f"jiffyget: frame: {image_path}, shape: {frame.shape}")
         #closest_datetime = datetime.fromtimestamp(closest_timestamp / 1000)
         return frame, closest_timestamp, eof
     

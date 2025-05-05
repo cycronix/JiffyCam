@@ -182,7 +182,7 @@ def main():
 
     # --- Run Main UI Update Loop --- 
     #print(f"running main ui update loop")
-    st.session_state.needs_date_update = True
+    #st.session_state.needs_date_update = True
     run_ui_update_loop() # Loop fetches placeholders from session_state
 
 # --- Entry Point --- 

@@ -56,6 +56,7 @@ def heartbeat():
     if(st.session_state.autoplay_step != None):
         on_navigation_button(st.session_state.autoplay_step, False)
         st.session_state.autoplay_step = None
+        time.sleep(0.1)
 
 def set_autoplay(direction):
     """Set autoplay direction."""
@@ -134,7 +135,7 @@ def on_recording_change():
     # Clear existing timestamps and date range info
     st.session_state.oldest_timestamp = None # Force range recalculation
     st.session_state.newest_timestamp = None
-    st.session_state.need_to_display_recent = True # Show most recent for new recording
+    #st.session_state.need_to_display_recent = True # Show most recent for new recording
     st.session_state.last_displayed_timestamp = None # Force display update
     
     # Clear the valid dates cache
@@ -211,10 +212,6 @@ def on_recording_change():
         # Instead, store target date in a separate variable
         st.session_state.target_browsing_date = target_date
         
-        # Flag that we need to update the date on next rerun
-        # This will be handled by the build_main_area function
-        st.session_state.needs_date_update = True
-        
         # Update browsing_date directly (this isn't a widget)
         st.session_state.browsing_date = target_date
     except Exception as e:
@@ -223,7 +220,7 @@ def on_recording_change():
         today = datetime.now().date()
         st.session_state.target_browsing_date = today
         st.session_state.browsing_date = today
-        st.session_state.needs_date_update = True
+
         # Set time to end of day to find the latest image
         st.session_state.hour = 23
         st.session_state.minute = 59
@@ -235,10 +232,9 @@ def on_recording_change():
     # Reset UI state to avoid stale frames
     st.session_state.last_frame = None
     st.session_state.actual_timestamp = None
-    
-    #if st.session_state.get('video_placeholder'):
-    #    display_most_recent_image()
-    #st.session_state.date = st.session_state.browsing_date
+
+    # Flag that we need to update the date on next rerun
+    # This will be handled by the build_main_area function
     st.session_state.needs_date_update = True
     st.session_state.init_date = st.session_state.browsing_date
 
@@ -282,7 +278,6 @@ def on_date_change():
         print(f"Error counting frames: {str(e)}")
         st.session_state.frames_detected = 0
     
-
     # Instead of checking need_to_display_recent flag, 
     # always display the most recent image for the selected date
     # First set time to end of day to find the latest image
@@ -310,7 +305,9 @@ def on_navigation_button(direction, onclick=True):
         direction: "up" for next image or "down" for previous image
         stopAuto: Whether to stop autoplay mode when navigating
     """
-    #print(f"on_navigation_button: {direction}, {onclick}, {inspect.stack()[1].function}")
+ #   if(onclick and st.session_state.step_direction == None):
+    #print(f"on_navigation_button: {direction}, {onclick}, {inspect.stack()[1].function}, step_direction: {st.session_state.step_direction}")
+
     st.session_state.in_playback_mode = True
 
     # Increment/decrement time logic
@@ -328,6 +325,7 @@ def on_navigation_button(direction, onclick=True):
     # Fetch placeholders from session_state inside the update function
     if onclick:
         st.session_state.step_direction = direction  # let rerun handle the update  
+        #time.sleep(0.1)
     else:
         update_image_display(direction=direction)
 
@@ -432,7 +430,7 @@ def change_day(direction):
     # IMPORTANT: Don't modify st.session_state.date directly
     # Instead, set up for update on next rerun 
     st.session_state.target_browsing_date = new_date
-    st.session_state.needs_date_update = True
+    #st.session_state.needs_date_update = True
     
     # Update browsing_date directly (this isn't a widget)
     st.session_state.browsing_date = new_date
@@ -483,7 +481,6 @@ def on_fast_reverse_button():
         tweek_time('down')
     else:
         st.session_state.autoplay_direction = None
-        #st.session_state.needs_date_update = True
 
     # Set to playback mode like other buttons do
     st.session_state.in_playback_mode = True
@@ -543,7 +540,7 @@ def on_next_day_button():
 
 # --- UI Update Functions ---
 def new_image_display(frame):
-    if frame is None:
+    if frame is None or frame.size == 0:
         return
 
     """Display a new image based on the current date and time."""
@@ -557,17 +554,12 @@ def new_image_display(frame):
         st.session_state.display_frame_count = 0
         st.session_state.last_display_time = current_time
     
-    #print(f"new_image_display: {inspect.stack()[1].function}")
+    #print(f"new_image_display: {inspect.stack()[1].function}, shape: {frame.shape}")
     if(not st.session_state.video_placeholder):     # delay creation to avoid flickering
-        #print(f"new_image_display: video_placeholder is None, {inspect.stack()[1].function}")
         st.session_state.video_placeholder = st.image(frame, channels="BGR", use_container_width=True)
     else:
-        #print(f"new_image_display: video_placeholder is not None, {inspect.stack()[1].function}")
         st.session_state.video_placeholder.image(frame, channels="BGR", use_container_width=True)
     
-    #video_placeholder = st.session_state.video_placeholder
-    #video_placeholder.image(frame, channels="BGR", use_container_width=True)
-
     timearrow_placeholder = st.session_state.timearrow_placeholder
     ta_img = generate_timeline_arrow()
     timearrow_placeholder.image(ta_img, channels="RGB", use_container_width=True)
@@ -613,7 +605,7 @@ def update_image_display(direction=None):
     if closest_image is not None:
         try:
             # Store frame and actual timestamp
-            st.session_state.last_frame = closest_image.copy()
+            st.session_state.last_frame = closest_image   #.copy()
             dts = datetime.fromtimestamp(timestamp/1000)
             st.session_state.actual_timestamp = dts
             #st.session_state.last_timestamp = timestamp
@@ -730,7 +722,7 @@ def display_most_recent_image():
     # Search backwards ("down") for the latest image before now
     update_image_display(direction="down")
     st.session_state.need_to_display_recent = False # Mark as done
-    st.session_state.needs_date_update = True
+    #st.session_state.needs_date_update = True
 
 # --- UI Building Functions ---
 
@@ -1288,13 +1280,6 @@ def build_main_area():
     # Return placeholders needed outside this build function (by callbacks and main loop)
     return video_placeholder, time_display, timearrow_placeholder
 
-#def update_server_state(frame):
-#    if frame is not None: 
-#        with no_rerun:      
-#            with server_state_lock["last_frame"]:
-#                server_state.last_frame = frame
-#                server_state.timestamp = datetime.now()
-
 # --- Main UI Update Loop (runs in jiffycam.py) ---
 def run_ui_update_loop():
     """The main loop to update the UI based on capture state and interactions."""
@@ -1317,7 +1302,8 @@ def run_ui_update_loop():
     
     #if(not st.session_state.autoplay_direction):
     if st.session_state.needs_date_update:
-        change_day("down")
+        #print(f"needs_date_update: {inspect.stack()[1].function}")
+        change_day("current")
         update_image_display("current")
         st.session_state.needs_date_update = False
     elif (st.session_state.need_to_display_recent and not is_capturing):
@@ -1443,20 +1429,26 @@ def run_ui_update_loop():
                         
                         if st.session_state.step_direction not in [None, "None"]:
                             need_display_update = True
+                            #print(f"step_direction: {inspect.stack()[1].function}")
+                            st.session_state.step_direction = None
                         elif 'last_displayed_timestamp' not in st.session_state or st.session_state.last_displayed_timestamp is None:
                             need_display_update = True
-                        elif st.session_state.last_displayed_timestamp != st.session_state.actual_timestamp:
-                            need_display_update = True
-                        
+                            #print(f"last_displayed_timestamp: {inspect.stack()[1].function}")
+                        #elif st.session_state.last_displayed_timestamp != st.session_state.actual_timestamp:
+                        #    need_display_update = True
+                        #    print(f"actual_timestamp: {inspect.stack()[1].function}")
+
                         if need_display_update:
+                            #print(f"need_display_update: {inspect.stack()[1].function}")
                             # Only display if we need to update the image
                             new_image_display(st.session_state.last_frame)    #???
+                            st.session_state.last_frame = None
                             st.session_state.last_displayed_timestamp = st.session_state.actual_timestamp
                             
                             # Reset step_direction to prevent continuous updates
                             if st.session_state.step_direction not in ["up", "down"]:
                                 st.session_state.step_direction = "None"
-
+                            
                         ts = st.session_state.actual_timestamp
                         new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback (Stopped)"
                     else:
