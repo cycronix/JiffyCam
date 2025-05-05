@@ -132,26 +132,6 @@ JiffyData/
             └── [CameraName].jpg
 ```
 
-## Troubleshooting
-
-### Common Issues
-
-1. **Camera not detected**
-   - Verify camera is properly connected
-   - Check device permissions
-   - Try different device indices in `jiffycam.yaml`
-
-2. **Performance issues**
-   - Reduce save interval
-   - Lower resolution
-   - Close other applications
-   - Check FPS metrics in the UI
-
-3. **Storage issues**
-   - Check available disk space
-   - Verify write permissions
-   - Clear old captures if needed
-
 ## Development
 
 ### Contributing
