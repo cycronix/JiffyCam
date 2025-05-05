@@ -12,15 +12,15 @@ JiffyCam is a portable all-Python webapp that uses Streamlit for the UI to captu
 
 ### Key Features
 
-- **Real-time capture**: Capture video from multiple camera devices
-- **Object detection**: Built-in support for object detection with jiffydetect
+- **Real-time capture**: Capture video from camera devices
+- **Object detection**: Built-in support for object detection with YOLOv8
 - **Time-based browsing**: Navigate through historical images with an intuitive timeline interface
 - **Interactive time controls**: Navigate via time slider, next/previous buttons, or direct time input
 - **Live/Pause toggle**: Seamlessly switch between live view and browsing historical images
 - **Status indicators**: Clear status messages for captures, saves, and browsing
 - **Date picker**: Easily browse images from different dates
 - **Configurable save interval**: Set automatic frame saving at custom intervals
-- **Device management**: Easily switch between different camera devices
+- **Performance metrics**: Real-time FPS monitoring for both capture and display
 
 ## Installation
 
@@ -68,13 +68,13 @@ JiffyCam is a portable all-Python webapp that uses Streamlit for the UI to captu
 
 - Run standalone capture:
    ```bash
-   python jiffycapture.py DeviceAlias --data-dir CustomDataDir
+   python jiffycapture.py CustomDataDir
    ```
 
 ## Usage
 
 ### Camera Setup
-1. Select camera device from dropdown in the sidebar
+1. Configure the camera device in `jiffycam.yaml`
 2. Configure the save interval (in seconds) to control how often frames are saved
 3. Click "Start Capture" to begin capturing video
 
@@ -87,6 +87,7 @@ JiffyCam is a portable all-Python webapp that uses Streamlit for the UI to captu
 ### Status Information
 The application provides status information in the sidebar:
 - Current FPS during live capture
+- Display FPS metrics
 - Timestamp information when viewing saved images
 - Notifications when frames are saved
 - Error messages if issues occur
@@ -96,13 +97,12 @@ The application provides status information in the sidebar:
 JiffyCam uses a YAML configuration file (`jiffycam.yaml`) for settings. Here's a sample configuration:
 
 ```yaml
-cam_device: 0  # Camera device identifier
-cam_name: "Main Camera"  # Name used for captured images
-save_interval: 5  # Time between automatic saves (seconds)
-device_aliases:
-  main: 0  # Alias for primary camera
-  secondary: 1  # Alias for secondary camera
-data_dir: "JiffyData"  # Directory for captured images
+cam_device: '0'  # Camera device identifier
+cam_name: 'cam0'  # Name used for captured images
+save_interval: 600  # Time between automatic saves (seconds)
+detect_interval: 5  # Time between object detection runs (seconds)
+dataserver_port: 8081  # Port for the data server
+weights: 'models/yolov8l.pt'  # Path to YOLOv8 model weights
 ```
 
 ### Configuration Locations
@@ -117,7 +117,7 @@ JiffyCam consists of several key components:
 - **jiffyui.py**: Builds the Streamlit UI components, handles callbacks, and manages the UI update loop
 - **jiffycapture.py**: Core video capture functionality, runs capture thread, manages frame queue
 - **jiffyconfig.py**: Handles loading, saving, and managing configuration from `jiffycam.yaml`
-- **jiffydetect.py**: Object detection functionality (optional)
+- **jiffydetect.py**: Object detection functionality using YOLOv8
 - **jiffyput.py**: Frame processing and storage module (saves frames)
 - **jiffyget.py**: Image retrieval module (loads saved frames)
 
@@ -139,12 +139,13 @@ JiffyData/
 1. **Camera not detected**
    - Verify camera is properly connected
    - Check device permissions
-   - Try different device indices
+   - Try different device indices in `jiffycam.yaml`
 
 2. **Performance issues**
    - Reduce save interval
    - Lower resolution
    - Close other applications
+   - Check FPS metrics in the UI
 
 3. **Storage issues**
    - Check available disk space
