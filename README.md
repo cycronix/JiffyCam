@@ -10,7 +10,7 @@ A modern Streamlit-based video capture utility for capturing and browsing video 
 
 JiffyCam is a portable all-Python webapp that uses Streamlit for the UI to capture video from a camera, detect objects, save frames, and browse historical images. It provides an intuitive interface for real-time video capture and historical image browsing with time-based navigation.
 
-## Features
+### Key Features
 
 - **Real-time capture**: Capture video from multiple camera devices
 - **Object detection**: Built-in support for object detection with jiffydetect
@@ -24,49 +24,57 @@ JiffyCam is a portable all-Python webapp that uses Streamlit for the UI to captu
 
 ## Installation
 
+### Prerequisites
+
+- Python 3.8 or higher
+- pip (Python package installer)
+- Virtual environment (recommended)
+
+### Setup Steps
+
 1. Clone the repository:
    ```bash
    git clone https://github.com/your-username/jiffycam.git
    cd jiffycam
    ```
 
-2. Install dependencies:
+2. Create and activate a virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. Run the application:
+4. Run the application:
    ```bash
    streamlit run jiffycam.py
    ```
 
-   To run with a specific port:
+### Running Options
+
+- Run on a specific port:
    ```bash
    streamlit run jiffycam.py --server.port 8080
    ```
    
-   To specify a custom data directory (overrides the default 'JiffyData'):
+- Use a custom data directory:
    ```bash
    streamlit run jiffycam.py CustomDataDir
    ```
-   
-   When using a custom data directory, JiffyCam will look for session-specific 
-   configuration files in that directory (e.g., CustomDataDir/SessionName/jiffycam.yaml).
-   
-   Both jiffycam.py and jiffycapture.py support custom data directories:
+
+- Run standalone capture:
    ```bash
-   # For the Streamlit UI:
-   streamlit run jiffycam.py CustomDataDir
-   
-   # For standalone capture:
    python jiffycapture.py DeviceAlias --data-dir CustomDataDir
    ```
-Note: install and run in a Python virtual environment.
 
 ## Usage
 
 ### Camera Setup
-1. Select camera device from dropdown in the sidebar.  See Configuration below.
+1. Select camera device from dropdown in the sidebar
 2. Configure the save interval (in seconds) to control how often frames are saved
 3. Click "Start Capture" to begin capturing video
 
@@ -85,29 +93,33 @@ The application provides status information in the sidebar:
 
 ## Configuration
 
-JiffyCam stores its configuration in `jiffycam.yaml`. The main settings include:
+JiffyCam uses a YAML configuration file (`jiffycam.yaml`) for settings. Here's a sample configuration:
 
-- `cam_device`: Camera device identifier
-- `cam_name`: Name used for captured images
-- `save_interval`: Time between automatic object detection & saves (in seconds)
-- `device_aliases`: Named aliases for camera devices
-- `data_dir`: Directory where captures are stored
+```yaml
+cam_device: 0  # Camera device identifier
+cam_name: "Main Camera"  # Name used for captured images
+save_interval: 5  # Time between automatic saves (seconds)
+device_aliases:
+  main: 0  # Alias for primary camera
+  secondary: 1  # Alias for secondary camera
+data_dir: "JiffyData"  # Directory for captured images
+```
+
+### Configuration Locations
+- Default: `./jiffycam.yaml`
+- Session-specific: `[data_dir]/[SessionName]/jiffycam.yaml`
 
 ## Components
 
 JiffyCam consists of several key components:
 
-- **jiffycam.py**: Main application entry point, session state initialization.
-- **jiffyui.py**: Builds the Streamlit UI components, handles callbacks, and manages the UI update loop.
-- **jiffycapture.py**: Core video capture functionality, runs capture thread, manages frame queue.
-- **jiffyconfig.py**: Handles loading, saving, and managing configuration from `jiffycam.yaml`.
-- **jiffydetect.py**: Object detection functionality (optional).
-- **jiffyput.py**: Frame processing and storage module (saves frames).
-- **jiffyget.py**: Image retrieval module (loads saved frames).
-
-## Recent Improvements
-
-- **State of Flux**: early development with major unpredictable changes
+- **jiffycam.py**: Main application entry point, session state initialization
+- **jiffyui.py**: Builds the Streamlit UI components, handles callbacks, and manages the UI update loop
+- **jiffycapture.py**: Core video capture functionality, runs capture thread, manages frame queue
+- **jiffyconfig.py**: Handles loading, saving, and managing configuration from `jiffycam.yaml`
+- **jiffydetect.py**: Object detection functionality (optional)
+- **jiffyput.py**: Frame processing and storage module (saves frames)
+- **jiffyget.py**: Image retrieval module (loads saved frames)
 
 ## Data Storage
 
@@ -120,6 +132,48 @@ JiffyData/
             └── [CameraName].jpg
 ```
 
+## Troubleshooting
+
+### Common Issues
+
+1. **Camera not detected**
+   - Verify camera is properly connected
+   - Check device permissions
+   - Try different device indices
+
+2. **Performance issues**
+   - Reduce save interval
+   - Lower resolution
+   - Close other applications
+
+3. **Storage issues**
+   - Check available disk space
+   - Verify write permissions
+   - Clear old captures if needed
+
+## Development
+
+### Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+### Building from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/your-username/jiffycam.git
+
+# Install development dependencies
+pip install -r requirements-dev.txt
+
+# Run tests
+pytest
+```
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
@@ -129,7 +183,6 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 For any inquiries or issues, please contact:
 
 - GitHub: [cycronix](https://github.com/cycronix)
-
 
 ## Acknowledgements
 
