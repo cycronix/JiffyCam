@@ -75,7 +75,7 @@ class JiffyConfig:
             'session': 'Default',  # Default session value, but not saved to YAML anymore
             'cam_name': 'cam0',
             'resolution': '1920x1080',  # Combined resolution field
-            'save_interval': 60,  # Changed to integer default
+            'save_interval': 600,  # Changed to integer default
             'detect_interval': 5,  # Changed to integer default
             'data_dir': self.data_dir,  # Default data directory
             'dataserver_port': 8080,  # Default port for the JiffyCam data server
@@ -96,11 +96,10 @@ class JiffyConfig:
                     raise ValueError(f"Empty or invalid YAML in {self.yaml_file}")
                     
                 # Ensure save_interval is an integer
-                if 'save_interval' in config:
-                    config['save_interval'] = int(config['save_interval'])
-                
-                if 'detect_interval' in config:
-                    config['detect_interval'] = int(config['detect_interval'])
+                #if 'save_interval' in config:
+                #    config['save_interval'] = int(config['save_interval'])
+                #if 'detect_interval' in config:
+                #    config['detect_interval'] = int(config['detect_interval'])
                 
                 # Handle legacy config with separate width and height
                 if 'cam_width' in config and 'cam_height' in config and 'resolution' not in config:

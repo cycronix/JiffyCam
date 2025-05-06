@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from jiffydetect import detect
 
 prevframe = None
-def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path='models/yolov8l.pt'):
+def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path, save_frame: bool, detect_frame: bool):
     """
     Process and save a video frame.
 
@@ -31,20 +31,23 @@ def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path
     global prevframe
 
     try:
+        #print(f"jiffyput: save_frame: {save_frame}, detect_frame: {detect_frame}")
         # Set JPEG quality to 95
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
 
-        detect_mode = True
-        if detect_mode:
+        #detect_mode = True
+        if detect_frame:
             tryframe = detect(frame, prevframe, weights_path)  # pass previous frame to reject no-motion detections
-            if tryframe is None:       # ONLY save detections!  (to do: heartbeat saves)
-                return None
-                
-            prevframe = frame
-            frame = tryframe
+            if tryframe is not None:       # ONLY save detections!  (to do: heartbeat saves)
+                save_frame = True  # save the detection frame
+                prevframe = frame
+                frame = tryframe
+
+        if not save_frame:
+            return None
 
         # Create save directory using timestamp
-        timestamp_ms = int(time_posix * 1000)
+        #timestamp_ms = int(time_posix * 1000)
         browse_date = datetime.fromtimestamp(time_posix).date()
         browse_date_ms = int(time.mktime(browse_date.timetuple()) * 1000)
         browse_delta_ms = int(time_posix * 1000 - browse_date_ms)

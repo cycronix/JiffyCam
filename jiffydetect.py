@@ -33,7 +33,7 @@ TARGETS = Vehicle + Animal + Person
 PutDate = False
 PutDetect = False				# put cropped image of detection (e.g. 'vehicle.jpg')
 
-MDET = 0.15                                      # motion detect trigger level (linear 0-1) (was .1)
+MDET = 0.12                                      # motion detect trigger level (linear 0-1) (was .1)
 MTHRESH = 1                                     # motion detect noise reject threshold (per raw pixel) (was 4)
 
 hide_labels = False
@@ -202,7 +202,7 @@ def box_label(im=None, box=None, label='', mycolor=(0,0,255), txt_color=(0,0,0),
     cv2.rectangle(im, p1, p2, mycolor, -1, cv2.LINE_AA)  # filled
     cv2.putText(im, label, (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),0, lw / 3, txt_color, thickness=tf, lineType=cv2.LINE_AA)
         
-    #addBorder(im)  	# add border frame to highlight target-hit
+    addBorder(im)  	# add border frame to highlight target-hit
 
     return im
 

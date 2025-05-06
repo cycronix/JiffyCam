@@ -140,6 +140,7 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
                             statusHtml += `<p>Resolution: <strong>${data.resolution}</strong></p>`;
                             statusHtml += `<p>Total Frames: <strong>${data.frame_count}</strong></p>`;
                             statusHtml += `<p>Last Save: <strong>${data.last_save_time || 'None'}</strong></p>`;
+                            statusHtml += `<p>Last Detect: <strong>${data.last_detect_time || 'None'}</strong></p>`;
                             if (data.error) {
                                 statusHtml += `<p style="color: red;">Error: ${data.error}</p>`;
                             }
@@ -193,6 +194,7 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
                 "fps": fps,
                 "resolution": f"{width}x{height}",
                 "last_save_time": datetime.fromtimestamp(global_capture_instance.last_save_time).strftime('%Y-%m-%d %H:%M:%S') if global_capture_instance.last_save_time > 0 else None,
+                "last_detect_time": datetime.fromtimestamp(global_capture_instance.last_detect_time).strftime('%Y-%m-%d %H:%M:%S') if global_capture_instance.last_detect_time > 0 else None,
                 "error": global_capture_instance.last_error,
                 "session": current_session,
                 "active_session": current_session  # More explicit name for UI
@@ -279,6 +281,7 @@ class VideoCapture:
         self.current_width = 0
         self.current_height = 0
         self.last_save_time = 0  # Track last save time
+        self.last_detect_time = 0  # Track last detect time
         self.save_status = ""  # Track save status message
         self.skip_first_save = True  # Flag to skip the first save
         #self.image_just_saved = False  # Flag to track when an image was just saved
@@ -294,14 +297,16 @@ class VideoCapture:
         self.stop_event.set()
         self.running = False
 
-    def send_frame(self, cam_name: str, frame, ftime: float, session: str):
+    def send_frame(self, cam_name: str, frame, ftime: float, session: str, save_frame: bool, detect_frame: bool):
         """Send a frame to the data server."""
         try:
             # Process and save the frame
-            result = jiffyput(cam_name, frame, ftime, session, self.config_manager.data_dir, self.config.get('weights', 'models/yolov8l.pt'))
+            result = jiffyput(cam_name, frame, ftime, session, self.config_manager.data_dir, \
+                        self.config.get('weights', 'models/yolov8l.pt'), save_frame, detect_frame)
             if result is not None:
                 self.frame_count += 1
-                self.last_save_time = ftime
+                #self.last_save_time = ftime
+                #self.last_detect_time = ftime
                 return True
             return False
         except Exception as e:
@@ -309,7 +314,7 @@ class VideoCapture:
             self.handle_error(error_msg)
             return False
 
-    def capture_video(self, cam_device, cam_name, width, height, save_interval, session):
+    def capture_video(self, cam_device, cam_name, width, height, save_interval, detect_interval, session):
         """Initialize and run video capture loop - simplified direct version."""
         
         # Check for runtime limit in config
@@ -327,6 +332,7 @@ class VideoCapture:
         self.current_width = 0
         self.current_height = 0
         self.last_save_time = 0
+        self.last_detect_time = 0
         self.save_status = ""
         self.skip_first_save = True
         #self.image_just_saved = False
@@ -362,9 +368,10 @@ class VideoCapture:
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
-        save_frame = False  # Initialize as False to skip first frame
+        save_frame = detect_frame = False  # Initialize as False to skip first frame
         last_fps_time = time.time()
         self.last_save_time = 0  # Initialize last save time
+        self.last_detect_time = 0  # Initialize last detect time
         frames_this_second = 0
         current_fps = 0
         consecutive_failures = 0  # Track consecutive read failures
@@ -381,7 +388,7 @@ class VideoCapture:
                     
                 # Periodic status update (every 60 seconds)
                 current_time = time.time()
-                if current_time - last_status_time >= 60:
+                if current_time - last_status_time >= 600:
                     print(f"Capturing at {current_fps} FPS, {width}x{height}, Total frames: {self.frame_count}")
                     last_status_time = current_time
                 
@@ -394,9 +401,15 @@ class VideoCapture:
                     frame_copy = frame.copy()
 
                     # Regular interval saving for subsequent frames
+                    save_frame = detect_frame = False
                     if save_interval > 0 and (current_time - self.last_save_time) >= save_interval:
                         save_frame = True
                         self.last_save_time = current_time
+
+                    # Regular interval detection for subsequent frames
+                    if detect_interval > 0 and (current_time - self.last_detect_time) >= detect_interval:
+                        detect_frame = True
+                        self.last_detect_time = current_time
 
                     # Update FPS calculation
                     frames_this_second += 1
@@ -405,11 +418,11 @@ class VideoCapture:
                         frames_this_second = 0
                         last_fps_time = current_time
 
-                    if save_frame:
-                        frame = self.send_frame(cam_name, frame, time.time(), session)
+                    if save_frame or detect_frame:
+                        frame = self.send_frame(cam_name, frame, time.time(), session, save_frame, detect_frame)
                     if self.error_event.is_set():  # Check if error occurred in send_frame
                         break
-                    save_frame = False
+                    #save_frame = False
                     self.frame_count += 1
 
                     # Update frame queue
@@ -498,8 +511,10 @@ def parse_args():
                         help='Override camera name')
     parser.add_argument('--resolution', type=str,
                         help='Resolution in format WxH (e.g. 1920x1080)')
-    parser.add_argument('--interval', type=int,
+    parser.add_argument('--save_interval', type=int,
                         help='Interval between saved frames in seconds')
+    parser.add_argument('--detect_interval', type=int,
+                        help='Interval between detection frames in seconds')
     parser.add_argument('--runtime', type=int, default=0,
                         help='Run for specified number of seconds then exit (0 for indefinite)')
     parser.add_argument('--port', type=int, default=8080,
@@ -574,8 +589,9 @@ def run_standalone():
         width, height = 1920, 1080
         print(f"Warning: Invalid resolution format '{resolution_str}', using default 1920x1080")
     
-    save_interval = args.interval if args.interval is not None else int(config.get('save_interval', 60))
-    
+    save_interval = args.save_interval if args.save_interval is not None else int(config.get('save_interval', 60))
+    detect_interval = args.detect_interval if args.detect_interval is not None else int(config.get('detect_interval', 5))
+
     # Set runtime limit if specified
     if args.runtime > 0:
         config['runtime'] = args.runtime
@@ -588,6 +604,7 @@ def run_standalone():
     print(f"  Camera Name: {cam_name}")
     print(f"  Resolution: {width}x{height}")
     print(f"  Save Interval: {save_interval} seconds")
+    print(f"  Detect Interval: {detect_interval} seconds")
     print(f"  Config File: {capture.config_manager.yaml_file}")
     print(f"  Runtime: {args.runtime if args.runtime > 0 else 'Indefinite'} seconds")
     
@@ -609,6 +626,7 @@ def run_standalone():
             width=width,
             height=height,
             save_interval=save_interval,
+            detect_interval=detect_interval,
             session=session
         )
     except KeyboardInterrupt:
