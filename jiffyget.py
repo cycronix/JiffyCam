@@ -176,14 +176,20 @@ def jiffyget(time_posix: float, cam_name: str,
     newest_timestamp = timestamp_data[-1][0] 
     #print(f"oldest_timestamp: {oldest_timestamp}, newest_timestamp: {newest_timestamp}, target_timestamp: {target_timestamp}")
     # If closest timestamp is outside range of timestamps, use oldest or newest
+
+    eof = False
     if(target_timestamp <= oldest_timestamp):
         closest_dir = timestamp_data[0][1]
-        closest_timestamp = timestamp_data[0][0]
-        eof = True
+        closest_timestamp = oldest_timestamp
+        if(direction == "down"):
+            eof = True
+        #print(f"jiffyget: eof: {eof}, direction: {direction}")
     elif(target_timestamp >= newest_timestamp):
         closest_dir = timestamp_data[-1][1]
         closest_timestamp = newest_timestamp
-        eof = True
+        if(direction == "up"):
+            eof = True
+        #print(f"jiffyget: eof: {eof}, direction: {direction}")
     else:
         eof = False
         closest_dir = None

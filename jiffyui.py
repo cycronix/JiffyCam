@@ -22,25 +22,7 @@ from jiffyget import (
     reset_timestamps
 )
 from jiffyvis import generate_timeline_image, generate_timeline_arrow, format_time_12h
-
-# Import from extracted modules
-try:
-    from jiffyclient import JiffyCamClient
-except ImportError:
-    print("Warning: JiffyCamClient module not found. HTTP mode will be unavailable.")
-    
-# For normal rerun prevention in callback context
-#no_rerun = threading.Lock()
-
-# Import UI components (may be imported within individual functions as needed)
-# import jiffyui_components
-
-# following just to avoid error when importing YOLO
-#import torch
-#torch.classes.__path__ = [] # add this line to manually set it to empty. 
-
-# Add threading module for compatibility
-#import threading
+from jiffyclient import JiffyCamClient
 
 # --- UI Helper Functions ---
 
@@ -56,7 +38,7 @@ def heartbeat():
     if(st.session_state.autoplay_step != None):
         on_navigation_button(st.session_state.autoplay_step, False)
         st.session_state.autoplay_step = None
-        time.sleep(0.1)
+        time.sleep(0.1)     # delay to allow for button press to be processed, else video glitch possible
 
 def set_autoplay(direction):
     """Set autoplay direction."""
@@ -478,6 +460,7 @@ def on_fast_reverse_button():
     """Handle fast reverse button click."""
     if st.session_state.autoplay_direction == None:
         set_autoplay("down")
+        st.session_state.autoplay_step = "down"
         tweek_time('down')
     else:
         st.session_state.autoplay_direction = None
@@ -1321,7 +1304,7 @@ def run_ui_update_loop():
 
             # Update server connection status display (every 2 seconds)
             current_time = time.time()
-            if (not st.session_state.autoplay_direction) and (current_time - server_status_update_time > 2):
+            if (False and not st.session_state.autoplay_direction) and (current_time - server_status_update_time > 2):
                 check_errors = update_status()
                 server_status_update_time = current_time
                 if check_errors:
@@ -1494,7 +1477,7 @@ def update_status():
     st.session_state.capture_fps = capture_fps
     
     # Count frames for current date  (disabled due to strange behavior switching recorings at eof)
-    if False and current_time - st.session_state.last_frames_count_update > 5:  # Update every 5 seconds
+    if current_time - st.session_state.last_frames_count_update > 5:  # Update every 5 seconds
         st.session_state.last_frames_count_update = current_time
         try:
             # Get current date in posix milliseconds
@@ -1608,151 +1591,3 @@ def update_status():
             help="Time of last image detection and save",
             border=True
         )
-
-
-
-def initialize_session_state():
-    """Initialize session state variables."""
-    # Load config for default values
-    from jiffyconfig import JiffyConfig
-    from collections import OrderedDict
-    
-    # Check if data_dir is already set in session state (from command line arguments)
-    if 'data_dir' in st.session_state:
-        config_manager = JiffyConfig(data_dir=st.session_state.data_dir)
-    else:
-        config_manager = JiffyConfig()
-    config = config_manager.config
-    
-    # UI interaction state flags
-    if 'in_playback_mode' not in st.session_state: st.session_state.in_playback_mode = True
-    if 'rt_capture' not in st.session_state: st.session_state.rt_capture = False
-    if 'need_to_display_recent' not in st.session_state: st.session_state.need_to_display_recent = True
-    #if 'live_button_clicked' not in st.session_state: st.session_state.live_button_clicked = False
-    if 'status_message' not in st.session_state: st.session_state.status_message = "Initializing..."
-    #if 'image_just_saved' not in st.session_state: st.session_state.image_just_saved = False
-    if 'step_direction' not in st.session_state: st.session_state.step_direction = None
-    if 'autoplay_direction' not in st.session_state: st.session_state.autoplay_direction = None
-    
-    # Default to HTTP mode
-    if 'use_http_mode' not in st.session_state: st.session_state.use_http_mode = True
-    
-    # Initialize dataserver_port from config
-    if 'dataserver_port' not in st.session_state: 
-        # Try to get the dataserver_port from config, but use None if not found
-        st.session_state.dataserver_port = int(config.get('dataserver_port', 0)) or None
-    
-    # Set http_server_port to match dataserver_port for consistency
-    if 'http_server_port' not in st.session_state:
-        st.session_state.http_server_port = st.session_state.dataserver_port
-    
-    # Build HTTP server URL with the configured port (if available)
-    if 'http_server_url' not in st.session_state and st.session_state.dataserver_port:
-        st.session_state.http_server_url = f"http://localhost:{st.session_state.dataserver_port}"
-    
-    # Configuration related state (derived from config)
-    if 'cam_name' not in st.session_state: st.session_state.cam_name = config.get('cam_name', 'cam0')
-    if 'data_dir' not in st.session_state:
-        st.session_state.data_dir = config.get('data_dir', 'JiffyData')
-        if not os.path.exists(st.session_state.data_dir):
-            os.makedirs(st.session_state.data_dir, exist_ok=True)
-
-    #if 'save_interval' not in st.session_state: st.session_state.save_interval = int(config.get('save_interval', 60))
-    
-    # Time/Date related state
-    current_time = datetime.now()
-    if 'hour' not in st.session_state: st.session_state.hour = current_time.hour
-    if 'minute' not in st.session_state: st.session_state.minute = current_time.minute
-    if 'second' not in st.session_state: st.session_state.second = current_time.second
-    
-    # Default date to today (will be adjusted after timestamp range is determined)
-    if 'init_date' not in st.session_state: st.session_state.init_date = current_time.date()
-    
-    # Image/Timestamp state
-    if 'last_frame' not in st.session_state: st.session_state.last_frame = None
-    if 'actual_timestamp' not in st.session_state: st.session_state.actual_timestamp = None
-    if 'oldest_timestamp' not in st.session_state: st.session_state.oldest_timestamp = None
-    if 'newest_timestamp' not in st.session_state: st.session_state.newest_timestamp = None
-
-    # Add performance tracking variables
-    if 'capture_fps' not in st.session_state: st.session_state.capture_fps = 0
-    if 'display_fps' not in st.session_state: st.session_state.display_fps = 0
-    if 'last_display_time' not in st.session_state: st.session_state.last_display_time = time.time()
-    if 'display_frame_count' not in st.session_state: st.session_state.display_frame_count = 0
-    if 'frames_detected' not in st.session_state: st.session_state.frames_detected = 0
-    if 'last_frames_count_update' not in st.session_state: st.session_state.last_frames_count_update = 0
-    if 'last_displayed_timestamp' not in st.session_state: st.session_state.last_displayed_timestamp = None
-
-    # Check if we are supposed to use HTTP mode
-    if 'http_client' not in st.session_state and st.session_state.get('use_http_mode', False):
-        # Import the required modules first
-        try:
-            from jiffyget import get_active_sessions, get_session_port
-            from jiffyclient import JiffyCamClient
-            
-            # Get the current session and check if it's active
-            current_session = st.session_state.session
-            data_dir = st.session_state.data_dir
-            
-            # First check if data directory exists
-            if os.path.exists(data_dir):
-                # Check if the current session is active
-                try:
-                    active_sessions = get_active_sessions(data_dir)
-                    
-                    # Only initialize HTTP client if the current session is active
-                    if current_session in active_sessions:
-                        port = get_session_port(current_session, data_dir)
-                        if port:
-                            # Update session state with the correct port
-                            st.session_state.dataserver_port = port
-                            st.session_state.http_server_port = port
-                            
-                            # Update the server URL with the correct port
-                            st.session_state.http_server_url = f"http://localhost:{port}"
-                            
-                            # Initialize the client with the correct server URL but don't connect yet
-                            st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
-                            # No immediate connection check - will be done when actually needed
-                        else:
-                            print(f"No valid port found for session '{current_session}'")
-                    else:
-                        print(f"Session '{current_session}' is not currently active")
-                except Exception as e:
-                    print(f"Error checking active sessions: {str(e)}")
-                    # Don't create HTTP client if there was an error
-            else:
-                print(f"Data directory does not exist: {data_dir}")
-                # Don't create HTTP client if data directory doesn't exist
-        except ImportError as e:
-            print(f"Could not import required modules: {str(e)}")
-            # Don't create HTTP client if imports fail
-        except Exception as e:
-            print(f"Unexpected error during HTTP client initialization: {str(e)}")
-            # Don't create HTTP client on any error
-
-    # Get initial timestamp range - only on first load
-    if 'oldest_timestamp' not in st.session_state or st.session_state.oldest_timestamp is None:
-        try:
-            oldest, newest, timestamps = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
-            st.session_state.oldest_timestamp = oldest
-            st.session_state.newest_timestamp = newest
-            
-            # After getting timestamp range, ensure init_date is within valid range
-            current_date = st.session_state.init_date
-            min_date = oldest.date() if oldest else None
-            max_date = max(datetime.now().date(), newest.date() if newest else datetime.now().date())
-            
-            # Ensure init_date is within valid range
-            if min_date and current_date < min_date:
-                st.session_state.init_date = min_date
-            elif max_date and current_date > max_date:
-                st.session_state.init_date = max_date
-                
-        except Exception as e:
-            print(f"Error getting timestamp range: {str(e)}")
-
-    if 'browsing_date' not in st.session_state and 'init_date' in st.session_state: 
-        st.session_state.browsing_date = st.session_state.init_date
-    if 'date' not in st.session_state and 'init_date' in st.session_state:
-        st.session_state.date = st.session_state.init_date
