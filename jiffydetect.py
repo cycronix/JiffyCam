@@ -190,17 +190,17 @@ def boxdiff(newimg, previmg, xyxy, cname):
 
 # ---------------------------------------------------------------------------------------------------------------------
 # add label to detected object
-def box_label(im=None, box=None, label='', mycolor=(0,0,255), txt_color=(0,0,0), lw=3):
+def box_label(im=None, box=None, label='', mycolor=(0,0,255), txt_color=(0,0,0), lw=2):
 
 #    im = imorig.copy()   	# keep box labels out of original image
     p1, p2 = (int(box[0]), int(box[1])), (int(box[2]), int(box[3]))
     cv2.rectangle(im, p1, p2, mycolor, thickness=lw, lineType=cv2.LINE_AA)
-    tf = max(lw - 1, 1)  # font thickness
-    w, h = cv2.getTextSize(label, 0, fontScale=lw / 3, thickness=tf)[0]  # text width, height
+    tf = max(lw, 1)  # font thickness
+    w, h = cv2.getTextSize(label, 0, fontScale=1, thickness=tf)[0]  # text width, height
     outside = p1[1] - h - 3 >= 0  # label fits outside box
     p2 = p1[0] + w, p1[1] - h - 3 if outside else p1[1] + h + 3
     cv2.rectangle(im, p1, p2, mycolor, -1, cv2.LINE_AA)  # filled
-    cv2.putText(im, label, (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),0, lw / 3, txt_color, thickness=tf, lineType=cv2.LINE_AA)
+    cv2.putText(im, label, (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),0, 1, txt_color, thickness=tf, lineType=cv2.LINE_AA)
         
     addBorder(im)  	# add border frame to highlight target-hit
 
