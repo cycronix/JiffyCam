@@ -415,7 +415,8 @@ def get_locations(cam_name: str, session: str, data_dir: str, browse_date: int):
     Returns:
         List of float detection positions 0-1 for specified browse_date
     """
-
+    reset_timestamps()
+    
     timestamp_data = get_timestamps(cam_name, session, data_dir, browse_date)
     if timestamp_data is None:
         return None
