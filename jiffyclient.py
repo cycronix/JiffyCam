@@ -91,49 +91,14 @@ class JiffyCamClient:
             return self.check_connection(force=True)
         return self.connected
     
-    def update_status_if_needed(self):
-        """Update status information periodically without fetching a new frame."""
-        current_time = time.time()
-        # Only update status every 2 seconds to reduce server load
-        if current_time - self.status_check_time > 2:
-            self.get_status()
-            return True
-        return False
-        
-    def get_status(self):
-        """Get the server status."""
-        current_time = time.time()
-        self.status_check_time = current_time
-        print(f"Getting status from {self.server_url}/status")
-        
-        try:
-            response = requests.get(f"{self.server_url}/status", timeout=2)
-            if response.status_code == 200:
-                self.last_status = response.json()
-                self.connected = True  # Also update connection status
-                self.connection_check_time = current_time  # Update connection time too
-                self.last_error = None
-                self.error_event.clear()  # Clear any previous error
-                return self.last_status
-            else:
-                self.last_error = f"Server responded with status code: {response.status_code}"
-                self.error_event.set()  # Set error event
-                return None
-        except requests.RequestException as e:
-            self.last_error = f"Connection error: {str(e)}"
-            self.connected = False
-            self.error_event.set()  # Set error event
-            return None
-    
     def get_frame(self):
         """Get the latest frame from the server."""
-        # Only fetch a new frame every 1/30 second (30 FPS max)
         current_time = time.time()
-        if current_time - self.last_frame_time < 0.033:
-            return self.last_frame, self.last_status.get('fps', 0) if self.last_status else 0, 0, 0
+        #if current_time - self.last_frame_time < 0.033:
+        #    return self.last_frame
             
         if not self.connected and not self.check_connection(force=False):
-            return None, 0, 0, 0
+            return None
             
         try:
             # Add timestamp to URL to prevent caching
@@ -145,26 +110,25 @@ class JiffyCamClient:
                 
                 # Update last frame and time
                 self.last_frame = frame
-                self.last_frame_time = current_time
+                #self.last_frame_time = current_time
                 
                 # Use last known status without making another request
                 if self.last_status:
                     try:
                         width, height = map(int, self.last_status.get('resolution', '0x0').split('x'))
-                        fps = self.last_status.get('fps', 0)
-                        return frame, fps, width, height
+                        return frame
                     except (ValueError, AttributeError):
-                        return frame, 0, 0, 0
-                return frame, 0, 0, 0
+                        return frame
+                return frame
             else:
                 self.last_error = f"Server responded with status code: {response.status_code}"
                 self.error_event.set()  # Set error event
-                return None, 0, 0, 0
+                return None
         except requests.RequestException as e:
             self.last_error = f"Connection error: {str(e)}"
             self.connected = False
             self.error_event.set()  # Set error event
-            return None, 0, 0, 0
+            return None
     
     def get_last_frame(self):
         """Get the cached last frame."""

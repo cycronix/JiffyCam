@@ -55,30 +55,6 @@ def apply_general_css():
     </style>
     """, unsafe_allow_html=True)
 
-def apply_metrics_css():
-    """Apply CSS styling specifically for metrics display."""
-    st.markdown("""
-    <style>
-    /* Make metric labels and values more compact */
-    [data-testid="stMetricLabel"] {
-        font-size: 0.8rem !important;
-        font-weight: 500 !important;
-        padding-bottom: 0.1rem !important;
-    }
-    
-    [data-testid="stMetricValue"] {
-        font-size: 1rem !important;
-        font-weight: 500 !important;
-    }
-    
-    /* Reduce padding around metric containers */
-    [data-testid="metric-container"] {
-        padding: 5px 0px !important;
-        margin-bottom: 0px !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
 def create_navigation_button(label, key, help_text, on_click_handler, disabled=False, use_container_width=True):
     """Create a standardized navigation button.
     
@@ -125,71 +101,6 @@ def create_playback_button(label, key, help_text, on_click_handler, disabled=Fal
         disabled=disabled,
         type=button_type
     )
-
-def create_metric_display(label, value, help_text="", delta=None, border=True):
-    """Create a standardized metric display.
-    
-    Args:
-        label: The label for the metric
-        value: The value to display
-        help_text: Tooltip text for the metric
-        delta: Optional delta value to display
-        border: Whether to show a border around the metric
-    
-    Returns:
-        The created metric widget
-    """
-    return st.metric(
-        label,
-        value,
-        delta=delta,
-        delta_color="normal",
-        help=help_text,
-        label_visibility="visible",
-        border=border
-    )
-
-def create_fps_metrics_row():
-    """Create a row with FPS Camera and FPS Display metrics.
-    
-    Returns:
-        Tuple of (capture_fps_placeholder, display_fps_placeholder)
-    """
-    fps_cols = st.columns(2)
-    
-    with fps_cols[0]:
-        capture_fps_placeholder = create_metric_display(
-            "FPS Camera", 
-            "---", 
-            "Frames per second being captured by the camera"
-        )
-        
-    with fps_cols[1]:
-        display_fps_placeholder = create_metric_display(
-            "FPS Display", 
-            "---", 
-            "Frames per second being displayed"
-        )
-        
-    return capture_fps_placeholder, display_fps_placeholder
-
-def create_detection_metrics():
-    """Create metrics for detection counts and timestamps.
-    
-    Returns:
-        Tuple of (frames_detected_placeholder, last_save_time_placeholder)
-        Note: last_save_time_placeholder is now None as the UI component is removed
-    """
-    frames_detected_placeholder = create_metric_display(
-        "Detections",
-        0,
-        "Number of frames detected for current date"
-    )
-    
-    # Last detection time placeholder removed from UI, but maintain API compatibility
-    last_save_time_placeholder = None
-    
-    return frames_detected_placeholder, last_save_time_placeholder
 
 def create_date_navigation(prev_handler, next_handler, single_day_mode=False):
     """Create date navigation buttons and picker in a row.
