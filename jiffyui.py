@@ -755,9 +755,10 @@ def build_sidebar():
         
         # Create empty placeholders to maintain return compatibility
         status_placeholder = st.empty()
-        server_status_placeholder = st.empty()
-        
         error_placeholder = st.empty()
+        
+        # Add GitHub link
+        st.markdown("[GitHub Repository](https://github.com/cycronix/JiffyCam)")
         
         # Add YAML config display section
         st.header("Configuration")
