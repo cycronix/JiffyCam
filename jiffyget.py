@@ -153,7 +153,7 @@ def jiffyget(time_posix: float, cam_name: str,
     Returns:
         Tuple of (frame, timestamp) or None if no image found
     """
-    #print(f"jiffyget: time_posix: {time_posix}, cam_name: {cam_name}, session: {session}, data_dir: {data_dir}, direction: {direction}")
+    #print(f"jiffyget: time_posix: {time_posix}")
     # Create target datetime for the selected time
     target_timestamp = time_posix * 1000.
     browse_date = datetime.fromtimestamp(time_posix).date()

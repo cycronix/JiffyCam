@@ -70,6 +70,7 @@ class JiffyConfig:
             FileNotFoundError: If require_config_exists is True and the specified config file doesn't exist
             ValueError: If the config file exists but can't be loaded
         """
+        #print(f"Loading configuration from: {self.yaml_file}")
         default_config = {
             'cam_device': '0',
             'session': 'Default',  # Default session value, but not saved to YAML anymore
@@ -132,6 +133,7 @@ class JiffyConfig:
         Returns:
             bool: True if save was successful, False otherwise
         """
+        print(f"Saving configuration to: {self.yaml_file}")
         try:
             # Create a copy to avoid modifying the original
             config = config.copy()

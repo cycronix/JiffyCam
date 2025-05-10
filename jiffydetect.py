@@ -16,11 +16,13 @@ Cycronix
 #import psutil
 
 import time
-import urllib3
+#import urllib3
 from datetime import datetime
 import math
 import cv2
 from ultralytics import YOLO
+
+import torch
 
 # ---------------------------------------------------------------------------------------------------------------------
 # rtsp-camera fetch
@@ -42,6 +44,7 @@ hide_conf = True
 # Global YOLO model instance
 Model = None
 Names = None
+MPS_AVAILABLE = None
 
 # ---------------------------------------------------------------------------------------------------------------------
 # @torch.no_grad()
@@ -56,10 +59,20 @@ def detect(image, previmage, weights_path='models/yolov8l.pt'):
     #data='data/coco128.yaml'                    # dataset.yaml path
     imgsz=(640, 640) 	 				# inference size (height, width)
     conf_thres=0.5  					# confidence threshold
-    #device = 'cpu'
+    device = 'cpu'
+    #device = 'mps'
+
+    global MPS_AVAILABLE                # metal performance shader (on macs)
+    if MPS_AVAILABLE is None:
+        if torch.backends.mps.is_available():
+            device = 'mps'
+            MPS_AVAILABLE = True
+            print(f"MPS is available")
+        else:
+            MPS_AVAILABLE = False
 
     #results = model.predict(source=camdev, device=device, conf=conf_thres, max_det=10, agnostic_nms=True, stream=True, verbose=False, vid_stride=1) 
-    results = Model.predict(source=image, conf=conf_thres, max_det=10, agnostic_nms=True, verbose=False, imgsz=imgsz) 
+    results = Model.predict(source=image, conf=conf_thres, max_det=10, agnostic_nms=True, verbose=False, imgsz=imgsz, device=device) 
 
     for pred in results:   		# with YOLO rtsp, always new results (or blocks)
         thisimage = pred.orig_img

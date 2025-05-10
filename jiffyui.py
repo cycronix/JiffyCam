@@ -6,7 +6,6 @@ This module contains the main UI code for the JiffyCam browser interface.
 
 import os
 import time
-#import threading
 from datetime import datetime, timedelta
 from datetime import time as datetime_time
 import streamlit as st
@@ -23,6 +22,7 @@ from jiffyget import (
 )
 from jiffyvis import generate_timeline_image, generate_timeline_arrow, format_time_12h
 from jiffyclient import JiffyCamClient
+from jiffyui_components import create_date_picker
 
 # --- UI Helper Functions ---
 
@@ -49,6 +49,7 @@ def set_autoplay(direction):
 
 def get_available_recordings(data_dir):
     """Scan the data directory for available recordings (top-level folders)."""
+    #print(f"get_available_recordings: {inspect.stack()[1].function}")
     recordings = {}
     if data_dir is None or not os.path.isdir(data_dir):
         print(f"Warning: data_dir '{data_dir}' not found or not a directory.")
@@ -78,7 +79,6 @@ def on_recording_change():
     #print(f"on_recording_change: {new_session}")
 
     # Check if the new session is active
-    from jiffyget import get_active_sessions
     data_dir = st.session_state.get('data_dir', 'JiffyData')
     active_sessions = get_active_sessions(data_dir)
     
@@ -96,7 +96,7 @@ def on_recording_change():
                     st.session_state.http_client.set_server_url(server_url)
                 else:
                     # Create new client
-                    from jiffyclient import JiffyCamClient
+                    #from jiffyclient import JiffyCamClient
                     st.session_state.http_client = JiffyCamClient(server_url)
                 
                 # Try a test connection to verify server is actually responding
@@ -125,7 +125,6 @@ def on_recording_change():
         st.session_state.valid_dates = []
     
     # Explicitly reset timestamps in jiffyget to ensure fresh data
-    #import jiffyget
     reset_timestamps()
     
     # Get the new date range for this recording with proper error handling
@@ -154,6 +153,7 @@ def on_recording_change():
             st.session_state.hour = 23
             st.session_state.minute = 59
             st.session_state.second = 59
+            st.session_state.microsecond = 0
         elif len(st.session_state.valid_dates) == 1:
             # Only one valid date - use it
             target_date = st.session_state.valid_dates[0]
@@ -164,11 +164,13 @@ def on_recording_change():
                 st.session_state.hour = newest.hour
                 st.session_state.minute = newest.minute
                 st.session_state.second = newest.second
+                st.session_state.microsecond = 0
             else:
                 # Set to end of day if no newest timestamp
                 st.session_state.hour = 23
                 st.session_state.minute = 59
                 st.session_state.second = 59
+                st.session_state.microsecond = 0
         else:
             # Multiple valid dates - use newest unless specified otherwise
             if newest:
@@ -177,6 +179,7 @@ def on_recording_change():
                 st.session_state.hour = newest.hour
                 st.session_state.minute = newest.minute
                 st.session_state.second = newest.second
+                st.session_state.microsecond = 0
             else:
                 # Use the newest valid date
                 target_date = st.session_state.valid_dates[-1]
@@ -184,7 +187,7 @@ def on_recording_change():
                 st.session_state.hour = 23
                 st.session_state.minute = 59
                 st.session_state.second = 59
-            
+                st.session_state.microsecond = 0
             # Make sure it's in the list of valid dates
             if target_date not in st.session_state.valid_dates:
                 # Use the newest valid date
@@ -207,6 +210,7 @@ def on_recording_change():
         st.session_state.hour = 23
         st.session_state.minute = 59
         st.session_state.second = 59
+        st.session_state.microsecond = 0
     
     set_autoplay(None)
     st.session_state.in_playback_mode = True # Default to playback when changing recording
@@ -222,6 +226,7 @@ def on_recording_change():
 
 def on_date_change():
     """Handle date picker change."""
+    #print(f"on_date_change: {inspect.stack()[1].function}")
     set_autoplay(None)
     
     # Ensure we're not in a deadlock by forcibly resetting key state
@@ -266,7 +271,7 @@ def on_date_change():
     st.session_state.hour = 23
     st.session_state.minute = 59
     st.session_state.second = 59
-    
+    st.session_state.microsecond = 0
     # Search backwards ("down") for the latest image of the day
     # Add additional error handling to prevent deadlocks
     try:
@@ -300,12 +305,8 @@ def on_navigation_button(direction, onclick=True):
         st.session_state.autoplay_step = direction
         return
     
-    #tweek_time(direction)
-
-    st.session_state.in_playback_mode = True
-
     # Fetch placeholders from session_state inside the update function
-    if onclick:
+    if False and onclick:
         st.session_state.step_direction = direction  # let rerun handle the update  
         #time.sleep(0.1)
     else:
@@ -321,19 +322,20 @@ def on_next_button(onclick=True):
 
 def tweek_time(direction):
     """Tweek the time by 1 second in the given direction."""
-    dt = datetime.combine(st.session_state.date, datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second))
-    dt += timedelta(seconds=1) if direction == "up" else -timedelta(seconds=1)
+    dt = datetime.combine(st.session_state.date, datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second, st.session_state.microsecond))
+    dt += timedelta(microseconds=10) if direction == "up" else -timedelta(microseconds=10)
     st.session_state.browsing_date = dt.date()
     st.session_state.hour = dt.hour
     st.session_state.minute = dt.minute
     st.session_state.second = dt.second
-
+    st.session_state.microsecond = dt.microsecond
 def change_day(direction):
     """Change the date by one day in the specified direction.
     
     Args:
         direction: "next" or "prev" indicating which day to navigate to
     """
+    #print(f"change_day: {inspect.stack()[1].function}")
     # Completely reset timestamps cache to force fresh data
     reset_timestamps()
 
@@ -429,14 +431,12 @@ def toggle_live_pause():
         st.session_state.browsing_date = st.session_state.target_browsing_date = current_time.date()
         st.session_state.in_playback_mode = False
         st.session_state.needs_date_update = True
-
-        # If in HTTP mode, make sure rt_capture is turned on and check connection
-        if st.session_state.get('use_http_mode', False):
-            st.session_state.rt_capture = True
-            
-            # Force a connection check if we have a client
-            if hasattr(st.session_state, 'http_client'):
-                st.session_state.http_client.check_connection(force=True)
+        
+        # make sure rt_capture is turned on and check connection
+        st.session_state.rt_capture = True 
+        # Force a connection check if we have a client
+        if hasattr(st.session_state, 'http_client'):
+            st.session_state.http_client.check_connection(force=True)
         
         # Let the main loop update hour/min/sec/slider when live
     else:
@@ -490,7 +490,6 @@ def on_day_navigation_button(direction):
     
     try:
         # Explicitly update timestamp range before changing days
-        #import jiffyget
         reset_timestamps()
         oldest, newest, timestamps = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
         st.session_state.oldest_timestamp = oldest
@@ -505,7 +504,6 @@ def on_day_navigation_button(direction):
     except Exception as e:
         print(f"Error changing to {direction} day: {str(e)}")
         # Reset key state on error to prevent deadlocks
-        #import jiffyget
         reset_timestamps()
         st.session_state.step_direction = "None"
         st.session_state.last_frame = None
@@ -526,7 +524,7 @@ def new_image_display(frame):
     """Display a new image based on the current date and time."""
     current_time = time.time()
     
-    #print(f"new_image_display: {inspect.stack()[1].function}, shape: {frame.shape}")
+    #print(f"new_image_display: {inspect.stack()[1].function}")
     if(not st.session_state.video_placeholder):     # delay creation to avoid flickering
         st.session_state.video_placeholder = st.image(frame, channels="BGR", use_container_width=True)
     else:
@@ -559,7 +557,8 @@ def update_image_display(direction=None):
         timestamp = st.session_state.actual_timestamp
         #print(f"update_image_display, using last frame, {timestamp}")
     else:
-        time_posix = datetime.combine(browse_date, datetime.min.time()) + timedelta(hours=st.session_state.hour, minutes=st.session_state.minute, seconds=st.session_state.second)
+        time_posix = datetime.combine(browse_date, datetime.min.time()) + \
+            timedelta(hours=st.session_state.hour, minutes=st.session_state.minute, seconds=st.session_state.second, microseconds=st.session_state.microsecond)
         time_posix = float(time_posix.timestamp())
 
         closest_image, timestamp, eof = jiffyget(
@@ -586,6 +585,7 @@ def update_image_display(direction=None):
             st.session_state.hour = dts.hour
             st.session_state.minute = dts.minute
             st.session_state.second = dts.second
+            st.session_state.microsecond = dts.microsecond
             st.session_state.browsing_date = dts.date() # Keep browsing date in sync with found image
 
             # Update UI placeholders
@@ -622,6 +622,7 @@ def update_image_display(direction=None):
 
 def display_most_recent_image():
     """Display the most recent image for the current camera."""
+    #print(f"display_most_recent_image: {inspect.stack()[1].function}")
 
     # If we have a newest timestamp available, use its time directly
     if st.session_state.newest_timestamp:
@@ -629,6 +630,7 @@ def display_most_recent_image():
         st.session_state.hour = timestamp.hour
         st.session_state.minute = timestamp.minute
         st.session_state.second = timestamp.second
+        st.session_state.microsecond = timestamp.microsecond
         st.session_state.browsing_date = timestamp.date()
     else:
         # Otherwise use current time as starting point
@@ -636,11 +638,11 @@ def display_most_recent_image():
         st.session_state.hour = timestamp.hour
         st.session_state.minute = timestamp.minute
         st.session_state.second = timestamp.second
+        st.session_state.microsecond = timestamp.microsecond
         st.session_state.browsing_date = timestamp.date()
         
         # If we don't have a newest timestamp, try to get it again
         try:
-            #import jiffyget
             reset_timestamps()
             oldest, newest, timestamps = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
             if newest:
@@ -650,6 +652,7 @@ def display_most_recent_image():
                 st.session_state.hour = newest.hour
                 st.session_state.minute = newest.minute
                 st.session_state.second = newest.second
+                st.session_state.microsecond = newest.microsecond
                 st.session_state.browsing_date = newest.date()
         except Exception as e:
             print(f"Error getting timestamp range in display_most_recent_image: {str(e)}")
@@ -665,7 +668,6 @@ def display_most_recent_image():
         st.session_state.step_direction = "down"
     
     # Reset jiffyget timestamps to force reload for current date
-    #import jiffyget
     reset_timestamps()
     
     # Count frames for today
@@ -703,9 +705,7 @@ def get_server_status():
     
     Returns:
         active_sessions is a list of active sessions (may be empty)
-    """
-    from jiffyget import get_active_sessions, get_session_port
-    
+    """    
     # Get data directory from session state
     data_dir = st.session_state.get('data_dir', 'JiffyData')
     current_session = st.session_state.get('session')
@@ -721,20 +721,21 @@ def get_server_status():
     if current_session in active_sessions:
         # Get the correct port for this session
         correct_port = get_session_port(current_session, data_dir)
-        current_port = st.session_state.get('http_server_port')
+        #current_port = st.session_state.get('http_server_port')
+        current_port = st.session_state.get('dataserver_port')
         
         # If the port has changed, update the client
         if correct_port and correct_port != current_port:
             #print(f"Updating HTTP port from {current_port} to {correct_port}")
             # Update session state
             st.session_state.dataserver_port = correct_port
-            st.session_state.http_server_port = correct_port
+            #st.session_state.http_server_port = correct_port
             st.session_state.http_server_url = f"http://localhost:{correct_port}"
             
             # Recreate the client with the new URL if it exists
             if hasattr(st.session_state, 'http_client'):
                 try:
-                    from jiffyclient import JiffyCamClient
+                    #from jiffyclient import JiffyCamClient
                     st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
                     print(f"Connected dataserver client at {st.session_state.http_server_url}")
                 except Exception as e:
@@ -747,8 +748,7 @@ def build_sidebar():
     # Setup main sections
     with st.sidebar:                
         st.title("JiffyCam")
-        
-        # Recording Selection removed from here - moved to main area
+        st.markdown("by [Cycronix](https://cycronix.com)")
 
         # Status section header
         st.header("Status")
@@ -804,6 +804,7 @@ def on_timeline_click(coords):
     st.session_state.hour = hours
     st.session_state.minute = minutes
     st.session_state.second = seconds
+    st.session_state.microsecond = 0
     st.session_state.in_playback_mode = True
     st.session_state.last_displayed_timestamp = None  # Force display update for new position
     st.session_state.step_direction = "None"  # Reset step direction
@@ -821,7 +822,6 @@ def build_main_area():
     # Import UI components
     from jiffyui_components import (
         apply_general_css, 
-        create_date_navigation, 
         create_playback_controls, 
         create_live_button,
         create_empty_timeline_arrow,
@@ -925,7 +925,6 @@ def build_main_area():
             st.session_state.get('needs_date_update', False)):
             try:
                 # Force a fresh recalculation of the timestamp range
-                #import jiffyget
                 reset_timestamps()
                 oldest, newest, timestamps = get_timestamp_range(st.session_state.cam_name, st.session_state.session, st.session_state.data_dir)
                 st.session_state.oldest_timestamp = oldest
@@ -1072,9 +1071,7 @@ def build_main_area():
                     # Also update the browsing_date
                     st.session_state.browsing_date = min_date
         
-        # Create the date_input widget - ONLY use the value parameter, never set st.session_state.date directly
-        from jiffyui_components import create_date_picker
-        
+        # Create the date_input widget - ONLY use the value parameter, never set st.session_state.date directly        
         try:
             # Ensure default_date is valid and within min_date and max_date
             if default_date < min_date:
@@ -1298,7 +1295,7 @@ def run_ui_update_loop():
             new_status = current_status # Default to no change
 
             if is_capturing:
-                # Get the latest frame from HTTP client
+                # Get the latest frame from HTTP client                
                 if hasattr(st.session_state, 'http_client'):
                     # Only get a new frame from the server if we're in live view mode
                     # This prevents unnecessary HTTP requests when in playback mode
@@ -1349,7 +1346,8 @@ def run_ui_update_loop():
                                 st.session_state.hour = current_time.hour
                                 st.session_state.minute = current_time.minute
                                 st.session_state.second = current_time.second
-                                                            
+                                st.session_state.microsecond = current_time.microsecond
+
                                 st.session_state.last_frame = frame
                                 st.session_state.actual_timestamp = current_time.timestamp() * 1000
                                 # Display the frame

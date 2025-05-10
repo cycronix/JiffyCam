@@ -64,23 +64,16 @@ def main():
         config['data_dir'] = args.data_dir
     
     # UI interaction state flags
-    if 'in_playback_mode' not in st.session_state: st.session_state.in_playback_mode = True
-    if 'rt_capture' not in st.session_state: st.session_state.rt_capture = False
-    if 'need_to_display_recent' not in st.session_state: st.session_state.need_to_display_recent = False # mjm:  False for now
-    #if 'live_button_clicked' not in st.session_state: st.session_state.live_button_clicked = False
-    if 'status_message' not in st.session_state: st.session_state.status_message = "Initializing..."
-   #if 'image_just_saved' not in st.session_state: st.session_state.image_just_saved = False
-    if 'step_direction' not in st.session_state: st.session_state.step_direction = None
-    if 'autoplay_direction' not in st.session_state: st.session_state.autoplay_direction = None
-    if 'autoplay_step' not in st.session_state: st.session_state.autoplay_step = False
-    if 'autoplay_interval' not in st.session_state: st.session_state.autoplay_interval = 0.02
-    if 'needs_date_update' not in st.session_state: st.session_state.needs_date_update = True
-    # Default to HTTP mode
-    if 'use_http_mode' not in st.session_state: st.session_state.use_http_mode = True
-    
-    # Initialize dataserver_port from config
-    if 'dataserver_port' not in st.session_state: 
-        st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
+    if 'in_playback_mode' not in st.session_state:          st.session_state.in_playback_mode = True
+    if 'rt_capture' not in st.session_state:                st.session_state.rt_capture = False
+    if 'need_to_display_recent' not in st.session_state:    st.session_state.need_to_display_recent = False # mjm:  False for now
+    if 'status_message' not in st.session_state:            st.session_state.status_message = "Initializing..."
+    if 'step_direction' not in st.session_state:            st.session_state.step_direction = None
+    if 'autoplay_direction' not in st.session_state:        st.session_state.autoplay_direction = None
+    if 'autoplay_step' not in st.session_state:             st.session_state.autoplay_step = False
+    if 'autoplay_interval' not in st.session_state:         st.session_state.autoplay_interval = 0.02
+    if 'needs_date_update' not in st.session_state:         st.session_state.needs_date_update = True
+    if 'dataserver_port' not in st.session_state:           st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
     
     # Set http_server_port to match dataserver_port for consistency
     if 'http_server_port' not in st.session_state:
@@ -91,7 +84,7 @@ def main():
         st.session_state.http_server_url = f"http://localhost:{st.session_state.dataserver_port}"
     
     # Initialize HTTP client if in HTTP mode and we have a valid URL
-    if st.session_state.use_http_mode and 'http_client' not in st.session_state:
+    if 'http_client' not in st.session_state:
         try:
             st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
         except Exception as e:
@@ -119,6 +112,7 @@ def main():
     if 'hour' not in st.session_state: st.session_state.hour = current_time.hour
     if 'minute' not in st.session_state: st.session_state.minute = current_time.minute
     if 'second' not in st.session_state: st.session_state.second = current_time.second
+    if 'microsecond' not in st.session_state: st.session_state.microsecond = current_time.microsecond
     
     # Default date to today (will be adjusted after timestamp range is determined)
     if 'init_date' not in st.session_state: st.session_state.init_date = current_time.date()
@@ -180,6 +174,9 @@ def main():
     #print(f"running main ui update loop")
     #st.session_state.needs_date_update = True
     run_ui_update_loop() # Loop fetches placeholders from session_state
+
+def seconds_since_midnight(dt):
+    return (dt - dt.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()
 
 # --- Entry Point --- 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ import numpy as np
 import cv2
 import streamlit as st
 from jiffyget import get_locations
+#import inspect
 
 def format_time_12h(hour, minute, second):
     """Format time in 12-hour format with AM/PM indicator."""
@@ -20,6 +21,7 @@ def format_time_12h(hour, minute, second):
     return f"{hour_12}:{minute:02d}:{second:02d} {period}"
 
 def generate_timeline_image(width=1200, height=60):
+    #print(f"generate_timeline_image: {inspect.stack()[1].function}")
     """Generate an image for the timeline bar based on available data."""
     session = st.session_state.get('session', 'Default')
     data_dir = st.session_state.get('data_dir', 'JiffyData')
@@ -161,6 +163,7 @@ def generate_timeline_arrow(width=1200, height=24):
     Generate an arrow image for the timeline position indicator.
     This shows the current time position on the timeline.
     """
+    #print(f"generate_timeline_arrow: {inspect.stack()[1].function}")
     # Add special timestamp marker for current time
     if hasattr(st.session_state, 'hour') and hasattr(st.session_state, 'minute') and hasattr(st.session_state, 'second'):
         # Calculate position as percentage of day
