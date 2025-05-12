@@ -6,20 +6,16 @@ from a camera and send it to a CloudTurbine (CT) server.
 """
 
 import os
-#import sys
 import time
 import yaml
-#import threading
 import argparse
 from typing import Optional, Dict, Any
 from datetime import datetime, time as datetime_time
 from collections import OrderedDict
 
 import streamlit as st
-#from streamlit_server_state import server_state, server_state_lock
 
 # Import Jiffy modules
-# from jiffyput import jiffyput # Not directly used here
 from jiffyget import get_timestamp_range, get_active_sessions, get_session_port # get_frame moved to jiffyui 
 from jiffyconfig import JiffyConfig
 
@@ -71,7 +67,7 @@ def main():
     if 'step_direction' not in st.session_state:            st.session_state.step_direction = None
     if 'autoplay_direction' not in st.session_state:        st.session_state.autoplay_direction = None
     if 'autoplay_step' not in st.session_state:             st.session_state.autoplay_step = False
-    if 'autoplay_interval' not in st.session_state:         st.session_state.autoplay_interval = 0.02
+    if 'autoplay_interval' not in st.session_state:         st.session_state.autoplay_interval = 0.01
     if 'needs_date_update' not in st.session_state:         st.session_state.needs_date_update = True
     if 'dataserver_port' not in st.session_state:           st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
     
