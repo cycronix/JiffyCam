@@ -46,10 +46,13 @@ Model = None
 Names = None
 MPS_AVAILABLE = None
 
+previmage = None
+prevxyxy = None
+
 # ---------------------------------------------------------------------------------------------------------------------
 # @torch.no_grad()
-def detect(image, previmage, weights_path='models/yolov8l.pt'):
-    global Model, Names
+def detect(image, weights_path='models/yolov8l.pt'):
+    global Model, Names, previmage, prevxyxy
     
     # Initialize model if not already done
     if Model is None:
@@ -86,9 +89,12 @@ def detect(image, previmage, weights_path='models/yolov8l.pt'):
                 # check for motion this detection box vs prior
                 xyxy = box.xyxy[0]  
                 if(previmage is not None):
-                    bd = boxdiff(thisimage, previmage, xyxy, cname)
+                    bd = boxdiff(thisimage, previmage, xyxy, prevxyxy)
                 else:
                     bd = MDET    # fake it
+
+                previmage = thisimage
+                prevxyxy = xyxy
 
                 if(bd >= MDET):
                     if(PutDetect):
@@ -180,26 +186,38 @@ def labelTime(im, thisTime=None):
 
 # ---------------------------------------------------------------------------------------------------------------------
 # boxdiff:  motion detect via pixel-difference this_img detection vs prior
-def boxdiff(newimg, previmg, xyxy, cname):
+def boxdiff(newimg, previmg, xyxy, prevxyxy):
 
     x1 = int(max(0,xyxy[0]))
     y1 = int(max(0,xyxy[1]))
     x2 = int(max(0,xyxy[2]))
     y2 = int(max(0,xyxy[3]))
-    
-    h, w, _ = newimg.shape
+    xycenter = (x1 + x2) / 2, (y1 + y2) / 2
+    xysize = ( (x2 - x1) + (y2 - y1) ) / 2
+
+    x1p = int(max(0,prevxyxy[0]))
+    y1p = int(max(0,prevxyxy[1]))
+    x2p = int(max(0,prevxyxy[2]))
+    y2p = int(max(0,prevxyxy[3]))  
+    prevxycenter = (x1p + x2p) / 2, (y1p + y2p) / 2
+    prevxysize = ( (x2p - x1p) + (y2p - y1p) ) / 2
+    xysize_avg = (xysize + prevxysize) / 2
+
     minSize = 10                               # minimum pixels (was 5)
     if( ((y2-y1) < minSize) or ((x2-x1)<minSize) ):
-        print(cname+": too small: "+str(xyxy))
+        #print(cname+": too small: "+str(xyxy))
         return 0
         
     crop1 = newimg[y1:y2, x1:x2]
     crop2 = previmg[y1:y2, x1:x2]
     diff = cv2.absdiff(crop1, crop2)
     diff[diff < MTHRESH] = 0;            # threshold noise
-    
     bdiff = diff.sum() / crop1.size / 255     # avg diff (as fraction of max-pix 255), normalized
-    return bdiff
+
+    xydist = math.dist(xycenter, prevxycenter) / xysize_avg
+    #print(f"boxdiff: xydist: {xydist}, bdiff: {bdiff}")
+
+    return min(bdiff, xydist)
 
 # ---------------------------------------------------------------------------------------------------------------------
 # add label to detected object

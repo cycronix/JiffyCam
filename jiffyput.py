@@ -28,8 +28,6 @@ def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path
         The processed frame (which may be modified by detection)
     """
 
-    global prevframe
-
     try:
         #print(f"jiffyput: save_frame: {save_frame}, detect_frame: {detect_frame}")
         # Set JPEG quality to 95
@@ -37,10 +35,9 @@ def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path
 
         #detect_mode = True
         if detect_frame:
-            tryframe = detect(frame, prevframe, weights_path)  # pass previous frame to reject no-motion detections
+            tryframe = detect(frame, weights_path)  # pass previous frame to reject no-motion detections
             if tryframe is not None:       # ONLY save detections!  (to do: heartbeat saves)
                 save_frame = True  # save the detection frame
-                prevframe = frame
                 frame = tryframe
 
         if not save_frame:

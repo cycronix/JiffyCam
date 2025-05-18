@@ -20,7 +20,8 @@ def format_time_12h(hour, minute, second):
         hour_12 = 12
     return f"{hour_12}:{minute:02d}:{second:02d} {period}"
 
-def generate_timeline_image(width=1200, height=60):
+import inspect
+def generate_timeline_image(width=1200, height=48):
     #print(f"generate_timeline_image: {inspect.stack()[1].function}")
     """Generate an image for the timeline bar based on available data."""
     session = st.session_state.get('session', 'Default')
@@ -47,18 +48,18 @@ def generate_timeline_image(width=1200, height=60):
     text_color = (220, 220, 220)  # Brighter light gray for text
     
     # Add equal padding for top and bottom margins
-    text_padding = 20  # Pixels below timeline for text
+    text_padding = 15  # Pixels below timeline for text (reduced from 20)
     top_margin = 0  # Match top margin to text padding (was 12)
     timeline_y_start = top_margin  # Timeline now starts below top margin
     timeline_y_end = timeline_y_start + height
     total_height = timeline_y_end + text_padding  # Total image height
-    
+    #print(f"total_height: {total_height}")
+
     # Start with a blank transparent image (including space for labels and top margin)
     rounded_img = np.zeros((total_height, width, 3), dtype=np.uint8)
     
     # Add radius for rounded corner effect (small radius)
     radius = int(height/2)
-    
     
     # Draw a rounded rectangle for the timeline (top portion only)
     cv2.rectangle(rounded_img, (radius, timeline_y_start), (width-radius, timeline_y_end), background_color, -1)
@@ -158,10 +159,15 @@ def generate_timeline_image(width=1200, height=60):
 
     return timeline_img
 
-def generate_timeline_arrow(width=1200, height=24):
+def generate_timeline_arrow(width=1200, height=24, with_markers=False):
     """
     Generate an arrow image for the timeline position indicator.
     This shows the current time position on the timeline.
+    
+    Args:
+        width: Width of the arrow image
+        height: Height of the arrow image
+        with_markers: Whether to include timeline markers (red vertical lines)
     """
     #print(f"generate_timeline_arrow: {inspect.stack()[1].function}")
     # Add special timestamp marker for current time
@@ -176,6 +182,35 @@ def generate_timeline_arrow(width=1200, height=24):
         timeline_y_end = 1
         timeline_img = np.zeros((height, width, 3), dtype=np.uint8)
         special_marker_color = (255, 255, 0)  # Yellow in BGR format
+        
+        # Add red timeline markers if requested
+        if with_markers:
+            session = st.session_state.get('session', 'Default')
+            data_dir = st.session_state.get('data_dir', 'JiffyData')
+            
+            # Get the timestamps from the browsing date
+            try:
+                browse_date = st.session_state.date
+                browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
+                timestamps = get_locations(st.session_state.cam_name, session, data_dir, browse_date_posix)
+                
+                if timestamps:
+                    mark_color = (255, 20, 20)  # Red in BGR format (same as in timeline)
+                    
+                    # Add marks for timestamps
+                    for position in timestamps:
+                        # Calculate pixel position
+                        marker_x_pos = int(position * width)
+                        # Draw a red vertical line with alpha blending
+                        cv_thickness = max(1, int(width/1000))  # Scale thickness with width
+                        alpha = 0.8  # 80% opacity
+                        
+                        # Draw semi-transparent line across full height of arrow image
+                        overlay = timeline_img.copy()
+                        cv2.line(overlay, (marker_x_pos, 0), (marker_x_pos, height), mark_color, cv_thickness)
+                        cv2.addWeighted(overlay, alpha, timeline_img, 1-alpha, 0, timeline_img)
+            except Exception as e:
+                print(f"Error adding markers to timeline arrow: {str(e)}")
 
         # Skip if too close to edges
         if x_pos >= radius and x_pos <= width - radius:
@@ -183,8 +218,8 @@ def generate_timeline_arrow(width=1200, height=24):
             cv_thickness = max(2, int(width/800))  # Thicker than regular markers
             
             # Draw semi-transparent triangle ABOVE timeline (pointing down)
-            triangle_height = int(height * 0.75)  # Adjusted to 75% of top margin height
-            triangle_width = int(height * 0.75)  # Slightly wider triangle
+            triangle_height = int(height * 0.75)  # Reduced to 25% of timearrow height
+            triangle_width = int(height * 0.6)  # Maintain proportional width
             
             # Triangle points (pointing down)
             bottom_point = (x_pos, timeline_y_start - 1)  # Just above timeline

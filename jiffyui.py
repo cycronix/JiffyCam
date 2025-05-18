@@ -531,9 +531,14 @@ def new_image_display(frame):
         st.session_state.video_placeholder.image(frame, channels="BGR", use_container_width=True)
     
     timearrow_placeholder = st.session_state.timearrow_placeholder
+    # Pass the same width parameter as used for timeline image to maintain consistency
     ta_img = generate_timeline_arrow()
     timearrow_placeholder.image(ta_img, channels="RGB", use_container_width=True)
-    
+
+    if not st.session_state.in_playback_mode:
+        timeline_img = generate_timeline_image()
+        st.session_state.timeline_placeholder.image(timeline_img, channels="RGB", use_container_width=True)
+
 def update_image_display(direction=None):
     """Update the image display based on the current date and time."""
     #print(f"update_image_display: {direction}, {inspect.stack()[1].function}")
@@ -1202,32 +1207,36 @@ def build_main_area():
         )
 
     # Time Arrow above timeline
-    timearrow_placeholder, timearrow_img = create_empty_timeline_arrow(width=1200, height=24)
+    timearrow_placeholder = create_empty_timeline_arrow()
 
-    # Generate timeline image with appropriate width and increased height (50% taller)
-    timeline_img = generate_timeline_image(width=1200, height=60)  # Increased from 40 to 60
+    # Generate timeline image with appropriate width and height to match timearrow
+    timeline_placeholder = None
+    if st.session_state.in_playback_mode:
+        timeline_img = generate_timeline_image()
     
-    # Store previous click coordinates to avoid duplicate processing
-    prev_coords = st.session_state.get('prev_timeline_coords', None)
-    
-    # Display the clickable image
-    clicked_coords = streamlit_image_coordinates(
-        timeline_img, 
-        key="timeline_bar",
-        use_column_width=True
-    )
-    
-    # Handle timeline click only if it's a new click (different from previous)
-    if clicked_coords and 'x' in clicked_coords:
-        # Convert to tuple for comparison (dictionaries aren't hashable)
-        current_click = (clicked_coords.get('x'), clicked_coords.get('y'))
-        previous_click = prev_coords if prev_coords else (-1, -1)
+        # Store previous click coordinates to avoid duplicate processing
+        prev_coords = st.session_state.get('prev_timeline_coords', None)
         
-        if current_click != previous_click:
-            # This is a new click
-            on_timeline_click(clicked_coords)
-            # Save current click to avoid reprocessing
-            st.session_state.prev_timeline_coords = current_click
+        # Display the clickable image
+        clicked_coords = streamlit_image_coordinates(
+            timeline_img, 
+            key="timeline_bar",
+            use_column_width=True
+        )
+        
+        # Handle timeline click only if it's a new click (different from previous)
+        if clicked_coords and 'x' in clicked_coords:
+            # Convert to tuple for comparison (dictionaries aren't hashable)
+            current_click = (clicked_coords.get('x'), clicked_coords.get('y'))
+            previous_click = prev_coords if prev_coords else (-1, -1)
+            
+            if current_click != previous_click:
+                # This is a new click
+                on_timeline_click(clicked_coords)
+                # Save current click to avoid reprocessing
+                st.session_state.prev_timeline_coords = current_click
+    else:
+        timeline_placeholder = create_empty_timeline_arrow(width=1200, height=66)   # 63 is the total height of the timeline image
 
     st.markdown("</div>", unsafe_allow_html=True) # Close centered container
 
@@ -1236,7 +1245,7 @@ def build_main_area():
     video_placeholder = None
 
     # Return placeholders needed outside this build function (by callbacks and main loop)
-    return video_placeholder, time_display, timearrow_placeholder
+    return video_placeholder, time_display, timearrow_placeholder, timeline_placeholder
 
 # --- Main UI Update Loop (runs in jiffycam.py) ---
 def run_ui_update_loop():

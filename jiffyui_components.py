@@ -279,7 +279,7 @@ def create_empty_timeline_arrow(width=1200, height=24):
     placeholder = st.empty()
     initial_image = np.zeros((height, width, 3), dtype=np.uint8)
     placeholder.image(initial_image, channels="RGB", use_container_width=True)
-    return placeholder, initial_image
+    return placeholder
 
 def create_recording_selector(options, current_selection, on_change_handler, help_text="Select the recording session to view.", active_sessions=None):
     """Create a selector for recordings with formatting for the active recording.
