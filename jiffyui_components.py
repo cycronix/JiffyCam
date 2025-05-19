@@ -8,6 +8,7 @@ These are extracted from jiffyui.py to promote code reuse and maintainability.
 import streamlit as st
 from datetime import datetime
 import numpy as np
+from jiffyvis import generate_timeline_arrow
 
 def apply_general_css():
     """Apply general CSS styling for the application."""
@@ -265,19 +266,24 @@ def create_live_button(handler, is_enabled, is_live_mode, help_text, session_nam
         button_type=button_type
     )
 
-def create_empty_timeline_arrow(width=1200, height=24):
-    """Create an empty timeline arrow image placeholder.
+def create_placeholder(width=1200, height=24, image=None):
+    """Create an empty image placeholder.
     
     Args:
         width: Width of the timeline arrow image
         height: Height of the timeline arrow image
+        image: Optional image to display in the placeholder
     
     Returns:
         Tuple of (placeholder, initial_image) where placeholder is the Streamlit
         empty element and initial_image is the empty numpy array
     """
     placeholder = st.empty()
-    initial_image = np.zeros((height, width, 3), dtype=np.uint8)
+    if(image is None):
+        initial_image = np.zeros((height, width, 3), dtype=np.uint8)
+    else:
+        initial_image = image
+
     placeholder.image(initial_image, channels="RGB", use_container_width=True)
     return placeholder
 

@@ -11,6 +11,7 @@ from datetime import time as datetime_time
 import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
 import inspect
+#import streamlit_js_eval
 
 from jiffyget import (
     jiffyget, 
@@ -27,6 +28,9 @@ from jiffyui_components import create_date_picker
 # --- UI Helper Functions ---
 
 def heartbeat():
+    #print(f"Screen width is {streamlit_js_eval(js_expressions='screen.width', key = 'SCR')}")
+    #print(f"Window width is {streamlit_js_eval(js_expressions='window.innerWidth', key = 'WIN')}")
+
     """Heartbeat to check if the UI is still running.""" 
     if(st.session_state.autoplay_direction == "up"):
         on_next_button(False)
@@ -34,11 +38,13 @@ def heartbeat():
     elif(st.session_state.autoplay_direction == "down"):
         on_prev_button(False)
         time.sleep(st.session_state.autoplay_interval)
-
-    if(st.session_state.autoplay_step != None):
+    elif(st.session_state.autoplay_step != None):
         on_navigation_button(st.session_state.autoplay_step, False)
         st.session_state.autoplay_step = None
-        time.sleep(0.1)     # delay to allow for button press to be processed, else video glitch possible
+        time.sleep(0.01)     # delay to allow for button press to be processed, else video glitch possible
+    elif(st.session_state.in_playback_mode):
+        #print("in_playback_mode")
+        time.sleep(0.1)
 
 def set_autoplay(direction):
     """Set autoplay direction."""
@@ -517,31 +523,41 @@ def on_next_day_button():
     on_day_navigation_button("next")
 
 # --- UI Update Functions ---
+import inspect
+from streamlit_js_eval import streamlit_js_eval
+
 def new_image_display(frame):
+    #print(f"new_image_display: {inspect.stack()[1].function}, frame: {frame is not None}")
     if frame is None or frame.size == 0:
         return
 
-    """Display a new image based on the current date and time."""
-    current_time = time.time()
-    
-    #print(f"new_image_display: {inspect.stack()[1].function}")
-    if(not st.session_state.video_placeholder):     # delay creation to avoid flickering
-        st.session_state.video_placeholder = st.image(frame, channels="BGR", use_container_width=True)
-    else:
-        st.session_state.video_placeholder.image(frame, channels="BGR", use_container_width=True)
-    
     timearrow_placeholder = st.session_state.timearrow_placeholder
+    if st.session_state.timearrow_placeholder is None:
+        print(f"unexpected error: timearrow_placeholder is None")
+        #return
+    
     # Pass the same width parameter as used for timeline image to maintain consistency
     ta_img = generate_timeline_arrow()
     timearrow_placeholder.image(ta_img, channels="RGB", use_container_width=True)
 
     if not st.session_state.in_playback_mode:
-        timeline_img = generate_timeline_image()
-        st.session_state.timeline_placeholder.image(timeline_img, channels="RGB", use_container_width=True)
+        if st.session_state.timeline_placeholder is None:
+            print(f"unexpected error: timeline_placeholder is None")
+            return
+        st.session_state.timeline_placeholder.image(generate_timeline_image(), \
+            channels="RGB", use_container_width=True, output_format="PNG")
 
+    """Display a new image"""
+    if(not st.session_state.video_placeholder):     # delayed creation to avoid flickering
+        #print(f"creating video placeholder")
+        st.session_state.video_placeholder = st.image(frame, channels="BGR", use_container_width=True)
+    else:
+        #print(f"updating video placeholder")
+        st.session_state.video_placeholder.image(frame, channels="BGR", use_container_width=True)
+    
 def update_image_display(direction=None):
     """Update the image display based on the current date and time."""
-    #print(f"update_image_display: {direction}, {inspect.stack()[1].function}")
+   #print(f"update_image_display: {direction}, {inspect.stack()[1].function}")
 
     # Fetch placeholders from session state
     video_placeholder = st.session_state.video_placeholder
@@ -555,12 +571,10 @@ def update_image_display(direction=None):
     # --- End state retrieval ---
 
     # Find the closest image using jiffyget directly
-    #print(f"update_image_display, {st.session_state.last_frame is None}, {direction}")
     if( False and direction == "current" and st.session_state.last_frame is not None):
         closest_image = st.session_state.last_frame
         #timestamp = st.session_state.last_timestamp
         timestamp = st.session_state.actual_timestamp
-        #print(f"update_image_display, using last frame, {timestamp}")
     else:
         time_posix = datetime.combine(browse_date, datetime.min.time()) + \
             timedelta(hours=st.session_state.hour, minutes=st.session_state.minute, seconds=st.session_state.second, microseconds=st.session_state.microsecond)
@@ -574,7 +588,6 @@ def update_image_display(direction=None):
             direction
         )
         if(eof):
-            #print(f"update_image_display: eof: {eof}")
             set_autoplay(None)
 
     success = False
@@ -594,7 +607,6 @@ def update_image_display(direction=None):
             st.session_state.browsing_date = dts.date() # Keep browsing date in sync with found image
 
             # Update UI placeholders
-            #print(f"update_image_display: {inspect.stack()[1].function}")
             new_image_display(closest_image)
 
             # Update time display text
@@ -609,7 +621,7 @@ def update_image_display(direction=None):
             success = True
 
         except Exception as e:
-            print(f"Error displaying image: {str(e)}")
+            print(f"Error displaying image: {str(e)}, {inspect.stack()[1].function}")
             status_placeholder.error(f"Error displaying image: {str(e)}")
             st.session_state.status_message = f"Error displaying image: {str(e)}"
     
@@ -820,16 +832,18 @@ def on_timeline_click(coords):
 def build_main_area():
     """Create the main UI area elements and return placeholders."""
     # Create placeholders for main UI elements
-    video_placeholder = st.empty()
+    #video_placeholder = st.empty()
+    video_placeholder = None
     time_display = st.empty()
-    timearrow_placeholder = st.empty()
+    #timearrow_placeholder = st.empty()
+    timearrow_placeholder = None
 
     # Import UI components
     from jiffyui_components import (
         apply_general_css, 
         create_playback_controls, 
         create_live_button,
-        create_empty_timeline_arrow,
+        create_placeholder,
         create_recording_selector,
         create_navigation_button
     )
@@ -1207,23 +1221,28 @@ def build_main_area():
         )
 
     # Time Arrow above timeline
-    timearrow_placeholder = create_empty_timeline_arrow()
+    timearrow_placeholder = create_placeholder(height=24, width=1200, image=generate_timeline_arrow())
+    #timearrow_placeholder = st.empty()
 
     # Generate timeline image with appropriate width and height to match timearrow
-    timeline_placeholder = None
+    clicked_coords = st.empty()
     if st.session_state.in_playback_mode:
+        timeline_placeholder = None     # None placeholder is updated here, not in new_image_display()
         timeline_img = generate_timeline_image()
     
         # Store previous click coordinates to avoid duplicate processing
         prev_coords = st.session_state.get('prev_timeline_coords', None)
-        
+
         # Display the clickable image
         clicked_coords = streamlit_image_coordinates(
             timeline_img, 
-            key="timeline_bar",
-            use_column_width=True
+            key="clickable_timeline_bar",
+            use_column_width=True,
+            height=48,
+            width=1200,
+            #click_and_drag=True
         )
-        
+        #print(f"clicked_coords: {clicked_coords}")
         # Handle timeline click only if it's a new click (different from previous)
         if clicked_coords and 'x' in clicked_coords:
             # Convert to tuple for comparison (dictionaries aren't hashable)
@@ -1236,19 +1255,31 @@ def build_main_area():
                 # Save current click to avoid reprocessing
                 st.session_state.prev_timeline_coords = current_click
     else:
-        timeline_placeholder = create_empty_timeline_arrow(width=1200, height=66)   # 63 is the total height of the timeline image
+        timeline_placeholder = st.empty()  # update timeline Live in new_image_display()
+        #initial_image = generate_timeline_image(useTimestamps=False, height=48, width=1200)
+        #timeline_placeholder.image(initial_image, channels="RGB", use_container_width=True)
 
     st.markdown("</div>", unsafe_allow_html=True) # Close centered container
 
     # Create Video Placeholder *after* the controls container
-    #video_placeholder = st.empty()   # delay creation to avoid flickering
-    video_placeholder = None
+    #video_placeholder = st.empty()     # this flickers
+    if(not st.session_state.video_placeholder):
+        if(st.session_state.last_frame is not None):
+            #print(f"!!!creating video placeholder")
+            video_placeholder = create_placeholder(height=48, width=1200, image=st.session_state.last_frame)
+        else:
+            video_placeholder = None            # delay creation to avoid flickering
+            #print(f"!!!creating None video placeholder")
+    #video_placeholder = create_empty_placeholder(height=48, width=1200, image=None)
+    #st.session_state.needs_date_update = True
+    #video_placeholder = st.container(border=True, key="video_placeholder")
 
     # Return placeholders needed outside this build function (by callbacks and main loop)
     return video_placeholder, time_display, timearrow_placeholder, timeline_placeholder
 
 # --- Main UI Update Loop (runs in jiffycam.py) ---
 def run_ui_update_loop():
+
     """The main loop to update the UI based on capture state and interactions."""
     # Fetch placeholders from session state at the start of the loop
     video_placeholder = st.session_state.video_placeholder
@@ -1399,6 +1430,7 @@ def run_ui_update_loop():
                         if need_display_update:
                             #print(f"need_display_update: {inspect.stack()[1].function}")
                             # Only display if we need to update the image
+                            #print(f"need_display_update: {inspect.stack()[1].function}, last_frame: {st.session_state.last_frame is not None}")
                             new_image_display(st.session_state.last_frame)    #???
                             st.session_state.last_frame = None
                             st.session_state.last_displayed_timestamp = st.session_state.actual_timestamp

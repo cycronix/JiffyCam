@@ -14,6 +14,13 @@ from datetime import datetime, time as datetime_time
 from collections import OrderedDict
 
 import streamlit as st
+import logging
+import streamlit as st
+
+import logging
+logging.basicConfig(level=logging.ERROR)
+st_logger = logging.getLogger('streamlit')
+st_logger.setLevel(logging.ERROR)
 
 # Import Jiffy modules
 from jiffyget import get_timestamp_range, get_active_sessions, get_session_port # get_frame moved to jiffyui 
@@ -29,6 +36,10 @@ from jiffyui import (
 # UI components are imported directly in the relevant functions
 #import jiffyui_components
 from jiffyclient import JiffyCamClient
+
+import logging
+logging.basicConfig(level=logging.DEBUG)
+logging.getLogger('streamlit').setLevel(logging.ERROR)
 
 # --- Parse Command Line Arguments ---
 def parse_args():
@@ -67,9 +78,10 @@ def main():
     if 'step_direction' not in st.session_state:            st.session_state.step_direction = None
     if 'autoplay_direction' not in st.session_state:        st.session_state.autoplay_direction = None
     if 'autoplay_step' not in st.session_state:             st.session_state.autoplay_step = False
-    if 'autoplay_interval' not in st.session_state:         st.session_state.autoplay_interval = 0.01
+    if 'autoplay_interval' not in st.session_state:         st.session_state.autoplay_interval = 0.03
     if 'needs_date_update' not in st.session_state:         st.session_state.needs_date_update = True
     if 'dataserver_port' not in st.session_state:           st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
+    if 'video_placeholder' not in st.session_state:         st.session_state.video_placeholder = None
     
     # Set http_server_port to match dataserver_port for consistency
     if 'http_server_port' not in st.session_state:

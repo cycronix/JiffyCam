@@ -20,8 +20,8 @@ def format_time_12h(hour, minute, second):
         hour_12 = 12
     return f"{hour_12}:{minute:02d}:{second:02d} {period}"
 
-import inspect
-def generate_timeline_image(width=1200, height=48):
+#import inspect
+def generate_timeline_image(useTimestamps=True, width=1200, height=48):
     #print(f"generate_timeline_image: {inspect.stack()[1].function}")
     """Generate an image for the timeline bar based on available data."""
     session = st.session_state.get('session', 'Default')
@@ -31,14 +31,11 @@ def generate_timeline_image(width=1200, height=48):
     browse_date = st.session_state.date
     browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
     
-    try:
+    timestamps = None
+    if(useTimestamps):
         timestamps = get_locations(st.session_state.cam_name, session, data_dir, browse_date_posix)
-    except Exception as e:
-        print(f"Error getting locations for timeline: {str(e)}")
-        timestamps = None
-        
-    if(timestamps is None):
-        return np.zeros((height, width, 3), dtype=np.uint8)
+        #if(timestamps is None):
+        #    return np.zeros((height, width, 3), dtype=np.uint8)
 
     # Create a blank image (dark gray background)
     background_color = (51, 51, 51)  # Dark gray
@@ -57,10 +54,8 @@ def generate_timeline_image(width=1200, height=48):
 
     # Start with a blank transparent image (including space for labels and top margin)
     rounded_img = np.zeros((total_height, width, 3), dtype=np.uint8)
-    
     # Add radius for rounded corner effect (small radius)
     radius = int(height/2)
-    
     # Draw a rounded rectangle for the timeline (top portion only)
     cv2.rectangle(rounded_img, (radius, timeline_y_start), (width-radius, timeline_y_end), background_color, -1)
     cv2.rectangle(rounded_img, (0, timeline_y_start+radius), (width, timeline_y_end-radius), background_color, -1)
@@ -70,9 +65,9 @@ def generate_timeline_image(width=1200, height=48):
     cv2.circle(rounded_img, (width-radius, timeline_y_start+radius), radius, background_color, -1)
     cv2.circle(rounded_img, (radius, timeline_y_end-radius), radius, background_color, -1)
     cv2.circle(rounded_img, (width-radius, timeline_y_end-radius), radius, background_color, -1)
-    
     timeline_img = rounded_img
-    
+    #print(f"timeline_img: {timeline_img.shape}")
+
     # Define label positions in advance
     label_positions = {
         0: "12am",
@@ -144,18 +139,12 @@ def generate_timeline_image(width=1200, height=48):
         cv2.addWeighted(overlay, alpha, timeline_img, 1-alpha, 0, timeline_img)
 
     # Add marks for timestamps
+    #print(f"timestamps: {timestamps}")
     if timestamps:
         for position in timestamps:
             # Calculate pixel position
             x_pos = int(position * width)
-            # Draw a red vertical line with alpha blending
-            cv_thickness = max(1, int(width/1000))  # Scale thickness with width
-            alpha = 0.8  # 80% opacity (slightly more visible than before)
-            
-            # Draw semi-transparent line
-            overlay = timeline_img.copy()
-            cv2.line(overlay, (x_pos, timeline_y_start), (x_pos, timeline_y_end), mark_color, cv_thickness)
-            cv2.addWeighted(overlay, alpha, timeline_img, 1-alpha, 0, timeline_img)
+            cv2.line(timeline_img, (x_pos, timeline_y_start), (x_pos, timeline_y_end), mark_color, 1)
 
     return timeline_img
 
