@@ -11,7 +11,6 @@ from datetime import time as datetime_time
 import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
 import inspect
-#import streamlit_js_eval
 
 from jiffyget import (
     jiffyget, 
@@ -28,15 +27,12 @@ from jiffyui_components import create_date_picker
 # --- UI Helper Functions ---
 
 def heartbeat():
-    #print(f"Screen width is {streamlit_js_eval(js_expressions='screen.width', key = 'SCR')}")
-    #print(f"Window width is {streamlit_js_eval(js_expressions='window.innerWidth', key = 'WIN')}")
-
     """Heartbeat to check if the UI is still running.""" 
     if(st.session_state.autoplay_direction == "up"):
-        on_next_button(False)
+        on_next_button(onclick=False)
         time.sleep(st.session_state.autoplay_interval)
     elif(st.session_state.autoplay_direction == "down"):
-        on_prev_button(False)
+        on_prev_button(onclick=False)
         time.sleep(st.session_state.autoplay_interval)
     elif(st.session_state.autoplay_step != None):
         on_navigation_button(st.session_state.autoplay_step, False)
@@ -232,6 +228,11 @@ def on_recording_change():
 
 def on_date_change():
     """Handle date picker change."""
+    change_day("current")
+    st.session_state.needs_date_update = True
+    return
+
+
     #print(f"on_date_change: {inspect.stack()[1].function}")
     set_autoplay(None)
     
@@ -326,20 +327,24 @@ def on_next_button(onclick=True):
     """Handle next image button click."""
     on_navigation_button('up', onclick)
 
-def tweek_time(direction):
-    """Tweek the time by 1 second in the given direction."""
+def tweek_time(direction, onclick=True):
+    """Tweek the time by 1 second in the given direction.""" 
     dt = datetime.combine(st.session_state.date, datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second, st.session_state.microsecond))
-    dt += timedelta(microseconds=10) if direction == "up" else -timedelta(microseconds=10)
+    if onclick:
+        dt += timedelta(microseconds=10) if direction == "up" else -timedelta(microseconds=10)
+    else:
+        dt += timedelta(seconds=10) if direction == "up" else -timedelta(seconds=10)  # force real-world time to change minimum 10 seconds
+
     st.session_state.browsing_date = dt.date()
     st.session_state.hour = dt.hour
     st.session_state.minute = dt.minute
     st.session_state.second = dt.second
     st.session_state.microsecond = dt.microsecond
+
 def change_day(direction):
     """Change the date by one day in the specified direction.
-    
     Args:
-        direction: "next" or "prev" indicating which day to navigate to
+        direction: "next" or "prev" indicating which day to navigate to.  "current" means no change, rebuild the date list.
     """
     #print(f"change_day: {inspect.stack()[1].function}")
     # Completely reset timestamps cache to force fresh data
@@ -378,7 +383,7 @@ def change_day(direction):
             #print(f"At {'end' if direction == 'next' else 'beginning'} of valid dates, can't change days")
             # Just refresh the current date's display
             st.session_state.browsing_date = current_date
-            st.session_state.step_direction = "up"
+            st.session_state.step_direction = "current"    # was "up"
             st.session_state.last_displayed_timestamp = None
             return
         
@@ -523,9 +528,7 @@ def on_next_day_button():
     on_day_navigation_button("next")
 
 # --- UI Update Functions ---
-import inspect
-from streamlit_js_eval import streamlit_js_eval
-
+#import inspect
 def new_image_display(frame):
     #print(f"new_image_display: {inspect.stack()[1].function}, frame: {frame is not None}")
     if frame is None or frame.size == 0:
@@ -544,8 +547,9 @@ def new_image_display(frame):
         if st.session_state.timeline_placeholder is None:
             print(f"unexpected error: timeline_placeholder is None")
             return
-        st.session_state.timeline_placeholder.image(generate_timeline_image(), \
-            channels="RGB", use_container_width=True, output_format="PNG")
+        timeline_img = generate_timeline_image()
+        st.session_state.timeline_placeholder.image(timeline_img, channels="RGB", use_container_width=True, output_format="PNG")
+        #print(f"new_image_display: {timeline_img.shape}")
 
     """Display a new image"""
     if(not st.session_state.video_placeholder):     # delayed creation to avoid flickering
@@ -1090,14 +1094,40 @@ def build_main_area():
                     # Also update the browsing_date
                     st.session_state.browsing_date = min_date
         
-        # Create the date_input widget - ONLY use the value parameter, never set st.session_state.date directly        
+        
+        # Create the date_input widget - ONLY use the value parameter, never set st.session_state.date directly   
+        """"     
         try:
-            # Ensure default_date is valid and within min_date and max_date
+            # make sure we have valid dates
+            valid_dates = sorted(st.session_state.valid_dates)
+            min_date = valid_dates[0]
+            max_date = valid_dates[-1]
+
+           # Ensure default_date is valid and within min_date and max_date
             if default_date < min_date:
                 default_date = min_date
             if default_date > max_date:
                 default_date = max_date
-                
+
+            print(f"default_date: {default_date}, min_date: {min_date}, max_date: {max_date}")
+
+            if True or'valid_dates' in st.session_state and st.session_state.valid_dates:
+                #default_date = min_date = max_date = st.session_state.valid_dates[0]
+                create_date_picker(
+                    value=default_date,
+                    min_value=min_date,
+                    max_value=max_date,
+                    on_change_handler=on_date_change,
+                    key="date",
+                    help_text="Select recording date",
+                    single_day=len(valid_dates) == 1
+                )  
+                st.session_state.browsing_date = default_date
+        except Exception as e:
+            print(f"Date picker error: {str(e)}")
+
+    """
+        try:
             # If we have valid dates, only allow selecting those dates
             if 'valid_dates' in st.session_state and st.session_state.valid_dates:
                 # For recordings with single day of data, just show that date
@@ -1138,25 +1168,10 @@ def build_main_area():
                     key="date",
                     help_text="Select date"
                 )
+                
         except Exception as e:
             print(f"Date picker error: {str(e)}")
-            
-            # Try a simpler fallback with a unique key
-            try:
-                create_date_picker(
-                    value=default_date,
-                    min_value=None,
-                    max_value=None,
-                    on_change_handler=on_date_change,
-                    key="date_fallback",
-                    help_text="Select date"
-                )
-            except Exception as e2:
-                print(f"Fallback date picker error: {str(e2)}")
-                
-                # Final fallback - just show the date as text
-                today = datetime.now().date()
-                date_picker_placeholder.markdown(f"**Date:** {default_date.strftime('%Y-%m-%d')}")
+
 
     # Create playback controls
     handlers = {
@@ -1220,44 +1235,48 @@ def build_main_area():
             active_sessions=active_sessions
         )
 
-    # Time Arrow above timeline
-    timearrow_placeholder = create_placeholder(height=24, width=1200, image=generate_timeline_arrow())
-    #timearrow_placeholder = st.empty()
+    mycontainer = st.container(border=False, key="timeline_container", height=100)
+    with mycontainer:
+        # Time Arrow above timeline
+        timearrow_placeholder = create_placeholder(height=24, width=1200, image=generate_timeline_arrow())
+        #timearrow_placeholder = st.empty()
 
-    # Generate timeline image with appropriate width and height to match timearrow
-    clicked_coords = st.empty()
-    if st.session_state.in_playback_mode:
-        timeline_placeholder = None     # None placeholder is updated here, not in new_image_display()
-        timeline_img = generate_timeline_image()
+        # Generate timeline image with appropriate width and height to match timearrow
+        #clicked_coords = st.empty()
+        if st.session_state.in_playback_mode:
+            timeline_placeholder = None     # None placeholder is updated here, not in new_image_display()
+            timeline_img = generate_timeline_image()
     
-        # Store previous click coordinates to avoid duplicate processing
-        prev_coords = st.session_state.get('prev_timeline_coords', None)
+            # Store previous click coordinates to avoid duplicate processing
+            prev_coords = st.session_state.get('prev_timeline_coords', None)
 
-        # Display the clickable image
-        clicked_coords = streamlit_image_coordinates(
-            timeline_img, 
-            key="clickable_timeline_bar",
-            use_column_width=True,
-            height=48,
-            width=1200,
-            #click_and_drag=True
-        )
-        #print(f"clicked_coords: {clicked_coords}")
-        # Handle timeline click only if it's a new click (different from previous)
-        if clicked_coords and 'x' in clicked_coords:
-            # Convert to tuple for comparison (dictionaries aren't hashable)
-            current_click = (clicked_coords.get('x'), clicked_coords.get('y'))
-            previous_click = prev_coords if prev_coords else (-1, -1)
-            
-            if current_click != previous_click:
-                # This is a new click
-                on_timeline_click(clicked_coords)
-                # Save current click to avoid reprocessing
-                st.session_state.prev_timeline_coords = current_click
-    else:
-        timeline_placeholder = st.empty()  # update timeline Live in new_image_display()
-        #initial_image = generate_timeline_image(useTimestamps=False, height=48, width=1200)
-        #timeline_placeholder.image(initial_image, channels="RGB", use_container_width=True)
+            # Display the clickable image
+            clicked_coords = streamlit_image_coordinates(
+                timeline_img, 
+                key="clickable_timeline_bar",
+                use_column_width=True,
+                #height=30,
+                #width=1200,
+                #click_and_drag=True
+            )
+            #print(f"clicked_coords: {timeline_img.shape}")
+            # Handle timeline click only if it's a new click (different from previous)
+            if clicked_coords and 'x' in clicked_coords:
+                # Convert to tuple for comparison (dictionaries aren't hashable)
+                current_click = (clicked_coords.get('x'), clicked_coords.get('y'))
+                previous_click = prev_coords if prev_coords else (-1, -1)
+                
+                if current_click != previous_click:
+                    # This is a new click
+                    on_timeline_click(clicked_coords)
+                    # Save current click to avoid reprocessing
+                    st.session_state.prev_timeline_coords = current_click
+        else:
+            #timeline_placeholder = st.empty()  # update timeline Live in new_image_display()
+            #initial_image = generate_timeline_image(useTimestamps=False)
+            #timeline_placeholder.image(initial_image, channels="RGB", use_container_width=True)
+            #timeline_placeholder.image(initial_image, channels="RGB", use_container_width=True, output_format="PNG")
+            timeline_placeholder = create_placeholder(height=48, width=1200)
 
     st.markdown("</div>", unsafe_allow_html=True) # Close centered container
 
@@ -1266,7 +1285,7 @@ def build_main_area():
     if(not st.session_state.video_placeholder):
         if(st.session_state.last_frame is not None):
             #print(f"!!!creating video placeholder")
-            video_placeholder = create_placeholder(height=48, width=1200, image=st.session_state.last_frame)
+            video_placeholder = create_placeholder(height=240, width=1200, image=st.session_state.last_frame)
         else:
             video_placeholder = None            # delay creation to avoid flickering
             #print(f"!!!creating None video placeholder")
