@@ -1,6 +1,6 @@
 # JiffyCam
 
-A modern Streamlit-based video capture utility for capturing and browsing video from cameras.
+A modern Streamlit-based all-Python video capture utility for capturing and browsing video from cameras. It provides an intuitive interface for real-time video capture and historical image browsing with time-based navigation.
 
 <p align="center">
 <img src="jiffycam.jpg" alt="screenshot" width="75%" style="border: 2px solid grey;"/>
@@ -18,7 +18,7 @@ JiffyCam consists of two complementary but independent applications that work to
 
 **🎥 jiffycam.py - Web-based Viewer Application**
 - Streamlit-based web interface for browsing and viewing captured images
-- Provides intuitive time-based navigation with sliders and date pickers
+- Provides intuitive time-based navigation with timelines and date pickers
 - Displays live video feeds and historical image browsing
 - Can operate independently to view existing captured data
 - Connects to capture backend via HTTP API when available
@@ -27,7 +27,7 @@ JiffyCam consists of two complementary but independent applications that work to
 - Standalone video capture application that can run independently
 - Captures video from camera devices and saves frames automatically
 - Includes built-in HTTP server for serving live images and status
-- Provides object detection capabilities with YOLOv8
+- Provides sophisticated object detection with YOLOv8 and custom filters
 - Can run as a background service without any UI dependencies
 
 ### How They Work Together
@@ -41,28 +41,11 @@ The two components are designed to be **complementary but independent**:
 2. **Seamless Integration**: When both are running, they work together seamlessly
    - The viewer automatically detects and connects to the capture engine
    - Live video feeds are streamed from capture to viewer via HTTP
-   - Status information and capture controls are synchronized
 
 3. **Flexible Deployment**: This architecture supports various deployment scenarios
    - Single machine: Both components running together
    - Distributed: Capture on edge devices, viewing from remote locations
    - Batch processing: Capture runs continuously, viewer used for analysis
-
-## Overview
-
-JiffyCam is a portable all-Python webapp that uses Streamlit for the UI to capture video from a camera, detect objects, save frames, and browse historical images. It provides an intuitive interface for real-time video capture and historical image browsing with time-based navigation.
-
-### Key Features
-
-- **Real-time capture**: Capture video from camera devices
-- **Object detection**: Built-in support for object detection with YOLOv8
-- **Time-based browsing**: Navigate through historical images with an intuitive timeline interface
-- **Interactive time controls**: Navigate via time slider, next/previous buttons, or direct time input
-- **Live/Pause toggle**: Seamlessly switch between live view and browsing historical images
-- **Status indicators**: Clear status messages for captures, saves, and browsing
-- **Date picker**: Easily browse images from different dates
-- **Configurable save interval**: Set automatic frame saving at custom intervals
-- **Performance metrics**: Real-time FPS monitoring for both capture and display
 
 ## Installation
 
@@ -121,17 +104,16 @@ JiffyCam is a portable all-Python webapp that uses Streamlit for the UI to captu
 3. Click "Start Capture" to begin capturing video
 
 ### Navigation
-- Use the date picker to select a date to browse
-- Use the time slider to navigate to a specific time on that date
-- Use the ◀ and ▶ buttons to move to previous or next frames
+- Use the date picker to select a date to browse, or the "Live" button for current
+- Click the timeline to navigate to a specific time on that date
+- Use the ◀ and ▶ buttons to move to previous or next image
+- Use the ◀◀ or ▶▶ buttons to automatically scroll through data
 - Click "Live" to return to live view, or "⏸" to pause on the current frame
 
 ### Status Information
 The application provides status information in the sidebar:
-- Current FPS during live capture
-- Display FPS metrics
-- Timestamp information when viewing saved images
-- Notifications when frames are saved
+- Link to github source code
+- View jiffycam.yaml configuration for this jiffycapture camera
 - Error messages if issues occur
 
 ## Configuration
@@ -148,10 +130,12 @@ weights: 'models/yolov8l.pt'  # Path to YOLOv8 model weights
 ```
 
 ### Configuration Locations
-- Default: `./jiffycam.yaml`
-- Session-specific: `[data_dir]/[SessionName]/jiffycam.yaml`
 
-## Components
+The jiffycam.yaml file must be present in the JiffyData/<Camera-Session> folder.  Both jiffycam viewer and jiffycapture use this configuration info in common.  Jiffycapture is the primary user in that it sets the image acquisition parameters.  The jiffycam viewer uses this to discover the 'dataserver-port' to query for capture status and live images if available.
+
+- Session-specific file location: `[data_dir]/[SessionName]/jiffycam.yaml`
+
+## Source Code Components
 
 JiffyCam consists of several key components:
 
@@ -165,7 +149,7 @@ JiffyCam consists of several key components:
 
 ## Data Storage
 
-Captured frames are stored in [CloudTurbine](https://cloudturbine.com) compatible folders:
+Captured frames are stored in [CloudTurbine](https://cloudturbine.com) compatible time-stamped folders:
 ```
 JiffyData/
 └── [Session]/
@@ -191,10 +175,8 @@ JiffyData/
 git clone https://github.com/your-username/jiffycam.git
 
 # Install development dependencies
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 
-# Run tests
-pytest
 ```
 
 ## License
