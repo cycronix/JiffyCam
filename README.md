@@ -151,6 +151,8 @@ JiffyData/
                └── [CameraName].jpg
 ```
 
+The size and resolution of images are set by the camera settings upstream of jiffycapture.  The number of images per day can vary depending on configuration intervals and the level of activity (object recognition) that occurs. For large images plus lots of activity, the data storage requirements can be significant. Keep track of storage and delete or thin old data as necessary.
+
 ## Development
 
 ### Contributing
