@@ -90,7 +90,8 @@ The two components are designed to be **complementary but independent**:
    python jiffycapture.py CustomDataDir/MyCameraName
    ```
 
-Note that jiffycam can see and display multiple cameras, i.e. subfolders under JiffyData or custom data folder.  The jiffycapture needs to be pointed at a specific camera-session subfolder under the JiffyData folder.  The jiffycam.yaml file (see below) must reside in the camera-session subfolder, e.g. JiffyData/WebCam/.
+Note that jiffycapture stores images to a specific camera-session subfolder under the JiffyData folder.  
+The jiffycam can see and display multiple cameras, i.e. subfolders under JiffyData or custom data folder.  
 
 ## Viewer Use
 
@@ -110,7 +111,7 @@ The application provides status information in the sidebar:
 
 ## Capture Configuration
 
-JiffyCam uses a YAML configuration file (`jiffycam.yaml`) for settings. Here's a sample configuration:
+JiffyCapture uses a YAML configuration file (`jiffycam.yaml`) for settings. Here's a sample configuration:
 
 ```yaml
 cam_device: '0'  # Camera device identifier
@@ -123,7 +124,7 @@ weights: 'models/yolov8l.pt'  # Path to YOLOv8 model weights
 
 - Session-specific file location: `[data_dir]/[SessionName]/jiffycam.yaml`
 
-The jiffycam.yaml file must be present in the JiffyData/<Camera-Session> folder.  Both jiffycam viewer and jiffycapture use this configuration info in common.  Jiffycapture is the primary user in that it sets the image acquisition parameters.  The jiffycam viewer uses this to discover the 'dataserver-port' to query for capture status and live images if available.
+Both jiffycam viewer and jiffycapture use this configuration info in common. The jiffycam.yaml file must be located in the JiffyData/<Camera-Session> folder. Jiffycapture uses this to set image acquisition parameters.  The jiffycam viewer uses this to discover the 'dataserver-port' to query for capture status and live images if available.
 
 
 ## Source Code Components
@@ -131,10 +132,10 @@ The jiffycam.yaml file must be present in the JiffyData/<Camera-Session> folder.
 JiffyCam consists of several key components:
 
 - **jiffycam.py**: Main application entry point, session state initialization
-- **jiffyui.py**: Builds the Streamlit UI components, handles callbacks, and manages the UI update loop
-- **jiffycapture.py**: Core video capture functionality, runs capture thread, manages frame queue
+- **jiffyui.py**: Builds the Streamlit UI components, handles callbacks, manages the UI update loop
+- **jiffycapture.py**: Core video capture functionality, runs capture thread
 - **jiffyconfig.py**: Handles loading, saving, and managing configuration from `jiffycam.yaml`
-- **jiffydetect.py**: Object detection functionality using YOLOv8
+- **jiffydetect.py**: Object detection functionality using YOLOv8 and custom code
 - **jiffyput.py**: Frame processing and storage module (saves frames)
 - **jiffyget.py**: Image retrieval module (loads saved frames)
 
@@ -145,8 +146,9 @@ Captured frames are stored in [CloudTurbine](https://cloudturbine.com) compatibl
 JiffyData/
 └── [Session]/
     └── [CameraName]/
-        └── [Timestamp]/
-            └── [CameraName].jpg
+        └── [Timestamp-Day]/
+            └── [Timestamp-Seconds]/
+               └── [CameraName].jpg
 ```
 
 ## Development
@@ -159,7 +161,7 @@ JiffyData/
 4. Push to the branch
 5. Create a Pull Request
 
-### Building from Source
+### Build/Run from Source
 
 ```bash
 # Clone the repository
