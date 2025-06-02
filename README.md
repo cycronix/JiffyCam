@@ -74,29 +74,23 @@ The two components are designed to be **complementary but independent**:
    pip install -r requirements.txt
    ```
 
-4. Run the application:
+4. Run the viewer application:
    ```bash
    streamlit run jiffycam.py
    ```
-
-### Running Options
-
-- Run on a specific port:
-   ```bash
-   streamlit run jiffycam.py --server.port 8080
-   ```
-   
-- Use a custom data directory:
    ```bash
    streamlit run jiffycam.py CustomDataDir
    ```
 
-- Run standalone capture:
+4. Run the capture application:
+   ```bash
+   python jiffycapture.py
+   ```
    ```bash
    python jiffycapture.py CustomDataDir/MyCameraName
    ```
-Note that jiffycam can see and display multiple cameras, i.e. subfolders under JiffyData or custom data folder.  The jiffycapture needs to be pointed at a specific camera-session subfolder under the JiffyData folder.  The jiffycam.yaml file (see below) must reside in the camera-session subfolder, e.g. JiffyData/WebCam/.
 
+Note that jiffycam can see and display multiple cameras, i.e. subfolders under JiffyData or custom data folder.  The jiffycapture needs to be pointed at a specific camera-session subfolder under the JiffyData folder.  The jiffycam.yaml file (see below) must reside in the camera-session subfolder, e.g. JiffyData/WebCam/.
 
 ## Viewer Use
 
