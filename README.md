@@ -122,9 +122,11 @@ dataserver_port: 8081  # Port for the data server
 weights: 'models/yolov8l.pt'  # Path to YOLOv8 model weights
 ```
 
-- Session-specific file location: `[data_dir]/[SessionName]/jiffycam.yaml`
+The 'cam-device' parameter is the device argument to the ultralytics 'VideoCapture' method.  For example, built-in webcams are typically device '0' or '2', and RTSP devices require a full url such as 'rtsp://admin:<password>@192.168.50.XXX/cam/realmonitor?channel=1&subtype=0'.
 
-Both jiffycam viewer and jiffycapture use this configuration info in common. The jiffycam.yaml file must be located in the JiffyData/<Camera-Session> folder. Jiffycapture uses this to set image acquisition parameters.  The jiffycam viewer uses this to discover the 'dataserver-port' to query for capture status and live images if available.
+- Session-specific configuration file location: `[data_dir]/[SessionName]/jiffycam.yaml`
+
+Both jiffycam and jiffycapture use this configuration info in common. The jiffycam.yaml file must be located in the JiffyData/<Camera-Session> folder. Jiffycapture uses this for image acquisition parameters.  The jiffycam viewer uses this to discover the 'dataserver-port' to query for capture status and live images.
 
 
 ## Source Code Components
