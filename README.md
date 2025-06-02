@@ -93,15 +93,12 @@ The two components are designed to be **complementary but independent**:
 
 - Run standalone capture:
    ```bash
-   python jiffycapture.py CustomDataDir
+   python jiffycapture.py CustomDataDir/MyCameraName
    ```
+Note that jiffycam can see and display multiple cameras, i.e. subfolders under JiffyData or custom data folder.  The jiffycapture needs to be pointed at a specific camera-session subfolder under the JiffyData folder.  The jiffycam.yaml file (see below) must reside in the camera-session subfolder, e.g. JiffyData/WebCam/.
 
-## Usage
 
-### Camera Setup
-1. Configure the camera device in `jiffycam.yaml`
-2. Configure the save interval (in seconds) to control how often frames are saved
-3. Click "Start Capture" to begin capturing video
+## Viewer Use
 
 ### Navigation
 - Use the date picker to select a date to browse, or the "Live" button for current
@@ -113,10 +110,11 @@ The two components are designed to be **complementary but independent**:
 ### Status Information
 The application provides status information in the sidebar:
 - Link to github source code
-- View jiffycam.yaml configuration for this jiffycapture camera
+- View jiffycam.yaml configuration
 - Error messages if issues occur
+- Misc info
 
-## Configuration
+## Capture Configuration
 
 JiffyCam uses a YAML configuration file (`jiffycam.yaml`) for settings. Here's a sample configuration:
 
@@ -129,11 +127,10 @@ dataserver_port: 8081  # Port for the data server
 weights: 'models/yolov8l.pt'  # Path to YOLOv8 model weights
 ```
 
-### Configuration Locations
+- Session-specific file location: `[data_dir]/[SessionName]/jiffycam.yaml`
 
 The jiffycam.yaml file must be present in the JiffyData/<Camera-Session> folder.  Both jiffycam viewer and jiffycapture use this configuration info in common.  Jiffycapture is the primary user in that it sets the image acquisition parameters.  The jiffycam viewer uses this to discover the 'dataserver-port' to query for capture status and live images if available.
 
-- Session-specific file location: `[data_dir]/[SessionName]/jiffycam.yaml`
 
 ## Source Code Components
 
