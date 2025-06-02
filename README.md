@@ -6,6 +6,48 @@ A modern Streamlit-based video capture utility for capturing and browsing video 
 <img src="jiffycam.jpg" alt="screenshot" width="75%" style="border: 2px solid grey;"/>
 </p>
 
+## Architecture Overview
+
+JiffyCam consists of two complementary but independent applications that work together to provide a complete video capture and browsing solution:
+
+<p align="center">
+<img src="JiffyCam.png" alt="JiffyCam Architecture" width="85%" style="border: 2px solid grey;"/>
+</p>
+
+### Core Components
+
+**🎥 jiffycam.py - Web-based Viewer Application**
+- Streamlit-based web interface for browsing and viewing captured images
+- Provides intuitive time-based navigation with sliders and date pickers
+- Displays live video feeds and historical image browsing
+- Can operate independently to view existing captured data
+- Connects to capture backend via HTTP API when available
+
+**📷 jiffycapture.py - Video Capture Engine**
+- Standalone video capture application that can run independently
+- Captures video from camera devices and saves frames automatically
+- Includes built-in HTTP server for serving live images and status
+- Provides object detection capabilities with YOLOv8
+- Can run as a background service without any UI dependencies
+
+### How They Work Together
+
+The two components are designed to be **complementary but independent**:
+
+1. **Independent Operation**: Each component can run standalone
+   - `jiffycapture.py` can capture and save images without any viewer
+   - `jiffycam.py` can browse existing captured data without active capture
+
+2. **Seamless Integration**: When both are running, they work together seamlessly
+   - The viewer automatically detects and connects to the capture engine
+   - Live video feeds are streamed from capture to viewer via HTTP
+   - Status information and capture controls are synchronized
+
+3. **Flexible Deployment**: This architecture supports various deployment scenarios
+   - Single machine: Both components running together
+   - Distributed: Capture on edge devices, viewing from remote locations
+   - Batch processing: Capture runs continuously, viewer used for analysis
+
 ## Overview
 
 JiffyCam is a portable all-Python webapp that uses Streamlit for the UI to capture video from a camera, detect objects, save frames, and browse historical images. It provides an intuitive interface for real-time video capture and historical image browsing with time-based navigation.

@@ -541,23 +541,24 @@ def new_image_display(frame):
     
     # Pass the same width parameter as used for timeline image to maintain consistency
     ta_img = generate_timeline_arrow()
-    timearrow_placeholder.image(ta_img, channels="RGB", use_container_width=True)
+    ucw = True
+    timearrow_placeholder.image(ta_img, channels="RGB", use_container_width=ucw)
 
     if not st.session_state.in_playback_mode:
         if st.session_state.timeline_placeholder is None:
             print(f"unexpected error: timeline_placeholder is None")
             return
         timeline_img = generate_timeline_image()
-        st.session_state.timeline_placeholder.image(timeline_img, channels="RGB", use_container_width=True, output_format="PNG")
+        st.session_state.timeline_placeholder.image(timeline_img, channels="RGB", use_container_width=ucw, output_format="PNG")
         #print(f"new_image_display: {timeline_img.shape}")
 
     """Display a new image"""
     if(not st.session_state.video_placeholder):     # delayed creation to avoid flickering
         #print(f"creating video placeholder")
-        st.session_state.video_placeholder = st.image(frame, channels="BGR", use_container_width=True)
+        st.session_state.video_placeholder = st.image(frame, channels="BGR", use_container_width=ucw)
     else:
         #print(f"updating video placeholder")
-        st.session_state.video_placeholder.image(frame, channels="BGR", use_container_width=True)
+        st.session_state.video_placeholder.image(frame, channels="BGR", use_container_width=ucw)
     
 def update_image_display(direction=None):
     """Update the image display based on the current date and time."""
