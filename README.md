@@ -1,12 +1,12 @@
 # JiffyCam
 
-A modern Streamlit-based all-Python video capture utility for capturing and browsing video from cameras. It provides an intuitive interface for real-time video capture and historical image browsing with time-based navigation.
+JiffyCam is an all-Python webapp utility for recording and browsing surveillance video. All data is saved to private (local or remote) storage that you control. 
 
 <p align="center">
 <img src="jiffycam.jpg" alt="screenshot" width="75%" style="border: 2px solid grey;"/>
 </p>
 
-## Architecture Overview
+## Architecture
 
 JiffyCam consists of two complementary but independent applications that work together to provide a complete video capture and browsing solution:
 
@@ -27,7 +27,7 @@ JiffyCam consists of two complementary but independent applications that work to
 - Standalone video capture application that can run independently
 - Captures video from camera devices and saves frames automatically
 - Includes built-in HTTP server for serving live images and status
-- Provides sophisticated object detection with YOLOv8 and custom filters
+- Provides sophisticated object detection with YOLOv8 and custom motion filters
 - Can run as a background service without any UI dependencies
 
 ### How They Work Together
@@ -128,7 +128,6 @@ The 'cam-device' parameter is the device argument to the ultralytics 'VideoCaptu
 
 Both jiffycam and jiffycapture use this configuration info in common. The jiffycam.yaml file must be located in the JiffyData/<Camera-Session> folder. Jiffycapture uses this for image acquisition parameters.  The jiffycam viewer uses this to discover the 'dataserver-port' to query for capture status and live images.
 
-
 ## Source Code Components
 
 JiffyCam consists of several key components:
@@ -155,27 +154,6 @@ JiffyData/
 
 The size and resolution of images are set by the camera settings upstream of jiffycapture. The number of images per day can vary depending on configuration intervals and the level of activity (object recognition) that occurs. For large images plus lots of activity, the data storage requirements can be significant. Keep track and delete or thin old data as necessary.
 You may want to locate your JiffyData folder on an external SSD or some other large-storage device.
-
-## Development
-
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-### Build/Run from Source
-
-```bash
-# Clone the repository
-git clone https://github.com/your-username/jiffycam.git
-
-# Install development dependencies
-pip install -r requirements.txt
-
-```
 
 ## License
 
