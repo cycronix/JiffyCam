@@ -19,7 +19,7 @@ JiffyCam is an all-Python webapp utility for recording and browsing surveillance
 1. Clone the repository:
    ```bash
    git clone https://github.com/your-username/jiffycam.git
-   cd jiffycam
+   cd jiffycam/src
    ```
 
 2. Create and activate a virtual environment:
