@@ -1,0 +1,40 @@
+
+bug:  after changing dates via calendar, then clicking 'Live' doesnt change to current date.  
+        (this works with arrow-date changes?) 
+        STILL THERE
+
+frame_queue is useless in jiffycapture.py:  
+    only value is current_fps snapshot.  
+    width/height is no value (get from image if want): remove from status
+
+
+Done/Old:
+
+transitions from Live<->playback does double image flash?  
+    e.g Live->Live seems to do a prev-step then RT
+    FIXED
+
+fast-reverse runs off back of FrontYard into BackYard data???
+    this may fix?:  streamlit run jiffycam.py --server.headless true
+    still happens on ipad.  timing/buffering issue?  cache-bust url?
+    FIXED 
+
+add heartbeat-save:
+    save_interval -> heartbeat save (0 = off)
+    new detect_interval -> renamed save_interval (0 = off)
+    display_interval ???? (or just go asap )
+    DONE
+
+at start of new capture, can't view Live data unless something already saved...
+    ~DONE.  less likely with auto-save save_interval
+
+status info disabled, what is there is messy
+    Needs tune up at least
+
+todo:  update timeline with new saves in RT
+    DONE
+
+idea:   timeline bar dual mode:  if(Live): non-clickable, dynamic update; else: clickable, static update;
+    build_main_area:  make one form or the other based on RT.  
+    ui_loop:  update timeline if Live (dynamic enabled)
+    DONE
