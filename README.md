@@ -49,8 +49,8 @@ JiffyCam is an all-Python webapp utility for recording and browsing surveillance
    python jiffycapture.py CustomDataDir/MyCameraName
    ```
 
-Note that jiffycapture stores images to a specific camera-session subfolder under the JiffyData folder.  
-The jiffycam can see and display multiple cameras, i.e. subfolders under JiffyData or custom data folder.  
+Note that jiffycapture stores images to a specific camera-session subfolder under the JiffyData folder, thus the subfolder path argument. 
+The jiffycam can see and display multiple cameras in subfolders under JiffyData folder, thus the parent folder argument.
 
 ## Viewer Use
 
