@@ -6,47 +6,6 @@ JiffyCam is an all-Python webapp utility for recording and browsing surveillance
 <img src="jiffycam.jpg" alt="screenshot" width="75%" style="border: 2px solid grey;"/>
 </p>
 
-## Architecture
-
-JiffyCam consists of two complementary but independent applications that work together to provide a complete video capture and browsing solution:
-
-<p align="center">
-<img src="JiffyCam.png" alt="JiffyCam Architecture" width="85%" style="border: 2px solid grey;"/>
-</p>
-
-### Core Components
-
-**🎥 jiffycam.py - Web-based Viewer Application**
-- Streamlit-based web interface for browsing and viewing captured images
-- Provides intuitive time-based navigation with timelines and date pickers
-- Displays live video feeds and historical image browsing
-- Can operate independently to view existing captured data
-- Connects to capture backend via HTTP API when available
-
-**📷 jiffycapture.py - Video Capture Engine**
-- Standalone video capture application that can run independently
-- Captures video from camera devices and saves frames automatically
-- Includes built-in HTTP server for serving live images and status
-- Provides sophisticated object detection with YOLOv8 and custom motion filters
-- Can run as a background service without any UI dependencies
-
-### How They Work Together
-
-The two components are designed to be **complementary but independent**:
-
-1. **Independent Operation**: Each component can run standalone
-   - `jiffycapture.py` can capture and save images without any viewer
-   - `jiffycam.py` can browse existing captured data without active capture
-
-2. **Seamless Integration**: When both are running, they work together seamlessly
-   - The viewer automatically detects and connects to the capture engine
-   - Live video feeds are streamed from capture to viewer via HTTP
-
-3. **Flexible Deployment**: This architecture supports various deployment scenarios
-   - Single machine: Both components running together
-   - Distributed: Capture on edge devices, viewing from remote locations
-   - Batch processing: Capture runs continuously, viewer used for analysis
-
 ## Installation
 
 ### Prerequisites
@@ -154,6 +113,47 @@ JiffyData/
 
 The size and resolution of images are set by the camera settings upstream of jiffycapture. The number of images per day can vary depending on configuration intervals and the level of activity (object recognition) that occurs. For large images plus lots of activity, the data storage requirements can be significant. Keep track and delete or thin old data as necessary.
 You may want to locate your JiffyData folder on an external SSD or some other large-storage device.
+
+## Architecture
+
+JiffyCam consists of two complementary but independent applications that work together to provide a complete video capture and browsing solution:
+
+<p align="center">
+<img src="JiffyCam.png" alt="JiffyCam Architecture" width="85%" style="border: 2px solid grey;"/>
+</p>
+
+### Core Components
+
+**🎥 jiffycam.py - Web-based Viewer Application**
+- Streamlit-based web interface for browsing and viewing captured images
+- Provides intuitive time-based navigation with timelines and date pickers
+- Displays live video feeds and historical image browsing
+- Can operate independently to view existing captured data
+- Connects to capture backend via HTTP API when available
+
+**📷 jiffycapture.py - Video Capture Engine**
+- Standalone video capture application that can run independently
+- Captures video from camera devices and saves frames automatically
+- Includes built-in HTTP server for serving live images and status
+- Provides sophisticated object detection with YOLOv8 and custom motion filters
+- Can run as a background service without any UI dependencies
+
+### How They Work Together
+
+The two components are designed to be **complementary but independent**:
+
+1. **Independent Operation**: Each component can run standalone
+   - `jiffycapture.py` can capture and save images without any viewer
+   - `jiffycam.py` can browse existing captured data without active capture
+
+2. **Seamless Integration**: When both are running, they work together seamlessly
+   - The viewer automatically detects and connects to the capture engine
+   - Live video feeds are streamed from capture to viewer via HTTP
+
+3. **Flexible Deployment**: This architecture supports various deployment scenarios
+   - Single machine: Both components running together
+   - Distributed: Capture on edge devices, viewing from remote locations
+   - Batch processing: Capture runs continuously, viewer used for analysis
 
 ## License
 
