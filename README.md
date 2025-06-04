@@ -65,8 +65,7 @@ The jiffycam can see and display multiple cameras in subfolders under JiffyData 
 The application provides status information in the sidebar:
 - Link to github source code
 - View jiffycam.yaml configuration
-- Error messages if issues occur
-- Misc info
+- Error and status messages
 
 ## Capture Configuration
 
