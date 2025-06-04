@@ -82,9 +82,9 @@ weights: 'models/yolov8l.pt'  # Path to YOLOv8 model weights
 
 The 'cam-device' parameter is the device argument to the ultralytics 'VideoCapture' method.  For example, built-in webcams are typically device '0' or '2', and RTSP devices require a full url such as 'rtsp://admin:<password>@192.168.50.XXX/cam/realmonitor?channel=1&subtype=0'.
 
-- Session-specific configuration file location: `[data_dir]/[SessionName]/jiffycam.yaml`
+- Session-specific configuration file location: `[data_dir]/[Session]/jiffycam.yaml`
 
-Both jiffycam and jiffycapture use this configuration info in common. The jiffycam.yaml file must be located in the JiffyData/<Camera-Session> folder. Jiffycapture uses this for image acquisition parameters.  The jiffycam viewer uses this to discover the 'dataserver-port' to query for capture status and live images.
+Both jiffycam and jiffycapture use this configuration info in common. The jiffycam.yaml file must be located in the JiffyData/<Session> folder. Jiffycapture uses this for image acquisition parameters.  The jiffycam viewer uses this to discover the 'dataserver-port' to query for capture status and live images.
 
 ## Source Code Components
 
@@ -103,7 +103,7 @@ JiffyCam consists of several key components:
 Captured frames are stored in [CloudTurbine](https://cloudturbine.com) compatible time-stamped folders:
 ```
 JiffyData/
-└── [Camera Session]/
+└── [Session]/
       └── [Timestamp-Day]/
           └── [Timestamp-Seconds]/
             └── [CameraName].jpg
