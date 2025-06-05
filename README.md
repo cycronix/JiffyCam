@@ -1,6 +1,7 @@
 # JiffyCam
 
-JiffyCam is an all-Python webapp utility for recording and browsing surveillance video. All data is saved to private (local or remote) storage that you control. 
+JiffyCam is an all-Python webapp utility for recording and browsing surveillance video. 
+All data are saved to private (local or remote) files; no third party access or subscriptions. 
 
 <p align="center">
 <img src="jiffycam.jpg" alt="screenshot" width="75%" style="border: 2px solid grey;"/>
