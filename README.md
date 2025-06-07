@@ -81,7 +81,7 @@ dataserver_port: 8081  # Port for the data server
 weights: 'models/yolov8l.pt'  # Path to YOLOv8 model weights
 ```
 
-The 'cam-device' parameter is the device argument to the ultralytics 'VideoCapture' method.  For example, built-in webcams are typically device '0' or '2', and RTSP devices require a full url such as 'rtsp://admin:<password>@192.168.50.XXX/cam/realmonitor?channel=1&subtype=0'.
+The 'cam-device' parameter is the device argument to the ultralytics 'VideoCapture' method.  For example, built-in webcams are typically device '0' or '2', and RTSP devices require a full url such as 'rtsp://admin:password@192.168.50.XXX/cam/realmonitor?channel=1&subtype=0'.
 
 - Session-specific configuration file location: `[data_dir]/[Session]/jiffycam.yaml`
 
