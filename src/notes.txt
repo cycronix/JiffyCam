@@ -26,6 +26,6 @@ python3 src/jiffycapture.py JiffyData/MyCam &
 mv <oldJiffyData>/* JiffyData
 
 # start viewer (if not already running):
-streamlit run src/jiffycam.py JiffyData &
+streamlit run src/jiffycam.py JiffyData --server.headless true &
 
 
