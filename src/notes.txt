@@ -8,33 +8,24 @@ frame_queue is useless in jiffycapture.py:
     width/height is no value (get from image if want): remove from status
 
 
-Done/Old:
+JiffyCam Installation from GitHub:
 
-transitions from Live<->playback does double image flash?  
-    e.g Live->Live seems to do a prev-step then RT
-    FIXED
+mkdir JiffyCam
+git clone https://github.com/cycronix/JiffyCam
+python3 -m venv .venv
+source .venv/bin/activate
+pip3 install -r requirements.txt
 
-fast-reverse runs off back of FrontYard into BackYard data???
-    this may fix?:  streamlit run jiffycam.py --server.headless true
-    still happens on ipad.  timing/buffering issue?  cache-bust url?
-    FIXED 
+# if starting from scratch, create and startup a capture session:
+mkdir JiffyData/MyCam
+cp jiffycam.yaml JiffyData/MyCam
+vi JiffyData/MyCam/jiffycam.yaml
+python3 src/jiffycapture.py JiffyData/MyCam &
 
-add heartbeat-save:
-    save_interval -> heartbeat save (0 = off)
-    new detect_interval -> renamed save_interval (0 = off)
-    display_interval ???? (or just go asap )
-    DONE
+# else if migrating old archives, simply move or copy them in place:
+mv <oldJiffyData>/* JiffyData
 
-at start of new capture, can't view Live data unless something already saved...
-    ~DONE.  less likely with auto-save save_interval
+# start viewer (if not already running):
+streamlit run src/jiffycam.py JiffyData &
 
-status info disabled, what is there is messy
-    Needs tune up at least
 
-todo:  update timeline with new saves in RT
-    DONE
-
-idea:   timeline bar dual mode:  if(Live): non-clickable, dynamic update; else: clickable, static update;
-    build_main_area:  make one form or the other based on RT.  
-    ui_loop:  update timeline if Live (dynamic enabled)
-    DONE
