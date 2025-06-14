@@ -1,0 +1,41 @@
+
+bug:  after changing dates via calendar, then clicking 'Live' doesnt change to current date.  
+        (this works with arrow-date changes?) 
+        STILL THERE
+
+frame_queue is useless in jiffycapture.py:  
+    only value is current_fps snapshot.  
+    width/height is no value (get from image if want): remove from status
+
+bug:    clicking Live while in active auto_play gets stuck
+
+
+JiffyCam Installation from GitHub
+
+mkdir JiffyCam
+git clone https://github.com/cycronix/JiffyCam
+python3 -m venv .venv
+source .venv/bin/activate
+pip3 install -r requirements.txt
+
+[ # fixups for no JiffyData at startup: 
+mkdir JiffyData/Default
+cp jiffycam.yaml JiffyData/Default
+# that lets web interface startup with blank image for Default session
+]
+
+# if starting from scratch, create and startup a capture session:
+mkdir JiffyData/MyCam
+cp jiffycam.yaml JiffyData/MyCam
+vi JiffyData/MyCam/jiffycam.yaml
+
+# else if migrating old archives, simply move or copy them in place:
+mv <oldJiffyData>/* JiffyData
+
+# start capturing (optional if just want to view archives)
+python3 src/jiffycapture.py JiffyData/MyCam &
+
+# start viewer (if not already running):
+streamlit run src/jiffycam.py JiffyData &
+
+
