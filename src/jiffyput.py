@@ -7,22 +7,28 @@ This module provides functions to process and save video frames,
 import os
 import cv2
 import time
+import glob
 from datetime import datetime, timedelta
+from shutil import rmtree
+from pathlib import Path
 
 from jiffydetect import detect
 
 prevframe = None
-def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path, save_frame: bool, detect_frame: bool):
+def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path, save_frame: bool, detect_frame: bool, save_days=None):
     """
     Process and save a video frame.
 
     Args:
         cam_name (str): The name of the camera
         frame: The video frame to process
-        ftime (float): The frame timestamp
+        time_posix (float): The frame timestamp
         session (str): The session name
         data_dir (str): The data directory
         weights_path (str): Path to the YOLO weights file
+        save_frame (bool): Whether to save the frame
+        detect_frame (bool): Whether to run detection on the frame
+        save_days (int, optional): Number of days to keep data before considering it old
 
     Returns:
         The processed frame (which may be modified by detection)
@@ -62,9 +68,66 @@ def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path
         cv2.imwrite(image_path, frame, encode_param)
         print(f"Saved image to: {image_path}")
 
+        # Check for old data if save_days is specified and greater than 0
+        if save_days is not None and save_days > 0:
+            check_old_data(data_dir, save_days, time_posix)
+
     except Exception as e:
         error_msg = f"Error sending frame: {str(e)}"
         print(error_msg)
         return None
 
     return frame
+
+
+def check_old_data(data_dir: str, save_days: int, current_time_posix: float):
+    """
+    Check for data older than save_days and print debug messages.
+    
+    Args:
+        data_dir (str): The data directory to check
+        save_days (int): Number of days to keep data
+        current_time_posix (float): Current timestamp in POSIX format
+    """
+    try:
+        # Calculate the cutoff date (current_day - save_days)
+        current_date = datetime.fromtimestamp(current_time_posix).date()
+        cutoff_date = current_date - timedelta(days=save_days)
+        cutoff_date_ms = int(time.mktime(cutoff_date.timetuple()) * 1000)
+        
+        # Find all date directories in the data directory
+        date_dirs = glob.glob(os.path.join(data_dir, "*"))
+        #old_dates = []
+        old_folders = []
+
+        for date_dir in date_dirs:
+            if not os.path.isdir(date_dir):     # skip non-directories  
+                continue
+                
+            date_name = os.path.basename(date_dir)
+            try:
+                # Try to convert directory name to timestamp (milliseconds)
+                date_timestamp_ms = int(date_name)
+                
+                # Check if this date is older than the cutoff
+                if date_timestamp_ms < cutoff_date_ms:
+                    # Convert back to readable date for debug message
+                    old_date = datetime.fromtimestamp(date_timestamp_ms / 1000).date()
+                    #old_dates.append(str(old_date))
+                    old_folders.append(date_dir)
+            except ValueError:
+                # Skip directories that aren't numeric timestamps
+                continue
+        
+        # Delete old folders
+        if(old_folders):
+            old_folders.sort()
+            for old_folder in old_folders:
+                basename = os.path.basename(old_folder)
+                #print('old_folder: ' + old_folder + ', basename: ' + basename + ', data_dir: '+ data_dir +', contains: ' + str(old_folder.startswith(data_dir)))
+                if(basename.isnumeric() and old_folder.startswith(data_dir)):   # double check that it's numeric and in the data_dir
+                    print(f"DELETE old folder: {old_folder}")
+                    rmtree(old_folder)
+        
+    except Exception as e:
+        print(f"Error checking old data: {str(e)}")

@@ -4,3 +4,4 @@ save_interval: 600
 detect_interval: 5
 dataserver_port: 8081
 weights: 'models/yolov8l.pt'
+save_days: 30

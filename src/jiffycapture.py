@@ -300,9 +300,14 @@ class VideoCapture:
     def send_frame(self, cam_name: str, frame, ftime: float, session: str, save_frame: bool, detect_frame: bool):
         """Send a frame to the data server."""
         try:
+            # Get save_days from config if present
+            save_days = self.config.get('save_days', None)
+            if save_days is not None:
+                save_days = int(save_days)
+            
             # Process and save the frame
             result = jiffyput(cam_name, frame, ftime, session, self.config_manager.data_dir, \
-                        self.config.get('weights', 'models/yolov8l.pt'), save_frame, detect_frame)
+                        self.config.get('weights', 'models/yolov8l.pt'), save_frame, detect_frame, save_days)
             if result is not None:
                 self.frame_count += 1
                 #self.last_save_time = ftime
