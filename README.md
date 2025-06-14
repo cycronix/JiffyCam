@@ -86,7 +86,7 @@ The 'cam-device' parameter is the device argument to the ultralytics 'VideoCaptu
 
 - Session-specific configuration file location: `[data_dir]/[Session]/jiffycam.yaml`
 
-Both jiffycam and jiffycapture use this configuration info in common. The jiffycam.yaml file must be located in the JiffyData/<Session> folder. Jiffycapture uses this for image acquisition parameters.  The jiffycam viewer uses this to discover the 'dataserver-port' to query for capture status and live images.
+Both jiffycam and jiffycapture use this configuration info in common. The jiffycam.yaml file must be located in the JiffyData/Session folder. Jiffycapture uses this for image acquisition parameters.  The jiffycam viewer uses this to discover the 'dataserver-port' to query for capture status and live images.
 
 If 'save_days' is provided and non-zero, oldest images will be automatically deleted (upon new-saves), creating a ring-buffer of 'save_days' duration.  There are a number of safety checks (e.g. top-level folder must be integer-time), but be careful when specifying this and associated data folder.
 
