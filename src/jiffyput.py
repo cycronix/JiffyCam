@@ -89,6 +89,9 @@ def check_old_data(data_dir: str, save_days: int, current_time_posix: float):
         save_days (int): Number of days to keep data
         current_time_posix (float): Current timestamp in POSIX format
     """
+    if(save_days is None or save_days <= 0):     # fire-wall
+        return
+    
     try:
         # Calculate the cutoff date (current_day - save_days)
         current_date = datetime.fromtimestamp(current_time_posix).date()
