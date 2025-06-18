@@ -78,7 +78,7 @@ def main():
     if 'step_direction' not in st.session_state:            st.session_state.step_direction = None
     if 'autoplay_direction' not in st.session_state:        st.session_state.autoplay_direction = None
     if 'autoplay_step' not in st.session_state:             st.session_state.autoplay_step = False
-    if 'autoplay_interval' not in st.session_state:         st.session_state.autoplay_interval = 0.1
+    if 'autoplay_interval' not in st.session_state:         st.session_state.autoplay_interval = 0.05
     if 'needs_date_update' not in st.session_state:         st.session_state.needs_date_update = True
     if 'dataserver_port' not in st.session_state:           st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
     if 'video_placeholder' not in st.session_state:         st.session_state.video_placeholder = None

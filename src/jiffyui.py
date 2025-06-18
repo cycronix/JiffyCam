@@ -37,10 +37,10 @@ def heartbeat():
     elif(st.session_state.autoplay_step != None):
         on_navigation_button(st.session_state.autoplay_step, False)
         st.session_state.autoplay_step = None
-        time.sleep(0.01)     # delay to allow for button press to be processed, else video glitch possible
+        time.sleep(0.05)     # delay to allow for button press to be processed, else video glitch possible
     elif(st.session_state.in_playback_mode):
         #print("in_playback_mode")
-        time.sleep(0.1)
+        time.sleep(0.05)
 
 def set_autoplay(direction):
     """Set autoplay direction."""
