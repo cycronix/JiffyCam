@@ -83,6 +83,8 @@ def main():
     if 'dataserver_port' not in st.session_state:           st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
     if 'video_placeholder' not in st.session_state:         st.session_state.video_placeholder = None
     
+    st.session_state.status_message = "Initializing..."
+    
     # Set http_server_port to match dataserver_port for consistency
     if 'http_server_port' not in st.session_state:
         st.session_state.http_server_port = st.session_state.dataserver_port

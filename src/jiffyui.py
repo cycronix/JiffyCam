@@ -306,10 +306,10 @@ def on_navigation_button(direction, onclick=True):
     # Increment/decrement time logic
     tweek_time(direction)
     if onclick:
-        #print(f"<<<on_navigation_button: {direction}, {onclick}")
-        update_image_display(direction=direction)
+        #print(f"<<<on_navigation_button: {direction}, {onclick}, {inspect.stack()[1].function}", {st.session_state.status_message})
+        #update_image_display(direction=direction)
         set_autoplay(None)
-        #st.session_state.autoplay_step = direction
+        st.session_state.autoplay_step = direction
         return
     
     # Fetch placeholders from session_state inside the update function
