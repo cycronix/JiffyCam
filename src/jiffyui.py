@@ -36,6 +36,7 @@ def heartbeat():
         time.sleep(st.session_state.autoplay_interval)
     elif(st.session_state.autoplay_step != None):
         on_navigation_button(st.session_state.autoplay_step, False)
+        #print(f"autoplay_step: {st.session_state.autoplay_step}")
         st.session_state.autoplay_step = None
         time.sleep(0.05)     # delay to allow for button press to be processed, else video glitch possible
     elif(st.session_state.in_playback_mode):
@@ -299,17 +300,16 @@ def on_navigation_button(direction, onclick=True):
         direction: "up" for next image or "down" for previous image
         stopAuto: Whether to stop autoplay mode when navigating
     """
- #   if(onclick and st.session_state.step_direction == None):
-    #print(f"on_navigation_button: {direction}, {onclick}, {inspect.stack()[1].function}, step_direction: {st.session_state.step_direction}")
 
     st.session_state.in_playback_mode = True
 
     # Increment/decrement time logic
     tweek_time(direction)
-    #print(f"on_navigation_button: {direction}, {stopAuto}")
     if onclick:
+        #print(f"<<<on_navigation_button: {direction}, {onclick}")
+        update_image_display(direction=direction)
         set_autoplay(None)
-        st.session_state.autoplay_step = direction
+        #st.session_state.autoplay_step = direction
         return
     
     # Fetch placeholders from session_state inside the update function
@@ -317,6 +317,7 @@ def on_navigation_button(direction, onclick=True):
         st.session_state.step_direction = direction  # let rerun handle the update  
         #time.sleep(0.1)
     else:
+        #print(f"on_navigation_button: {direction}, {onclick}")
         update_image_display(direction=direction)
 
 def on_prev_button(onclick=True):
@@ -359,7 +360,7 @@ def change_day(direction):
         valid_dates = sorted(st.session_state.valid_dates)
         #print(f"valid_dates: {valid_dates}")    
         # If we only have one valid date, we can't navigate
-        if len(valid_dates) <= 1:
+        if False and len(valid_dates) <= 1:
             print(f"Only one valid date available ({valid_dates[0] if valid_dates else 'none'}), can't change days")
             # Just refresh the current date's display
             st.session_state.step_direction = "down"
@@ -557,12 +558,12 @@ def new_image_display(frame):
         #print(f"creating video placeholder")
         st.session_state.video_placeholder = st.image(frame, channels="BGR", use_container_width=ucw)
     else:
-        #print(f"updating video placeholder")
+        #print(f"updating video placeholder, {inspect.stack()[1].function}")
         st.session_state.video_placeholder.image(frame, channels="BGR", use_container_width=ucw)
     
 def update_image_display(direction=None):
     """Update the image display based on the current date and time."""
-   #print(f"update_image_display: {direction}, {inspect.stack()[1].function}")
+    #print(f"update_image_display: {direction}, {inspect.stack()[1].function}")
 
     # Fetch placeholders from session state
     video_placeholder = st.session_state.video_placeholder
@@ -838,7 +839,7 @@ def build_main_area():
     """Create the main UI area elements and return placeholders."""
     # Create placeholders for main UI elements
     #video_placeholder = st.empty()
-    video_placeholder = None
+    #video_placeholder = None
     time_display = st.empty()
     #timearrow_placeholder = st.empty()
     timearrow_placeholder = None
@@ -1283,7 +1284,8 @@ def build_main_area():
 
     # Create Video Placeholder *after* the controls container
     #video_placeholder = st.empty()     # this flickers
-    if(not st.session_state.video_placeholder):
+    video_placeholder = None
+    if(False and not st.session_state.video_placeholder):
         if(st.session_state.last_frame is not None):
             #print(f"!!!creating video placeholder")
             video_placeholder = create_placeholder(height=240, width=1200, image=st.session_state.last_frame)
@@ -1327,8 +1329,8 @@ def run_ui_update_loop():
     elif (st.session_state.need_to_display_recent and not is_capturing):
         display_most_recent_image() # Fetches placeholders from session_state
         st.session_state.needs_to_display_recent = False
-    elif st.session_state.autoplay_step == None and st.session_state.last_frame is not None:
-        update_image_display(st.session_state.step_direction)
+    #elif st.session_state.autoplay_step == None and st.session_state.last_frame is not None:
+    #    update_image_display(st.session_state.step_direction)
 
     # Initialize server status update counter
     server_status_update_time = 0
@@ -1447,7 +1449,7 @@ def run_ui_update_loop():
                         #    need_display_update = True
                             #print(f"last_displayed_timestamp: {inspect.stack()[1].function}")
 
-                        if need_display_update:
+                        if False and need_display_update:
                             #print(f"need_display_update: {inspect.stack()[1].function}")
                             # Only display if we need to update the image
                             #print(f"need_display_update: {inspect.stack()[1].function}, last_frame: {st.session_state.last_frame is not None}")

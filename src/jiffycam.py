@@ -171,8 +171,11 @@ def main():
     # Initialize placeholder session state variables before calling UI builders
     st.session_state.status_placeholder, st.session_state.error_placeholder = build_sidebar()
     
-    st.session_state.video_placeholder, st.session_state.time_display, st.session_state.timearrow_placeholder, st.session_state.timeline_placeholder = \
+    #st.session_state.video_placeholder, 
+    foo, \
+        st.session_state.time_display, st.session_state.timearrow_placeholder, st.session_state.timeline_placeholder = \
         build_main_area()
+    #st.session_state.video_placeholder = None
 
     #st.session_state.video_placeholder.info("Initialize capture or select time.")
     # st.session_state.status_placeholder.markdown("<div style='padding: 5px 0;'>Status: Idle</div>", unsafe_allow_html=True)
