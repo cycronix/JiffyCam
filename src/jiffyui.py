@@ -197,16 +197,12 @@ def on_recording_change():
                 target_date = st.session_state.valid_dates[-1]
                 
         # IMPORTANT: Don't update st.session_state.date directly
-        # Instead, store target date in a separate variable
-        st.session_state.target_browsing_date = target_date
-        
         # Update browsing_date directly (this isn't a widget)
         st.session_state.browsing_date = target_date
     except Exception as e:
         print(f"Error setting date range for new recording: {str(e)}")
         # Fall back to today's date if there's an error
         today = datetime.now().date()
-        st.session_state.target_browsing_date = today
         st.session_state.browsing_date = today
 
         # Set time to end of day to find the latest image
@@ -225,15 +221,14 @@ def on_recording_change():
     # Flag that we need to update the date on next rerun
     # This will be handled by the build_main_area function
     st.session_state.needs_date_update = True
-    st.session_state.init_date = st.session_state.browsing_date
+    
+    # Force date picker widget to recreate with new date
+    if 'date_picker_key' not in st.session_state:
+        st.session_state.date_picker_key = 0
+    st.session_state.date_picker_key += 1
 
 def on_date_change():
     """Handle date picker change."""
-    change_day("current")
-    st.session_state.needs_date_update = True
-    return
-
-
     #print(f"on_date_change: {inspect.stack()[1].function}")
     set_autoplay(None)
     
@@ -244,15 +239,20 @@ def on_date_change():
     # Completely reset timestamps cache to force fresh data load
     reset_timestamps()
 
-    # Update browsing date to match selected date
-    st.session_state.browsing_date = st.session_state.date
+    # Update browsing date to match selected date (this is the only place we read from widget state)
+    # Use the current dynamic key to access the date picker widget state
+    if 'date_picker_key' not in st.session_state:
+        st.session_state.date_picker_key = 0
+    current_date_key = f"date_{st.session_state.date_picker_key}"
+    if current_date_key in st.session_state:
+        st.session_state.browsing_date = st.session_state[current_date_key]
     
     # Force display refresh
     st.session_state.last_displayed_timestamp = None
     
     # Count frames for the new date - with robust error handling
     try:
-        browse_date = st.session_state.date
+        browse_date = st.session_state.browsing_date
         #print(f"browse_date: {browse_date}")
         browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
         
@@ -330,7 +330,7 @@ def on_next_button(onclick=True):
 
 def tweek_time(direction, onclick=True):
     """Tweek the time by 1 second in the given direction.""" 
-    dt = datetime.combine(st.session_state.date, datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second, st.session_state.microsecond))
+    dt = datetime.combine(st.session_state.browsing_date, datetime_time(st.session_state.hour, st.session_state.minute, st.session_state.second, st.session_state.microsecond))
     if onclick:
         dt += timedelta(microseconds=10) if direction == "up" else -timedelta(microseconds=10)
     else:
@@ -352,7 +352,7 @@ def change_day(direction):
     reset_timestamps()
 
     # Get current date from the session state
-    current_date = st.session_state.date
+    current_date = st.session_state.browsing_date
     #print(f"current_date: {current_date}")
 
     # Check if we have valid dates in session state
@@ -424,10 +424,6 @@ def change_day(direction):
     st.session_state.last_frame = None
     
     # IMPORTANT: Don't modify st.session_state.date directly
-    # Instead, set up for update on next rerun 
-    st.session_state.target_browsing_date = new_date
-    #st.session_state.needs_date_update = True
-    
     # Update browsing_date directly (this isn't a widget)
     st.session_state.browsing_date = new_date
 
@@ -440,9 +436,14 @@ def toggle_live_pause():
         # Go Live
         # Update browsing date/time to current (will be reflected in loop)
         current_time = datetime.now()
-        st.session_state.browsing_date = st.session_state.target_browsing_date = current_time.date()
+        st.session_state.browsing_date = current_time.date()
         st.session_state.in_playback_mode = False
         st.session_state.needs_date_update = True
+        
+        # Force date picker widget to recreate with new date
+        if 'date_picker_key' not in st.session_state:
+            st.session_state.date_picker_key = 0
+        st.session_state.date_picker_key += 1
         
         # make sure rt_capture is turned on and check connection
         st.session_state.rt_capture = True 
@@ -988,147 +989,37 @@ def build_main_area():
         if min_date > max_date:
             min_date = max_date
         
-        # Calculate a valid default date within bounds
-        # Check if we have a pending date update from recording change
-        if st.session_state.get('needs_date_update', False) and 'target_browsing_date' in st.session_state:
-            # If we need to update the date, use the target date calculated in on_recording_change
-            default_date = st.session_state.target_browsing_date
-            
-            # Clear the flags now that we've used them
-            #st.session_state.needs_date_update = False
-            
-            # Make sure the date is within bounds and is a valid date with images
-            if 'valid_dates' in st.session_state and st.session_state.valid_dates:
-                # Find closest valid date
-                if default_date not in st.session_state.valid_dates:
-                    # Find the closest valid date
-                    valid_dates = sorted(st.session_state.valid_dates)
-                    # Use the newest date by default if target date is after all valid dates
-                    if default_date > valid_dates[-1]:
-                        default_date = valid_dates[-1]
-                    # Use the oldest date if target date is before all valid dates
-                    elif default_date < valid_dates[0]:
-                        default_date = valid_dates[0]
-                    else:
-                        # Find the closest date
-                        closest_date = min(valid_dates, key=lambda d: abs((default_date - d).days))
-                        default_date = closest_date
-                
-                # Also update the browsing_date since it's not a widget state
-                st.session_state.browsing_date = default_date
-            else:
-                # Fall back to bounds checking if no valid dates list
-                if default_date < min_date:
-                    default_date = min_date
-                    # Also update the browsing_date
-                    st.session_state.browsing_date = default_date
-                elif default_date > max_date:
-                    default_date = max_date
-                    # Also update the browsing_date
-                    st.session_state.browsing_date = default_date
-                    
-        elif 'date' in st.session_state:
-            # Use the existing date value but validate it's within bounds and is a valid date
-            default_date = st.session_state.date
-            
-            # Check if it's in valid dates first
-            if 'valid_dates' in st.session_state and st.session_state.valid_dates:
-                if default_date not in st.session_state.valid_dates:
-                    # Find closest valid date
-                    valid_dates = sorted(st.session_state.valid_dates)
-                    if valid_dates:
-                        closest_date = min(valid_dates, key=lambda d: abs((default_date - d).days))
-                        default_date = closest_date
-                        st.session_state.browsing_date = default_date
-                    else:
-                        # Fall back to today if no valid dates
-                        default_date = max_date
-                        st.session_state.browsing_date = default_date
-            else:
-                # Fall back to bounds checking if no valid dates list
-                if default_date < min_date:
-                    default_date = min_date
-                    # Also update the browsing_date
-                    st.session_state.browsing_date = min_date
-                elif default_date > max_date:
-                    default_date = max_date
-                    # Also update the browsing_date
-                    st.session_state.browsing_date = max_date
-        elif 'init_date' in st.session_state:
-            # Use the init_date value but validate it's within bounds
-            default_date = st.session_state.init_date
-            
-            # Check if it's in valid dates first
-            if 'valid_dates' in st.session_state and st.session_state.valid_dates:
-                if default_date not in st.session_state.valid_dates:
-                    # Find closest valid date
-                    valid_dates = sorted(st.session_state.valid_dates)
-                    if valid_dates:
-                        closest_date = min(valid_dates, key=lambda d: abs((default_date - d).days))
-                        default_date = closest_date
-                        st.session_state.browsing_date = default_date
-                    else:
-                        # Fall back to today if no valid dates
-                        default_date = max_date
-                        st.session_state.browsing_date = default_date
-            else:
-                # Fall back to bounds checking if no valid dates list
-                if default_date < min_date:
-                    default_date = min_date
-                    # Also update the browsing_date
-                    st.session_state.browsing_date = min_date
-                elif default_date > max_date:
-                    default_date = max_date
-                    # Also update the browsing_date
-                    st.session_state.browsing_date = max_date
-        else:
-            # Initial default if neither session_state.date nor init_date exists yet
-            if 'valid_dates' in st.session_state and st.session_state.valid_dates:
-                # Use newest valid date
-                valid_dates = sorted(st.session_state.valid_dates)
-                default_date = valid_dates[-1]
-                st.session_state.browsing_date = default_date
-            else:
-                # Fall back to max_date
-                default_date = max_date
-                if default_date < min_date:
-                    default_date = min_date
-                    # Also update the browsing_date
-                    st.session_state.browsing_date = min_date
+        # Calculate a valid default date - use browsing_date as single source of truth
+        default_date = st.session_state.browsing_date
         
-        
-        # Create the date_input widget - ONLY use the value parameter, never set st.session_state.date directly   
-        """"     
-        try:
-            # make sure we have valid dates
+        # Validate and constrain the date
+        if 'valid_dates' in st.session_state and st.session_state.valid_dates:
+            # If we have valid dates, ensure browsing_date is one of them
             valid_dates = sorted(st.session_state.valid_dates)
-            min_date = valid_dates[0]
-            max_date = valid_dates[-1]
-
-           # Ensure default_date is valid and within min_date and max_date
+            if default_date not in valid_dates:
+                # Find the closest valid date
+                if default_date > valid_dates[-1]:
+                    default_date = valid_dates[-1]
+                elif default_date < valid_dates[0]:
+                    default_date = valid_dates[0]
+                else:
+                    default_date = min(valid_dates, key=lambda d: abs((default_date - d).days))
+                # Update browsing_date to match
+                st.session_state.browsing_date = default_date
+        else:
+            # Ensure date is within timestamp bounds
             if default_date < min_date:
                 default_date = min_date
-            if default_date > max_date:
-                default_date = max_date
-
-            print(f"default_date: {default_date}, min_date: {min_date}, max_date: {max_date}")
-
-            if True or'valid_dates' in st.session_state and st.session_state.valid_dates:
-                #default_date = min_date = max_date = st.session_state.valid_dates[0]
-                create_date_picker(
-                    value=default_date,
-                    min_value=min_date,
-                    max_value=max_date,
-                    on_change_handler=on_date_change,
-                    key="date",
-                    help_text="Select recording date",
-                    single_day=len(valid_dates) == 1
-                )  
                 st.session_state.browsing_date = default_date
-        except Exception as e:
-            print(f"Date picker error: {str(e)}")
-
-    """
+            elif default_date > max_date:
+                default_date = max_date
+                st.session_state.browsing_date = default_date
+        
+        # Create the date_input widget - ONLY use the value parameter, never set st.session_state.date directly
+        # Ensure date_picker_key is initialized
+        if 'date_picker_key' not in st.session_state:
+            st.session_state.date_picker_key = 0
+            
         try:
             # If we have valid dates, only allow selecting those dates
             if 'valid_dates' in st.session_state and st.session_state.valid_dates:
@@ -1141,7 +1032,7 @@ def build_main_area():
                         min_value=only_date,
                         max_value=only_date,
                         on_change_handler=on_date_change,
-                        key="date",
+                        key=f"date_{st.session_state.date_picker_key}",
                         help_text="Only one date available for this recording",
                         single_day=True
                     )
@@ -1157,7 +1048,7 @@ def build_main_area():
                         min_value=valid_dates[0],
                         max_value=valid_dates[-1],
                         on_change_handler=on_date_change,
-                        key="date",
+                        key=f"date_{st.session_state.date_picker_key}",
                         help_text=f"Choose from {len(valid_dates)} days with data"
                     )
             else:
@@ -1167,7 +1058,7 @@ def build_main_area():
                     min_value=min_date,
                     max_value=max_date,
                     on_change_handler=on_date_change,
-                    key="date",
+                    key=f"date_{st.session_state.date_picker_key}",
                     help_text="Select date"
                 )
                 
@@ -1381,7 +1272,10 @@ def run_ui_update_loop():
                     # Ensure paused frame is displayed
                     if st.session_state.last_frame is not None:
                         ts = st.session_state.actual_timestamp
-                        new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback Mode"
+                        #print(f"2ts: {ts}")
+                        #new_status = f"Viewing: {ts.strftime('%Y-%m-%d %H:%M:%S')}" if ts else "Playback Mode"
+                        new_status = f"Viewing: {ts}" if ts else "Playback Mode"
+
                     else:
                         new_status = "Playback Mode (No Frame)"
                         if(video_placeholder):

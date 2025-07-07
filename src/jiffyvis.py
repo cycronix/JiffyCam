@@ -28,7 +28,7 @@ def generate_timeline_image(useTimestamps=True, width=1200, height=48):
     data_dir = st.session_state.get('data_dir', 'JiffyData')
 
     # Construct base path safely
-    browse_date = st.session_state.date
+    browse_date = st.session_state.browsing_date
     browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
     
     timestamps = None
@@ -179,7 +179,7 @@ def generate_timeline_arrow(width=1200, height=24, with_markers=False):
             
             # Get the timestamps from the browsing date
             try:
-                browse_date = st.session_state.date
+                browse_date = st.session_state.browsing_date
                 browse_date_posix = int(time.mktime(browse_date.timetuple()) * 1000)
                 timestamps = get_locations(st.session_state.cam_name, session, data_dir, browse_date_posix)
                 

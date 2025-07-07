@@ -124,8 +124,11 @@ def main():
     if 'second' not in st.session_state: st.session_state.second = current_time.second
     if 'microsecond' not in st.session_state: st.session_state.microsecond = current_time.microsecond
     
-    # Default date to today (will be adjusted after timestamp range is determined)
-    if 'init_date' not in st.session_state: st.session_state.init_date = current_time.date()
+    # Default browsing date to today (will be adjusted after timestamp range is determined)
+    if 'browsing_date' not in st.session_state: st.session_state.browsing_date = current_time.date()
+    
+    # Widget key for forcing date picker recreation when needed
+    if 'date_picker_key' not in st.session_state: st.session_state.date_picker_key = 0
     
     # Image/Timestamp state
     if 'last_frame' not in st.session_state: st.session_state.last_frame = None
@@ -141,24 +144,23 @@ def main():
             st.session_state.oldest_timestamp = oldest
             st.session_state.newest_timestamp = newest
             
-            # After getting timestamp range, ensure init_date is within valid range
-            current_date = st.session_state.init_date
+            # After getting timestamp range, ensure browsing_date is within valid range
+            current_date = st.session_state.browsing_date
             min_date = oldest.date() if oldest else None
             max_date = max(datetime.now().date(), newest.date() if newest else datetime.now().date())
             
-            # Ensure init_date is within valid range
+            # Ensure browsing_date is within valid range
             if min_date and current_date < min_date:
-                st.session_state.init_date = min_date
+                st.session_state.browsing_date = min_date
             elif max_date and current_date > max_date:
-                st.session_state.init_date = max_date
+                st.session_state.browsing_date = max_date
                 
         except Exception as e:
             print(f"Error getting timestamp range: {str(e)}")
             st.session_state.oldest_timestamp = None
             st.session_state.newest_timestamp = None
 
-    if 'browsing_date' not in st.session_state and 'init_date' in st.session_state: 
-        st.session_state.browsing_date = st.session_state.init_date
+
     
     #print(f"st.session_state: {st.session_state}")
 

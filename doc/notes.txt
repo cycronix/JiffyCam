@@ -1,14 +1,14 @@
 
 bug:  after changing dates via calendar, then clicking 'Live' doesnt change to current date.  
         (this works with arrow-date changes?) 
-        STILL THERE
+        FIXED (needs testing)
 
 frame_queue is useless in jiffycapture.py:  
     only value is current_fps snapshot.  
     width/height is no value (get from image if want): remove from status
 
 bug:    clicking Live while in active auto_play gets stuck
-
+        STILL THERE
 
 JiffyCam Installation from GitHub
 
