@@ -135,7 +135,7 @@ def get_session_port(session: str, data_dir: str) -> Optional[int]:
 
 def reset_timestamps():
     global timestamp_cache
-    timestamp_cache = None
+    timestamp_cache = {}
     return   
 
 def jiffyget(time_posix: float, cam_name: str, 
@@ -276,7 +276,7 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
     return oldest, newest, all_timestamps
 
 import inspect
-timestamp_cache = None
+timestamp_cache = {}
 def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date):
     """Get all timestamps for the camera.
     
@@ -363,7 +363,8 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date):
             # Sort all timestamps from all date directories
             all_timestamps.sort()
 
-        timestamp_cache = None      # no cache for browsing all dates
+        timestamp_cache = {}      # clear cache when browsing all dates
+        #print("cleared timestamp_cache")
         return all_timestamps
     else:
         # Regular case: browsing within a specific date
@@ -371,8 +372,8 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date):
         if not os.path.exists(base_dir):
             return None
             
-        if(timestamp_cache and timestamp_cache[1] == base_dir):
-            return timestamp_cache[0]
+        if base_dir in timestamp_cache:
+            return timestamp_cache[base_dir]
         
         #print(f"get_timestamps: base_dir: {base_dir}, browse_date: {browse_date}, caller: {inspect.stack()[1].function}")
 
@@ -401,7 +402,7 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date):
             return None
 
         timestamps.sort()
-        timestamp_cache = timestamps, base_dir
+        timestamp_cache[base_dir] = timestamps
         return timestamps
 
 def get_locations(cam_name: str, session: str, data_dir: str, browse_date: int):
