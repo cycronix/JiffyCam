@@ -1128,7 +1128,7 @@ def build_main_area():
             active_sessions=active_sessions
         )
 
-    mycontainer = st.container(border=False, key="timeline_container", height=100)
+    mycontainer = st.container(border=False, key="timeline_container", height=110)
     with mycontainer:
         # Time Arrow above timeline
         timearrow_placeholder = create_placeholder(height=24, width=1200, image=generate_timeline_arrow())

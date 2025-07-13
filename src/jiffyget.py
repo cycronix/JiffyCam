@@ -136,6 +136,12 @@ def get_session_port(session: str, data_dir: str) -> Optional[int]:
 def reset_timestamps():
     global timestamp_cache
     timestamp_cache = {}
+    return
+
+def reset_image_cache():
+    global image_cache
+    image_cache = {}
+    #print("cleared image_cache")
     return   
 
 def jiffyget(time_posix: float, cam_name: str, 
@@ -236,8 +242,14 @@ def jiffyget(time_posix: float, cam_name: str,
     
     if os.path.exists(image_path):
         #print(f"jiffyget: image_path: {image_path}, closest_timestamp: {closest_timestamp}")
-        # Read the image and convert timestamp to datetime for display
-        frame = cv2.imread(image_path)
+        # Check if image is already cached
+        global image_cache
+        if False and image_path in image_cache:
+            frame = image_cache[image_path]
+        else:
+            # Read the image and cache it
+            frame = cv2.imread(image_path)
+            #image_cache[image_path] = frame    # mjm:  don't cache images
         #print(f"jiffyget: frame: {image_path}, shape: {frame.shape}")
         #closest_datetime = datetime.fromtimestamp(closest_timestamp / 1000)
         return frame, closest_timestamp, eof
@@ -277,6 +289,7 @@ def get_timestamp_range(cam_name: str, session: str, data_dir: str) -> Tuple[Opt
 
 import inspect
 timestamp_cache = {}
+image_cache = {}
 def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date):
     """Get all timestamps for the camera.
     
@@ -292,6 +305,7 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date):
 
     # Get all timestamps for the session
     if browse_date is None:
+        reset_image_cache()  # clear image cache when browsing all dates
         # mjm:  this gets called from get_timestamp_range with browse_date = None
         #print(f"get_timestamps: browsing all dates in {session}")
         # When browsing_date is None, we need to scan all date directories

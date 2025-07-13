@@ -27,15 +27,29 @@ import torch
 # ---------------------------------------------------------------------------------------------------------------------
 # rtsp-camera fetch
 
-Vehicle = [ 'car', 'truck', 'bicycle', 'motorcycle' ]
-Animal = [ 'dog', 'cat', 'bird', 'bear' ]
-Person = [ 'person' ]
+OIV7 = True
+
+if(OIV7):
+    Vehicle = [ 'Boat', 'Truck', 'Bicycle', 'Motorcycle', 'Bus', 'Canoe', 'Snowplow', 'Vehicle' ]
+    Animal = [ 'Dog', 'Cat', 'Bird', 'Bear', 'Bat (Animal)', 'Butterfly', 'Deer', 'Dragonfly', 'Duck', \
+              'Eagle', 'Falcon', 'Goose', 'Moths and butterflies', 'Mouse', 'Otter', 'Porcupine', 'Rabbit', \
+                'Racoon', 'Raven', 'Reptile', 'Skunk', 'Snake', 'Sparrow', 'Spider', 'Squirrel', 'Turkey', 'Turtle', 'Woodpecker' ]
+    Person = [ 'Person', 'Human face' ]
+    MDET = 0.05
+    CONF = 0.25
+else:
+    Vehicle = [ 'car', 'truck', 'bicycle', 'motorcycle' ]
+    Animal = [ 'dog', 'cat', 'bird', 'bear' ]
+    Person = [ 'person' ]
+    MDET = 0.15
+    CONF = 0.5
+
 TARGETS = Vehicle + Animal + Person
 
 PutDate = False
 PutDetect = False				# put cropped image of detection (e.g. 'vehicle.jpg')
 
-MDET = 0.15                                      # motion detect trigger level (linear 0-1) (was .1)
+#MDET = 0.15                                      # motion detect trigger level (linear 0-1) (was .1)
 MTHRESH = 1                                     # motion detect noise reject threshold (per raw pixel) (was 4)
 
 hide_labels = False
@@ -61,7 +75,7 @@ def detect(image, weights_path='models/yolov8l.pt'):
 
     #data='data/coco128.yaml'                    # dataset.yaml path
     imgsz=(640, 640) 	 				# inference size (height, width)
-    conf_thres=0.5  					# confidence threshold
+    conf_thres=CONF  					# confidence threshold
     device = 'cpu'
     #device = 'mps'
 
