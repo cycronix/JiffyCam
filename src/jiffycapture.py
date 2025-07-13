@@ -305,9 +305,12 @@ class VideoCapture:
             if save_days is not None:
                 save_days = int(save_days)
             
+            # Get enable_tiling from config (default to False if not specified)
+            enable_tiling = self.config.get('zoom_detect', False)
+            
             # Process and save the frame
             result = jiffyput(cam_name, frame, ftime, session, self.config_manager.data_dir, \
-                        self.config.get('weights', 'models/yolov8l.pt'), save_frame, detect_frame, save_days)
+                        self.config.get('weights', 'models/yolov8l.pt'), save_frame, detect_frame, save_days, enable_tiling)
             if result is not None:
                 self.frame_count += 1
                 #self.last_save_time = ftime

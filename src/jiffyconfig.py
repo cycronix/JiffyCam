@@ -80,6 +80,7 @@ class JiffyConfig:
             'detect_interval': 5,  # Changed to integer default
             'data_dir': self.data_dir,  # Default data directory
             'dataserver_port': 8080,  # Default port for the JiffyCam data server
+            'zoom_detect': False,  # Default tiling disabled for large images
         }
         
         # Check if we should enforce the config file exists
@@ -95,6 +96,11 @@ class JiffyConfig:
                 
                 if config is None:
                     raise ValueError(f"Empty or invalid YAML in {self.yaml_file}")
+                    
+                # Merge loaded config with defaults (defaults first, then override with loaded values)
+                merged_config = default_config.copy()
+                merged_config.update(config)
+                config = merged_config
                     
                 # Ensure save_interval is an integer
                 #if 'save_interval' in config:

@@ -6,45 +6,17 @@ Cycronix
 """
 
 # ---------------------------------------------------------------------------------------------------------------------
-
-#import argparse
-#import os
-#import sys
-#from pathlib import Path
-# import torch
-#import resource
-#import psutil
-
 import time
-#import urllib3
 from datetime import datetime
 import math
 import cv2
 from ultralytics import YOLO
+import numpy as np
 
 import torch
 
 # ---------------------------------------------------------------------------------------------------------------------
 # rtsp-camera fetch
-
-OIV7 = True
-
-if(OIV7):
-    Vehicle = [ 'Boat', 'Truck', 'Bicycle', 'Motorcycle', 'Bus', 'Canoe', 'Snowplow', 'Vehicle' ]
-    Animal = [ 'Dog', 'Cat', 'Bird', 'Bear', 'Bat (Animal)', 'Butterfly', 'Deer', 'Dragonfly', 'Duck', \
-              'Eagle', 'Falcon', 'Goose', 'Moths and butterflies', 'Mouse', 'Otter', 'Porcupine', 'Rabbit', \
-                'Racoon', 'Raven', 'Reptile', 'Skunk', 'Snake', 'Sparrow', 'Spider', 'Squirrel', 'Turkey', 'Turtle', 'Woodpecker' ]
-    Person = [ 'Person', 'Human face' ]
-    MDET = 0.05
-    CONF = 0.25
-else:
-    Vehicle = [ 'car', 'truck', 'bicycle', 'motorcycle' ]
-    Animal = [ 'dog', 'cat', 'bird', 'bear' ]
-    Person = [ 'person' ]
-    MDET = 0.15
-    CONF = 0.5
-
-TARGETS = Vehicle + Animal + Person
 
 PutDate = False
 PutDetect = False				# put cropped image of detection (e.g. 'vehicle.jpg')
@@ -52,22 +24,254 @@ PutDetect = False				# put cropped image of detection (e.g. 'vehicle.jpg')
 #MDET = 0.15                                      # motion detect trigger level (linear 0-1) (was .1)
 MTHRESH = 1                                     # motion detect noise reject threshold (per raw pixel) (was 4)
 
+# Tiling configuration
+TILE_THRESHOLD = 1280                           # minimum image size to trigger tiling
+TILE_OVERLAP = 0.15                             # overlap between tiles (15%)
+TILE_NMS_THRESHOLD = 0.5                        # NMS threshold for merging tile detections
+TILE_BATCH_SIZE = 8                             # process tiles in batches for better GPU utilization (optimal for MPS)
+TILE_SIZE = (640, 640)                          # tile size
+#TILE_SIZE = (1280, 1280)                          # tile size
+
 hide_labels = False
 hide_conf = True
 
 # Global YOLO model instance
 Model = None
 Names = None
-MPS_AVAILABLE = None
 
 previmage = None
 prevxyxy = None
 
+TARGETS = None
+MDET = None
+CONF = None
+
+MPS_AVAILABLE = None
+
+# ---------------------------------------------------------------------------------------------------------------------
+mps_available = None
+def device_type():
+    global mps_available
+    if(mps_available == None):
+        mps_available = torch.backends.mps.is_available()
+        print(f"mps_available: {mps_available}")
+    return 'mps' if mps_available else 'cpu'
+
+# ---------------------------------------------------------------------------------------------------------------------
+def setTargets(weights_path='models/yolov8l.pt'):
+    global TARGETS, MDET, CONF
+    global Vehicle, Animal, Person
+    
+    OIV7 = "oiv7".lower() in weights_path
+    #print(f"OIV7: {OIV7}")
+
+    if(OIV7):
+        Vehicle = [ 'Boat', 'Truck', 'Bicycle', 'Motorcycle', 'Bus', 'Canoe', 'Snowplow', 'Vehicle' ]
+        Animal = [ 'Dog', 'Cat', 'Bird', 'Bear', 'Bat (Animal)', 'Butterfly', 'Deer', 'Dragonfly', 'Duck', \
+                'Eagle', 'Falcon', 'Goose', 'Moths and butterflies', 'Mouse', 'Otter', 'Porcupine', 'Rabbit', \
+                    'Racoon', 'Raven', 'Reptile', 'Skunk', 'Snake', 'Sparrow', 'Spider', 'Squirrel', 'Turkey', 'Turtle', 'Woodpecker' ]
+        Person = [ 'Person' ]
+        MDET = 0.15
+        CONF = 0.25
+    else:
+        Vehicle = [ 'car', 'truck', 'bicycle', 'motorcycle' ]
+        Animal = [ 'dog', 'cat', 'bird', 'bear' ]
+        Person = [ 'person' ]
+        MDET = 0.15
+        CONF = 0.5
+
+    TARGETS = Vehicle + Animal + Person
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Tiling utility functions
+
+def generate_tiles(image, tile_size=TILE_SIZE, overlap_ratio=TILE_OVERLAP):
+    """
+    Generate overlapping tiles from a large image
+    Returns list of (tile_image, x_offset, y_offset) tuples
+    """
+    h, w = image.shape[:2]
+    tile_h, tile_w = tile_size
+    
+    # Calculate step size with overlap
+    step_h = int(tile_h * (1 - overlap_ratio))
+    step_w = int(tile_w * (1 - overlap_ratio))
+    
+    tiles = []
+    
+    for y in range(0, h, step_h):
+        for x in range(0, w, step_w):
+            # Calculate tile boundaries
+            x1 = x
+            y1 = y
+            x2 = min(x + tile_w, w)
+            y2 = min(y + tile_h, h)
+            
+            # Extract tile
+            tile = image[y1:y2, x1:x2]
+            
+            # Pad tile to exact size if needed (for edge tiles)
+            if tile.shape[0] != tile_h or tile.shape[1] != tile_w:
+                padded_tile = cv2.copyMakeBorder(
+                    tile,
+                    0, tile_h - tile.shape[0],
+                    0, tile_w - tile.shape[1],
+                    cv2.BORDER_CONSTANT,
+                    value=(0, 0, 0)
+                )
+                tile = padded_tile
+            
+            tiles.append((tile, x1, y1))
+    
+    return tiles
+
+def merge_detections(detections, nms_threshold=TILE_NMS_THRESHOLD):
+    """
+    Merge detections from multiple tiles using Non-Maximum Suppression
+    detections: list of (xyxy, conf, cls, cname) tuples
+    """
+    if not detections:
+        return []
+    
+    import numpy as np
+    
+    # Convert to numpy arrays for NMS
+    boxes = np.array([det[0] for det in detections])
+    scores = np.array([det[1] for det in detections])
+    classes = np.array([det[2] for det in detections])
+    
+    # Apply NMS using OpenCV
+    indices = cv2.dnn.NMSBoxes(
+        boxes.tolist(),
+        scores.tolist(),
+        CONF,
+        nms_threshold
+    )
+    
+    # Return filtered detections
+    if len(indices) > 0:
+        if isinstance(indices, np.ndarray):
+            indices = indices.flatten()
+        return [detections[i] for i in indices]
+    
+    return []
+
+def detect_on_tiles(image, weights_path='models/yolov8l.pt'):
+    """
+    Perform detection on image tiles using batch processing for better GPU utilization
+    Returns list of merged detections or None if no detections
+    """
+    global Model, Names
+    
+    # Set targets and configuration based on model type
+    setTargets(weights_path)
+    
+     # Generate all tiles
+    tiles = generate_tiles(image)
+
+    # Initialize model if not already done
+    if Model is None:
+        Model = YOLO(weights_path, task='detect')
+        Names = Model.names
+        print(f"Generated {len(tiles)} tiles for image shape {image.shape}")
+    
+    all_detections = []
+    
+    # Process tiles in batches
+    for batch_start in range(0, len(tiles), TILE_BATCH_SIZE):
+        batch_end = min(batch_start + TILE_BATCH_SIZE, len(tiles))
+        batch_tiles = tiles[batch_start:batch_end]
+        
+        # Extract tile images for batch processing
+        tile_images = [tile[0] for tile in batch_tiles]
+        
+        #print(f"Processing tile batch {batch_start//TILE_BATCH_SIZE + 1}/{(len(tiles)-1)//TILE_BATCH_SIZE + 1} ({len(tile_images)} tiles)")
+        
+        # Run detection on batch of tiles
+        results = Model.predict(
+            source=tile_images,
+            conf=CONF,
+            max_det=10,
+            agnostic_nms=True,
+            verbose=False,
+            imgsz=(640, 640),
+            device=device_type()
+        )
+        
+        # Process results from batch
+        for i, pred in enumerate(results):
+            # Get the corresponding tile info
+            tile, x_offset, y_offset = batch_tiles[i]
+            
+            # Process detections for this tile
+            for box in pred.boxes:
+                cname = Names[int(box[0].cls)]
+                if cname in TARGETS:
+                    # Transform coordinates back to original image space
+                    xyxy = box.xyxy[0].cpu().numpy()
+                    xyxy[0] += x_offset  # x1
+                    xyxy[1] += y_offset  # y1
+                    xyxy[2] += x_offset  # x2
+                    xyxy[3] += y_offset  # y2
+                    
+                    conf = box.conf[0].cpu().numpy()
+                    cls = int(box[0].cls)
+                    
+                    all_detections.append((xyxy, conf, cls, cname))
+                    #print(f"detect: {cname} conf: {conf}")  
+
+    # Merge overlapping detections
+    merged_detections = merge_detections(all_detections)
+    
+    return merged_detections
+
 # ---------------------------------------------------------------------------------------------------------------------
 # @torch.no_grad()
-def detect(image, weights_path='models/yolov8l.pt'):
+def detect(image, weights_path='models/yolov8l.pt', enable_tiling=False):
     global Model, Names, previmage, prevxyxy
     
+    # Check if image is large enough for tiling (NEW TILING LOGIC)
+    h, w = image.shape[:2]
+    use_tiling = enable_tiling and (h > TILE_THRESHOLD or w > TILE_THRESHOLD)
+    setTargets(weights_path)  # set TARGETS, MDET, CONF
+
+    if use_tiling:
+        #print(f"Using tiling for large image: {w}x{h}")
+        detections = detect_on_tiles(image, weights_path)
+        
+        if detections:
+            # Process the best detection (highest confidence)
+            best_detection = max(detections, key=lambda x: x[1])
+            xyxy, conf, cls, cname = best_detection
+            
+            # Convert numpy array to tensor-like format for compatibility
+            xyxy_tensor = torch.tensor(xyxy)
+            
+            # Check for motion (use first valid detection for motion comparison)
+            if previmage is not None and prevxyxy is not None:
+                bd = boxdiff(image, previmage, xyxy_tensor, prevxyxy)
+            else:
+                bd = MDET  # fake it for first detection
+            
+            previmage = image.copy()
+            prevxyxy = xyxy_tensor
+            
+            if bd >= MDET:
+                if PutDetect:
+                    bname = 'vehicle' if(cname in Vehicle) else 'animal' if(cname in Animal) else 'person' if(cname in Person) else cname
+                    imzoom = TargetBox(xyxy_tensor, image, (640, 640), False)
+                    # CTput(camLoc + '/' + bname, imzoom, None, thisTime)  # save zoomed targetBox image
+                
+                # Add bbox to image (only the best detection to match original behavior)
+                status = f"{cname} d={conf:.2f} m={bd:.2f}"
+                label = None if hide_labels else (cname if hide_conf else status)
+                newimage = box_label(image.copy(), xyxy_tensor, label)
+                print('detect: '+status+', image: '+ str(newimage.shape), flush=True)
+                return newimage
+        
+        return None
+    
+    # ORIGINAL LOGIC RESTORED EXACTLY AS IT WAS:
     # Initialize model if not already done
     if Model is None:
         Model = YOLO(weights_path, task='detect')  # Load model
@@ -75,21 +279,9 @@ def detect(image, weights_path='models/yolov8l.pt'):
 
     #data='data/coco128.yaml'                    # dataset.yaml path
     imgsz=(640, 640) 	 				# inference size (height, width)
-    conf_thres=CONF  					# confidence threshold
-    device = 'cpu'
-    #device = 'mps'
-
-    global MPS_AVAILABLE                # metal performance shader (on macs)
-    if MPS_AVAILABLE is None:
-        if torch.backends.mps.is_available():
-            device = 'mps'
-            MPS_AVAILABLE = True
-            print(f"MPS is available")
-        else:
-            MPS_AVAILABLE = False
 
     #results = model.predict(source=camdev, device=device, conf=conf_thres, max_det=10, agnostic_nms=True, stream=True, verbose=False, vid_stride=1) 
-    results = Model.predict(source=image, conf=conf_thres, max_det=10, agnostic_nms=True, verbose=False, imgsz=imgsz, device=device) 
+    results = Model.predict(source=image, conf=CONF, max_det=10, agnostic_nms=True, verbose=False, imgsz=imgsz, device=device_type()) 
 
     for pred in results:   		# with YOLO rtsp, always new results (or blocks)
         thisimage = pred.orig_img
@@ -126,7 +318,7 @@ def detect(image, weights_path='models/yolov8l.pt'):
                     return newimage  
                  
     return None  
-        
+
     #print('BuhBye')
     
 # ---------------------------------------------------------------------------------------------------------------------

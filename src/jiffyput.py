@@ -15,7 +15,7 @@ from pathlib import Path
 from jiffydetect import detect
 
 prevframe = None
-def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path, save_frame: bool, detect_frame: bool, save_days=None):
+def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path, save_frame: bool, detect_frame: bool, save_days=None, enable_tiling=False):
     """
     Process and save a video frame.
 
@@ -29,6 +29,7 @@ def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path
         save_frame (bool): Whether to save the frame
         detect_frame (bool): Whether to run detection on the frame
         save_days (int, optional): Number of days to keep data before considering it old
+        enable_tiling (bool): Whether to enable tiling for large images (default: False)
 
     Returns:
         The processed frame (which may be modified by detection)
@@ -41,7 +42,7 @@ def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path
 
         #detect_mode = True
         if detect_frame:
-            tryframe = detect(frame, weights_path)  # pass previous frame to reject no-motion detections
+            tryframe = detect(frame, weights_path, enable_tiling)  # pass enable_tiling parameter
             if tryframe is not None:       # ONLY save detections!  (to do: heartbeat saves)
                 save_frame = True  # save the detection frame
                 frame = tryframe
