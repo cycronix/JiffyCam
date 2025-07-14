@@ -551,7 +551,7 @@ def new_image_display(frame):
             print(f"unexpected error: timeline_placeholder is None")
             return
         timeline_img = generate_timeline_image()
-        st.session_state.timeline_placeholder.image(timeline_img, channels="RGB", use_container_width=ucw, output_format="PNG")
+        st.session_state.timeline_placeholder.image(timeline_img, channels="RGB", use_container_width=ucw, output_format="JPG")
         #print(f"new_image_display: {timeline_img.shape}")
 
     """Display a new image"""

@@ -284,7 +284,8 @@ def create_placeholder(width=1200, height=24, image=None):
     else:
         initial_image = image
 
-    placeholder.image(initial_image, channels="RGB", use_container_width=True, output_format="PNG")
+    #placeholder.image(initial_image, channels="RGB", use_container_width=True, output_format="PNG")
+    placeholder.image(initial_image, channels="RGB", use_container_width=True, output_format="JPG")
     return placeholder
 
 def create_recording_selector(options, current_selection, on_change_handler, help_text="Select the recording session to view.", active_sessions=None):
