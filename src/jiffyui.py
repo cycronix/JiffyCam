@@ -555,12 +555,15 @@ def new_image_display(frame):
         #print(f"new_image_display: {timeline_img.shape}")
 
     """Display a new image"""
+    cwidth = frame.shape[1]
+    #print(f"new_image_display: {frame.shape}, {cwidth}")
+    ucw = False
     if(not st.session_state.video_placeholder):     # delayed creation to avoid flickering
         #print(f"creating video placeholder")
-        st.session_state.video_placeholder = st.image(frame, channels="BGR", use_container_width=ucw)
+        st.session_state.video_placeholder = st.image(frame, channels="BGR", use_container_width=ucw, width=cwidth)
     else:
         #print(f"updating video placeholder, {inspect.stack()[1].function}")
-        st.session_state.video_placeholder.image(frame, channels="BGR", use_container_width=ucw)
+        st.session_state.video_placeholder.image(frame, channels="BGR", use_container_width=ucw, width=cwidth)
     
 def update_image_display(direction=None):
     """Update the image display based on the current date and time."""

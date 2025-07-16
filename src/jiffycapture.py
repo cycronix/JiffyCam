@@ -372,7 +372,7 @@ class VideoCapture:
         if height != 0:
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 
-        # Get actual resolution
+        # Get actual resolution (doesnt work for rtsp, uses frame.shape instead)
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
@@ -403,6 +403,9 @@ class VideoCapture:
                 # Read frame
                 ret, frame = cap.read()
                 if ret:
+                    width = frame.shape[1]
+                    height = frame.shape[0]
+                    
                     consecutive_failures = 0  # Reset failure counter on success
                     current_time = time.time()
                     frame_count_since_start += 1  # Increment frame counter

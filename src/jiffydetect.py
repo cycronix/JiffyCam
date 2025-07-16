@@ -29,8 +29,9 @@ TILE_THRESHOLD = 1280                           # minimum image size to trigger 
 TILE_OVERLAP = 0.15                             # overlap between tiles (15%)
 TILE_NMS_THRESHOLD = 0.5                        # NMS threshold for merging tile detections
 TILE_BATCH_SIZE = 8                             # process tiles in batches for better GPU utilization (optimal for MPS)
-TILE_SIZE = (640, 640)                          # tile size
-#TILE_SIZE = (1280, 1280)                          # tile size
+#TILE_SIZE = (640, 640)                          # tile size
+TILE_SIZE = (1280, 1280)                          # tile size
+IMG_SIZE = (640, 640)                          # image size (for non-tile case, match yolo training size)
 
 hide_labels = False
 hide_conf = True
@@ -72,7 +73,7 @@ def setTargets(weights_path='models/yolov8l.pt'):
                     'Racoon', 'Raven', 'Reptile', 'Skunk', 'Snake', 'Sparrow', 'Spider', 'Squirrel', 'Turkey', 'Turtle', 'Woodpecker' ]
         Person = [ 'Person' ]
         MDET = 0.15
-        CONF = 0.25
+        CONF = 0.4
     else:
         Vehicle = [ 'car', 'truck', 'bicycle', 'motorcycle' ]
         Animal = [ 'dog', 'cat', 'bird', 'bear' ]
@@ -194,7 +195,7 @@ def detect_on_tiles(image, weights_path='models/yolov8l.pt'):
             max_det=10,
             agnostic_nms=True,
             verbose=False,
-            imgsz=(640, 640),
+            imgsz=TILE_SIZE,   # match inference size to tile size (vs yolo training size)
             device=device_type()
         )
         
@@ -259,7 +260,7 @@ def detect(image, weights_path='models/yolov8l.pt', enable_tiling=False):
             if bd >= MDET:
                 if PutDetect:
                     bname = 'vehicle' if(cname in Vehicle) else 'animal' if(cname in Animal) else 'person' if(cname in Person) else cname
-                    imzoom = TargetBox(xyxy_tensor, image, (640, 640), False)
+                    imzoom = TargetBox(xyxy_tensor, image, (640, 640), False)  # use native training size as default "zoom"
                     # CTput(camLoc + '/' + bname, imzoom, None, thisTime)  # save zoomed targetBox image
                 
                 # Add bbox to image (only the best detection to match original behavior)
@@ -278,7 +279,7 @@ def detect(image, weights_path='models/yolov8l.pt', enable_tiling=False):
         Names = Model.names
 
     #data='data/coco128.yaml'                    # dataset.yaml path
-    imgsz=(640, 640) 	 				# inference size (height, width)
+    imgsz=(640, 640) 	 				# match inference size to yolo training size
 
     #results = model.predict(source=camdev, device=device, conf=conf_thres, max_det=10, agnostic_nms=True, stream=True, verbose=False, vid_stride=1) 
     results = Model.predict(source=image, conf=CONF, max_det=10, agnostic_nms=True, verbose=False, imgsz=imgsz, device=device_type()) 
@@ -305,7 +306,7 @@ def detect(image, weights_path='models/yolov8l.pt', enable_tiling=False):
                 if(bd >= MDET):
                     if(PutDetect):
                         bname = 'vehicle' if(cname in Vehicle) else 'animal' if(cname in Animal) else 'person' if(cname in Person) else cname
-                        imzoom = TargetBox(xyxy, thisimage, imgsz, False)
+                        imzoom = TargetBox(xyxy, thisimage, imgsz, False)    # broken??
                         #CTput(camLoc + '/' + bname, imzoom, None, thisTime)            # save zoomed targetBox image
 
                     # Add bbox to image

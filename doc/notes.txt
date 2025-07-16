@@ -10,6 +10,9 @@ frame_queue is useless in jiffycapture.py:
 bug:    clicking Live while in active auto_play gets stuck
         STILL THERE
 
+bug:    playing Live thru midnight does not update date
+
+
 JiffyCam Installation from GitHub
 
 mkdir JiffyCam

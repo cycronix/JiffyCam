@@ -68,6 +68,7 @@ def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path
         image_path = os.path.join(save_path, os.path.basename(cam_name) + '.jpg')
         cv2.imwrite(image_path, frame, encode_param)
         print(f"Saved image to: {image_path}")
+        print(f"jiffyput: frame: {frame.shape}")
 
         # Check for old data if save_days is specified and greater than 0
         if save_days is not None and save_days > 0:

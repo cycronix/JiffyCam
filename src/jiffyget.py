@@ -250,7 +250,7 @@ def jiffyget(time_posix: float, cam_name: str,
             # Read the image and cache it
             frame = cv2.imread(image_path)
             #image_cache[image_path] = frame    # mjm:  don't cache images
-        #print(f"jiffyget: frame: {image_path}, shape: {frame.shape}")
+            #print(f"jiffyget: frame: {image_path}, shape: {frame.shape}")
         #closest_datetime = datetime.fromtimestamp(closest_timestamp / 1000)
         return frame, closest_timestamp, eof
     
