@@ -362,7 +362,7 @@ def TargetBox(xyxy, im0s, imgsz, togcrop):
 
 def addBorder(img):
     bv = [0,0,255]         # BGR
-    bw = 10                 # border width
+    bw = 4                 # border width (was 10)
     h, w, _ = img.shape
     cv2.rectangle(img, [0,0], [w-1, h-1], color=bv, thickness=bw)   # full-pix border
 
@@ -433,7 +433,8 @@ def box_label(im=None, box=None, label='', mycolor=(0,0,255), txt_color=(0,0,0),
 #    im = imorig.copy()   	# keep box labels out of original image
     p1, p2 = (int(box[0]), int(box[1])), (int(box[2]), int(box[3]))
     cv2.rectangle(im, p1, p2, mycolor, thickness=lw, lineType=cv2.LINE_AA)
-    tf = max(lw, 1)  # font thickness
+    #tf = max(lw, 1)  # font thickness
+    tf = 1  # font thickness (thin!)
     w, h = cv2.getTextSize(label, 0, fontScale=1, thickness=tf)[0]  # text width, height
     outside = p1[1] - h - 3 >= 0  # label fits outside box
     p2 = p1[0] + w, p1[1] - h - 3 if outside else p1[1] + h + 3

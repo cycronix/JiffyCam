@@ -11,8 +11,9 @@ import glob
 from datetime import datetime, timedelta
 from shutil import rmtree
 from pathlib import Path
-
 from jiffydetect import detect
+
+
 
 prevframe = None
 def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path, save_frame: bool, detect_frame: bool, save_days=None, enable_tiling=False):
@@ -58,17 +59,40 @@ def jiffyput(cam_name, frame, time_posix: float, session, data_dir, weights_path
 
         # The data_dir already contains the session, so we don't need to add it again
         save_dir = os.path.join(data_dir, str(browse_date_ms))
-        os.makedirs(save_dir, exist_ok=True)
+        
+        # Ensure directory exists with proper error handling
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+        except OSError as e:
+            print(f"Error creating save directory {save_dir}: {str(e)}")
+            return None
 
         # Save frame as JPEG
         save_path = os.path.join(save_dir, str(browse_delta_ms))
-        os.makedirs(save_path, exist_ok=True)
+        
+        # Ensure subdirectory exists with proper error handling
+        try:
+            os.makedirs(save_path, exist_ok=True)
+        except OSError as e:
+            print(f"Error creating save subdirectory {save_path}: {str(e)}")
+            return None
 
-        # Save the image
+        # Save the image with proper error handling
         image_path = os.path.join(save_path, os.path.basename(cam_name) + '.jpg')
+        
+        # Verify the frame is valid before saving
+        if frame is None or frame.size == 0:
+            print(f"Invalid frame data, skipping save")
+            return None
+            
+        # Save the image
         cv2.imwrite(image_path, frame, encode_param)
         print(f"Saved image to: {image_path}")
-        print(f"jiffyput: frame: {frame.shape}")
+
+        # Verify the file was actually created
+        if not os.path.exists(image_path):
+            print(f"Warning: Image file was not created at {image_path}")
+            return None
 
         # Check for old data if save_days is specified and greater than 0
         if save_days is not None and save_days > 0:
@@ -124,7 +148,7 @@ def check_old_data(data_dir: str, save_days: int, current_time_posix: float):
                 # Skip directories that aren't numeric timestamps
                 continue
         
-        # Delete old folders
+        # Delete old folders with proper error handling
         if(old_folders):
             old_folders.sort()
             for old_folder in old_folders:
@@ -132,7 +156,10 @@ def check_old_data(data_dir: str, save_days: int, current_time_posix: float):
                 #print('old_folder: ' + old_folder + ', basename: ' + basename + ', data_dir: '+ data_dir +', contains: ' + str(old_folder.startswith(data_dir)))
                 if(basename.isnumeric() and old_folder.startswith(data_dir)):   # double check that it's numeric and in the data_dir
                     print(f"DELETE old folder: {old_folder}")
-                    rmtree(old_folder)
+                    try:
+                        rmtree(old_folder)
+                    except OSError as e:
+                        print(f"Error deleting old folder {old_folder}: {str(e)}")
         
     except Exception as e:
         print(f"Error checking old data: {str(e)}")

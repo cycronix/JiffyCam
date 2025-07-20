@@ -36,6 +36,33 @@ from jiffyconfig import JiffyConfig
 # Global variable to store the VideoCapture instance for HTTP server access
 global_capture_instance = None
 
+# Add asyncio import for event loop handling
+import asyncio
+
+def safe_asyncio_operation(func):
+    """
+    Decorator to safely handle asyncio operations without causing event loop errors.
+    This prevents the "no running event loop" error that can occur in Streamlit.
+    """
+    def wrapper(*args, **kwargs):
+        try:
+            # Check if we're in an event loop context
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're in an event loop, run the function normally
+                return func(*args, **kwargs)
+            except RuntimeError:
+                # No running event loop, create a new one if needed
+                try:
+                    return asyncio.run(func(*args, **kwargs))
+                except RuntimeError:
+                    # If asyncio.run fails, try running without asyncio
+                    return func(*args, **kwargs)
+        except Exception as e:
+            print(f"Error in asyncio operation: {str(e)}")
+            return None
+    return wrapper
+
 class JiffyHTTPHandler(BaseHTTPRequestHandler):
     """HTTP request handler for JiffyCam that serves the last captured frame."""
     
@@ -163,46 +190,62 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
     
     def _handle_image(self):
         """Handle the image path request"""
-        if global_capture_instance and global_capture_instance.last_frame is not None:
-            frame = global_capture_instance.last_frame
-            if frame is not None:
-                _, buffer = cv2.imencode('.jpg', frame)
-                self._set_headers('image/jpeg')
-                if self.command != 'HEAD':  # Only send body for GET, not HEAD
-                    self.wfile.write(buffer.tobytes())
+        try:
+            if global_capture_instance and global_capture_instance.last_frame is not None:
+                frame = global_capture_instance.last_frame
+                if frame is not None and frame.size > 0:
+                    try:
+                        _, buffer = cv2.imencode('.jpg', frame)
+                        self._set_headers('image/jpeg')
+                        if self.command != 'HEAD':  # Only send body for GET, not HEAD
+                            self.wfile.write(buffer.tobytes())
+                    except Exception as e:
+                        print(f"Error encoding image: {str(e)}")
+                        self._set_headers()
+                        if self.command != 'HEAD':
+                            self.wfile.write(b"Error encoding image")
+                else:
+                    self._set_headers()
+                    if self.command != 'HEAD':
+                        self.wfile.write(b"No image available")
             else:
                 self._set_headers()
                 if self.command != 'HEAD':
                     self.wfile.write(b"No image available")
-        else:
+        except Exception as e:
+            print(f"Error handling image request: {str(e)}")
             self._set_headers()
             if self.command != 'HEAD':
-                self.wfile.write(b"No image available")
+                self.wfile.write(b"Internal server error")
     
     def _handle_status(self):
         """Handle the status path request"""
-        if global_capture_instance:
-            frame_data = global_capture_instance.get_frame()
-            _, fps, width, height = frame_data if frame_data[0] is not None else (None, 0, 0, 0)
-            
-            # Ensure we include the current session
-            current_session = global_capture_instance.current_session
-            
-            status = {
-                "capturing": global_capture_instance.is_capturing(),
-                "frame_count": global_capture_instance.frame_count,
-                "fps": fps,
-                "resolution": f"{width}x{height}",
-                "last_save_time": datetime.fromtimestamp(global_capture_instance.last_save_time).strftime('%Y-%m-%d %H:%M:%S') if global_capture_instance.last_save_time > 0 else None,
-                "last_detect_time": datetime.fromtimestamp(global_capture_instance.last_detect_time).strftime('%Y-%m-%d %H:%M:%S') if global_capture_instance.last_detect_time > 0 else None,
-                "error": global_capture_instance.last_error,
-                "session": current_session,
-                "active_session": current_session  # More explicit name for UI
-            }
-            #print(f"status: {status}")
-            self._send_json_response(status)
-        else:
-            self._send_json_response({"error": "Capture not initialized"})
+        try:
+            if global_capture_instance:
+                frame_data = global_capture_instance.get_frame()
+                _, fps, width, height = frame_data if frame_data[0] is not None else (None, 0, 0, 0)
+                
+                # Ensure we include the current session
+                current_session = global_capture_instance.current_session
+                
+                status = {
+                    "capturing": global_capture_instance.is_capturing(),
+                    "frame_count": global_capture_instance.frame_count,
+                    "fps": fps,
+                    "resolution": f"{width}x{height}",
+                    "last_save_time": datetime.fromtimestamp(global_capture_instance.last_save_time).strftime('%Y-%m-%d %H:%M:%S') if global_capture_instance.last_save_time > 0 else None,
+                    "last_detect_time": datetime.fromtimestamp(global_capture_instance.last_detect_time).strftime('%Y-%m-%d %H:%M:%S') if global_capture_instance.last_detect_time > 0 else None,
+                    "error": global_capture_instance.last_error,
+                    "session": current_session,
+                    "active_session": current_session  # More explicit name for UI
+                }
+                #print(f"status: {status}")
+                self._send_json_response(status)
+            else:
+                self._send_json_response({"error": "Capture not initialized"})
+        except Exception as e:
+            print(f"Error handling status request: {str(e)}")
+            self._send_json_response({"error": f"Internal server error: {str(e)}"})
     
     def do_HEAD(self):
         """Handle HEAD requests"""
@@ -299,28 +342,41 @@ class VideoCapture:
 
     def send_frame(self, cam_name: str, frame, ftime: float, session: str, save_frame: bool, detect_frame: bool):
         """Send a frame to the data server."""
-        try:
-            # Get save_days from config if present
-            save_days = self.config.get('save_days', None)
-            if save_days is not None:
-                save_days = int(save_days)
-            
-            # Get enable_tiling from config (default to False if not specified)
-            enable_tiling = self.config.get('zoom_detect', False)
-            
-            # Process and save the frame
-            result = jiffyput(cam_name, frame, ftime, session, self.config_manager.data_dir, \
-                        self.config.get('weights', 'models/yolov8l.pt'), save_frame, detect_frame, save_days, enable_tiling)
-            if result is not None:
-                self.frame_count += 1
-                #self.last_save_time = ftime
-                #self.last_detect_time = ftime
-                return True
-            return False
-        except Exception as e:
-            error_msg = f"Error sending frame: {str(e)}"
-            self.handle_error(error_msg)
-            return False
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                # Get save_days from config if present
+                save_days = self.config.get('save_days', None)
+                if save_days is not None:
+                    save_days = int(save_days)
+                
+                # Get enable_tiling from config (default to False if not specified)
+                enable_tiling = self.config.get('zoom_detect', False)
+                
+                # Process and save the frame
+                result = jiffyput(cam_name, frame, ftime, session, self.config_manager.data_dir, \
+                            self.config.get('weights', 'models/yolov8l.pt'), save_frame, detect_frame, save_days, enable_tiling)
+                if result is not None:
+                    self.frame_count += 1
+                    #self.last_save_time = ftime
+                    #self.last_detect_time = ftime
+                    return True
+                return False
+            except Exception as e:
+                retry_count += 1
+                error_msg = f"Error sending frame (attempt {retry_count}/{max_retries}): {str(e)}"
+                print(error_msg)
+                
+                if retry_count >= max_retries:
+                    self.handle_error(error_msg)
+                    return False
+                else:
+                    # Wait a bit before retrying
+                    time.sleep(0.1)
+        
+        return False
 
     def capture_video(self, cam_device, cam_name, width, height, save_interval, detect_interval, session):
         """Initialize and run video capture loop - simplified direct version."""

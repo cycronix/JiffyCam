@@ -240,19 +240,29 @@ def jiffyget(time_posix: float, cam_name: str,
     base_name = os.path.basename(cam_name)
     image_path = os.path.join(closest_dir, f"{base_name}.jpg")
     
+    # Check if image file exists with proper error handling
     if os.path.exists(image_path):
-        #print(f"jiffyget: image_path: {image_path}, closest_timestamp: {closest_timestamp}")
-        # Check if image is already cached
-        global image_cache
-        if False and image_path in image_cache:
-            frame = image_cache[image_path]
-        else:
-            # Read the image and cache it
-            frame = cv2.imread(image_path)
-            #image_cache[image_path] = frame    # mjm:  don't cache images
-            #print(f"jiffyget: frame: {image_path}, shape: {frame.shape}")
-        #closest_datetime = datetime.fromtimestamp(closest_timestamp / 1000)
-        return frame, closest_timestamp, eof
+        try:
+            #print(f"jiffyget: image_path: {image_path}, closest_timestamp: {closest_timestamp}")
+            # Check if image is already cached
+            global image_cache
+            if False and image_path in image_cache:
+                frame = image_cache[image_path]
+            else:
+                # Read the image and cache it with proper error handling
+                frame = cv2.imread(image_path)
+                if frame is None:
+                    print(f"Failed to read image file: {image_path}")
+                    return None, None, eof
+                #image_cache[image_path] = frame    # mjm:  don't cache images
+                #print(f"jiffyget: frame: {image_path}, shape: {frame.shape}")
+            #closest_datetime = datetime.fromtimestamp(closest_timestamp / 1000)
+            return frame, closest_timestamp, eof
+        except Exception as e:
+            print(f"Error reading image file {image_path}: {str(e)}")
+            return None, None, eof
+    else:
+        print(f"Image file not found: {image_path}")
     
     return None, None, eof
 
@@ -346,7 +356,11 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date):
                         
                     # Check if this time_dir contains an image for this camera
                     image_path = os.path.join(time_dir, f"{base_name}.jpg")
-                    if not os.path.exists(image_path):
+                    try:
+                        if not os.path.exists(image_path):
+                            continue
+                    except OSError:
+                        # Skip if there's an error checking file existence
                         continue
                     
                     # We found an image, so this date is valid
@@ -401,7 +415,11 @@ def get_timestamps(cam_name: str, session: str, data_dir: str, browse_date):
                 
             # Check if this directory contains an image for this camera
             image_path = os.path.join(dir_path, f"{base_name}.jpg")
-            if not os.path.exists(image_path):
+            try:
+                if not os.path.exists(image_path):
+                    continue
+            except OSError:
+                # Skip if there's an error checking file existence
                 continue
                 
             parts = os.path.normpath(dir_path).split(os.sep)
