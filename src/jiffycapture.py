@@ -404,6 +404,13 @@ class VideoCapture:
         self.current_session = session
         self.running = True
         
+        # Failure and reconnect policy
+        max_read_failures_before_reconnect = int(self.config.get('max_read_failures_before_reconnect', 10))
+        # 0 or negative means unlimited reconnect attempts
+        max_reconnect_attempts = int(self.config.get('max_reconnect_attempts', 0))
+        reconnect_backoff_seconds = float(self.config.get('reconnect_backoff_seconds', 2.0))
+        reconnect_backoff_max_seconds = float(self.config.get('reconnect_backoff_max_seconds', 30.0))
+
         # Handle numeric string sources by converting to integer
         source = cam_device
         if isinstance(source, str) and source.isdigit():
@@ -414,6 +421,9 @@ class VideoCapture:
 
         # Set the RTSP transport protocol to TCP or UDP
         os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"  # or "rtsp_transport;udp"
+
+        # Set longer timeout for FFmpeg (default is ~30 seconds)
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|timeout;60000000"  # 60 second timeout
 
         cap = cv2.VideoCapture(source)
         if not cap.isOpened():
@@ -507,13 +517,74 @@ class VideoCapture:
 
                     time.sleep(0.01)  # Small delay to prevent overwhelming the system
                 else:
-                    #print(f"Video capture read failed")
+                    # Read failure handling with reconnect policy
                     consecutive_failures += 1
-                    if consecutive_failures >= 10:  # Stop after 10 consecutive failures
-                        self.handle_error("Video capture failed repeatedly - stopping capture")
-                        break
+
+                    if consecutive_failures == 1:
+                        print(f"Video capture read failed (attempt {consecutive_failures}/{max_read_failures_before_reconnect})")
+                    elif consecutive_failures % 5 == 0:
+                        print(f"Video capture read failed (attempt {consecutive_failures}/{max_read_failures_before_reconnect}) - may be timeout or connection issue")
+
                     self.last_error = "Video capture read failed"
-                    time.sleep(1)
+
+                    # If we have hit the threshold, perform a full disconnect/reconnect
+                    if consecutive_failures >= max_read_failures_before_reconnect:
+                        print("Read failures exceeded threshold — attempting full RTSP reconnect")
+
+                        # Release current handle
+                        try:
+                            cap.release()
+                        except Exception:
+                            pass
+
+                        # Exponential backoff reconnect attempts
+                        attempt_index = 0
+                        backoff = reconnect_backoff_seconds
+                        reconnected = False
+                        while not self.stop_event.is_set() and (max_reconnect_attempts <= 0 or attempt_index < max_reconnect_attempts):
+                            attempt_index += 1
+                            print(f"Reconnecting to source (attempt {attempt_index}{'' if max_reconnect_attempts <= 0 else '/' + str(max_reconnect_attempts)})…")
+                            cap = cv2.VideoCapture(source)
+
+                            # Reapply settings on new capture
+                            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                            if width != 0:
+                                cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                            if height != 0:
+                                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+                            if cap.isOpened():
+                                # Sanity check: try a quick read
+                                ok, test_frame = cap.read()
+                                if ok and test_frame is not None:
+                                    print("Reconnect successful")
+                                    consecutive_failures = 0
+                                    reconnected = True
+                                    # Update width/height from actual frame for RTSP
+                                    width = test_frame.shape[1]
+                                    height = test_frame.shape[0]
+                                    # Update instantaneous FPS window
+                                    last_fps_time = time.time()
+                                    frames_this_second = 0
+                                    break
+                                else:
+                                    print("Reconnect opened but no frame; releasing and retrying")
+                                    cap.release()
+                            else:
+                                print("Reconnect open failed; will retry")
+
+                            time.sleep(min(backoff, reconnect_backoff_max_seconds))
+                            backoff = min(backoff * 2.0, reconnect_backoff_max_seconds)
+
+                        if not reconnected:
+                            self.handle_error("Unable to reconnect to video source")
+                            break
+                        # Continue loop after successful reconnect
+                        continue
+
+                    # Progressive backoff while still under threshold
+                    wait_time = min(consecutive_failures * 0.5, 5.0)
+                    time.sleep(wait_time)
         finally:
             self.running = False
             cap.release()
