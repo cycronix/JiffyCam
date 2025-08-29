@@ -362,7 +362,7 @@ def TargetBox(xyxy, im0s, imgsz, togcrop):
 
 def addBorder(img):
     bv = [0,0,255]         # BGR
-    bw = 4                 # border width (was 10)
+    bw = 10                 # border width (was 10)
     h, w, _ = img.shape
     cv2.rectangle(img, [0,0], [w-1, h-1], color=bv, thickness=bw)   # full-pix border
 
