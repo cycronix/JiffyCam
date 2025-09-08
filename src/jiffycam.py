@@ -25,6 +25,7 @@ st_logger.setLevel(logging.ERROR)
 # Import Jiffy modules
 from jiffyget import get_timestamp_range, get_active_sessions, get_session_port # get_frame moved to jiffyui 
 from jiffyconfig import JiffyConfig
+from restart import restart
 
 # Import UI functions from the new modules
 from jiffyui import (
@@ -63,13 +64,13 @@ def main():
     
     # Load config with the data_dir from command line if provided
     data_dir = args.data_dir if args.data_dir else 'JiffyData'
-    config_manager = JiffyConfig(data_dir=data_dir)
+    config_manager = JiffyConfig(data_dir=data_dir, session=None)
     config = config_manager.config
-    
+
     # Ensure data_dir is set in the config
     if args.data_dir:
         config['data_dir'] = args.data_dir
-    
+
     # UI interaction state flags
     if 'in_playback_mode' not in st.session_state:          st.session_state.in_playback_mode = True
     if 'rt_capture' not in st.session_state:                st.session_state.rt_capture = False
@@ -81,6 +82,7 @@ def main():
     if 'autoplay_interval' not in st.session_state:         st.session_state.autoplay_interval = 0.05
     if 'needs_date_update' not in st.session_state:         st.session_state.needs_date_update = True
     if 'dataserver_port' not in st.session_state:           st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
+ #   if 'restart_interval' not in st.session_state:          st.session_state.restart_interval = int(config.get('restart_interval', 0))
     if 'video_placeholder' not in st.session_state:         st.session_state.video_placeholder = None
     
     st.session_state.status_message = "Initializing..."
@@ -176,8 +178,7 @@ def main():
     st.session_state.status_placeholder, st.session_state.error_placeholder = build_sidebar()
     
     #st.session_state.video_placeholder, 
-    foo, \
-        st.session_state.time_display, st.session_state.timearrow_placeholder, st.session_state.timeline_placeholder = \
+    _, st.session_state.time_display, st.session_state.timearrow_placeholder, st.session_state.timeline_placeholder = \
         build_main_area()
     #st.session_state.video_placeholder = None
 
@@ -189,6 +190,8 @@ def main():
     #print(f"running main ui update loop")
     #st.session_state.needs_date_update = True
     run_ui_update_loop() # Loop fetches placeholders from session_state
+    st.stop()
+    restart()
 
 def seconds_since_midnight(dt):
     return (dt - dt.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()

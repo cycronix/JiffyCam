@@ -25,7 +25,6 @@ from jiffyclient import JiffyCamClient
 from jiffyui_components import create_date_picker
 
 # --- UI Helper Functions ---
-
 def heartbeat():
     """Heartbeat to check if the UI is still running.""" 
     if(st.session_state.autoplay_direction == "up"):
@@ -1195,8 +1194,13 @@ def build_main_area():
 
 # --- Main UI Update Loop (runs in jiffycam.py) ---
 def run_ui_update_loop():
-
     """The main loop to update the UI based on capture state and interactions."""
+    startup_time = time.time()
+    # Get restart_interval from session state which is populated from config
+    from jiffyget import get_restart_interval
+    restart_interval = get_restart_interval(st.session_state.session, st.session_state.data_dir)
+    #print(f"restart_interval: {restart_interval}")
+
     # Fetch placeholders from session state at the start of the loop
     video_placeholder = st.session_state.video_placeholder
     error_placeholder = st.session_state.error_placeholder
@@ -1230,6 +1234,13 @@ def run_ui_update_loop():
     server_status_update_time = 0
 
     while True:
+        if restart_interval > 0:
+            dt = time.time() - startup_time
+            #print(f"dt: {dt}, restart_interval: {restart_interval}")
+            if dt > restart_interval:
+                print(f"Restarting UI due to heartbeat timeout")
+                return
+
         try:
             heartbeat()
 

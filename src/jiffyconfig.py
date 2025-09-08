@@ -42,6 +42,7 @@ class JiffyConfig:
         self.session = session
         self.require_config_exists = require_config_exists
         self.yaml_file = self._get_config_path(session)
+       #print(f"yaml_file: {self.yaml_file}, data_dir: {self.data_dir}, session: {self.session}")
         self.config = self.load_config()
         self.last_error = None
 
@@ -81,6 +82,7 @@ class JiffyConfig:
             'data_dir': self.data_dir,  # Default data directory
             'dataserver_port': 8080,  # Default port for the JiffyCam data server
             'zoom_detect': False,  # Default tiling disabled for large images
+            'restart_interval': 0,  # Default restart interval
         }
         
         # Check if we should enforce the config file exists
@@ -119,6 +121,7 @@ class JiffyConfig:
                 if 'cam_path' in config and 'cam_device' not in config:
                     config['cam_device'] = config.pop('cam_path')
                     
+                print(f"config: {str(config)}")
                 return config
         except yaml.YAMLError as e:
             error_msg = f"Error parsing YAML in {self.yaml_file}: {str(e)}"

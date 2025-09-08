@@ -121,8 +121,10 @@ def get_session_port(session: str, data_dir: str) -> Optional[int]:
         return None
         
     try:
+        print(f"config_path: {config_path}")
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
+
         # Only return the port if it's explicitly specified in the config
         if config and 'dataserver_port' in config:
             return config['dataserver_port']
@@ -133,6 +135,14 @@ def get_session_port(session: str, data_dir: str) -> Optional[int]:
         print(f"Error reading config for session '{session}': {str(e)}")
         return None
 
+def get_restart_interval(session: str, data_dir: str) -> Optional[int]:
+    config_path = os.path.join(data_dir, session, 'jiffycam.yaml')
+    if not os.path.exists(config_path):
+        return None
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config.get('restart_interval', 0)
+    
 def reset_timestamps():
     global timestamp_cache
     timestamp_cache = {}
