@@ -56,7 +56,7 @@ def apply_general_css():
     </style>
     """, unsafe_allow_html=True)
 
-def create_navigation_button(label, key, help_text, on_click_handler, disabled=False, use_container_width=True):
+def create_navigation_button(label, key, help_text, on_click_handler, disabled=False):
     """Create a standardized navigation button.
     
     Args:
@@ -65,7 +65,7 @@ def create_navigation_button(label, key, help_text, on_click_handler, disabled=F
         help_text: Tooltip text for the button
         on_click_handler: Function to call when button is clicked
         disabled: Whether the button should be disabled
-        use_container_width: Whether the button should use the full container width
+        # use_container_width: Whether the button should use the full container width
     
     Returns:
         The created button
@@ -73,7 +73,7 @@ def create_navigation_button(label, key, help_text, on_click_handler, disabled=F
     return st.button(
         label, 
         key=key, 
-        use_container_width=use_container_width,
+        width="stretch",
         help=help_text,
         on_click=on_click_handler,
         disabled=disabled
@@ -96,7 +96,7 @@ def create_playback_button(label, key, help_text, on_click_handler, disabled=Fal
     return st.button(
         label, 
         key=key, 
-        use_container_width=True,
+        width="stretch",
         help=help_text,
         on_click=on_click_handler,
         disabled=disabled,
@@ -285,7 +285,7 @@ def create_placeholder(width=1200, height=24, image=None):
         initial_image = image
 
     #placeholder.image(initial_image, channels="RGB", use_container_width=True, output_format="PNG")
-    placeholder.image(initial_image, channels="RGB", use_container_width=True, output_format="JPG")
+    placeholder.image(initial_image, channels="RGB", width="stretch", output_format="JPG")
     return placeholder
 
 def create_recording_selector(options, current_selection, on_change_handler, help_text="Select the recording session to view.", active_sessions=None):

@@ -135,13 +135,13 @@ def get_session_port(session: str, data_dir: str) -> Optional[int]:
         print(f"Error reading config for session '{session}': {str(e)}")
         return None
 
-def get_restart_interval(session: str, data_dir: str) -> Optional[int]:
+def get_config_parameter(session: str, data_dir: str, parameter: str) -> Optional[int]:
     config_path = os.path.join(data_dir, session, 'jiffycam.yaml')
     if not os.path.exists(config_path):
         return None
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
-    return config.get('restart_interval', 0)
+    return config.get(parameter, 0)
     
 def reset_timestamps():
     global timestamp_cache

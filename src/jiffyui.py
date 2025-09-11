@@ -24,6 +24,8 @@ from jiffyvis import generate_timeline_image, generate_timeline_arrow, format_ti
 from jiffyclient import JiffyCamClient
 from jiffyui_components import create_date_picker
 
+delayed_live_mode = False
+
 # --- UI Helper Functions ---
 def heartbeat():
     """Heartbeat to check if the UI is still running.""" 
@@ -426,7 +428,14 @@ def change_day(direction):
     # Update browsing_date directly (this isn't a widget)
     st.session_state.browsing_date = new_date
 
+def set_delayed_live_mode():
+    """Delayed live mode to check if the UI is still running."""
+    global delayed_live_mode
+    delayed_live_mode = True
+
 def toggle_live_pause():
+    global delayed_live_mode
+
     """Handle Live/Pause button click."""
     #print(f"toggle_live_pause: {st.session_state.in_playback_mode}")
     st.session_state.autoplay_direction = None  # reset autoplay direction
@@ -437,6 +446,7 @@ def toggle_live_pause():
         current_time = datetime.now()
         st.session_state.browsing_date = current_time.date()
         st.session_state.in_playback_mode = False
+        delayed_live_mode = True
         st.session_state.needs_date_update = True
         
         # Force date picker widget to recreate with new date
@@ -454,6 +464,7 @@ def toggle_live_pause():
     else:
         # Pause
         st.session_state.in_playback_mode = True
+        st.session_state.need_to_display_recent = True
         
 def on_pause_button():
     """Handle pause button click."""
@@ -542,15 +553,16 @@ def new_image_display(frame):
     
     # Pass the same width parameter as used for timeline image to maintain consistency
     ta_img = generate_timeline_arrow()
-    ucw = True
-    timearrow_placeholder.image(ta_img, channels="RGB", use_container_width=ucw)
+    #ucw = True
+    #timearrow_placeholder.image(ta_img, channels="RGB", use_container_width=ucw)
+    timearrow_placeholder.image(ta_img, channels="RGB", width="stretch")
 
     if not st.session_state.in_playback_mode:
         if st.session_state.timeline_placeholder is None:
             print(f"unexpected error: timeline_placeholder is None")
             return
         timeline_img = generate_timeline_image()
-        st.session_state.timeline_placeholder.image(timeline_img, channels="RGB", use_container_width=ucw, output_format="JPG")
+        st.session_state.timeline_placeholder.image(timeline_img, channels="RGB", width="stretch", output_format="JPG")
         #print(f"new_image_display: {timeline_img.shape}")
 
     """Display a new image"""
@@ -559,10 +571,12 @@ def new_image_display(frame):
     ucw = False
     if(not st.session_state.video_placeholder):     # delayed creation to avoid flickering
         #print(f"creating video placeholder")
-        st.session_state.video_placeholder = st.image(frame, channels="BGR", use_container_width=ucw, width=cwidth)
+        st.session_state.video_placeholder = st.image(frame, channels="BGR", width="stretch") #, width=cwidth)
+        #st.session_state.video_placeholder = st.image(frame, channels="BGR", width=cwidth)
     else:
         #print(f"updating video placeholder, {inspect.stack()[1].function}")
-        st.session_state.video_placeholder.image(frame, channels="BGR", use_container_width=ucw, width=cwidth)
+        st.session_state.video_placeholder.image(frame, channels="BGR", width="stretch") #, width=cwidth)
+        #st.session_state.video_placeholder.image(frame, channels="BGR", width=cwidth)
     
 def update_image_display(direction=None):
     """Update the image display based on the current date and time."""
@@ -735,7 +749,8 @@ def get_server_status():
     # Get data directory from session state
     data_dir = st.session_state.get('data_dir', 'JiffyData')
     current_session = st.session_state.get('session')
-    
+    #print(f"get_server_status: {data_dir}, {current_session}")
+
     # Get all active sessions by scanning config files and checking HTTP endpoints
     try:
         active_sessions = get_active_sessions(data_dir)
@@ -749,7 +764,8 @@ def get_server_status():
         correct_port = get_session_port(current_session, data_dir)
         #current_port = st.session_state.get('http_server_port')
         current_port = st.session_state.get('dataserver_port')
-        
+        #print(f"correct_port: {correct_port}, current_port: {current_port}")
+
         # If the port has changed, update the client
         if correct_port and correct_port != current_port:
             #print(f"Updating HTTP port from {current_port} to {correct_port}")
@@ -1063,10 +1079,9 @@ def build_main_area():
                     key=f"date_{st.session_state.date_picker_key}",
                     help_text="Select date"
                 )
-                
+
         except Exception as e:
             print(f"Date picker error: {str(e)}")
-
 
     # Create playback controls
     handlers = {
@@ -1122,7 +1137,7 @@ def build_main_area():
     
         # Create the live button with appropriate styling
         create_live_button(
-            handler=toggle_live_pause,
+            handler=toggle_live_pause, #handler=set_delayed_live_mode,
             is_enabled=not live_disabled,
             is_live_mode=not st.session_state.in_playback_mode,
             help_text=button_help,
@@ -1130,7 +1145,7 @@ def build_main_area():
             active_sessions=active_sessions
         )
 
-    mycontainer = st.container(border=False, key="timeline_container", height=110)
+    mycontainer = st.container(border=False, key="timeline_container")
     with mycontainer:
         # Time Arrow above timeline
         timearrow_placeholder = create_placeholder(height=24, width=1200, image=generate_timeline_arrow())
@@ -1173,21 +1188,13 @@ def build_main_area():
             #timeline_placeholder.image(initial_image, channels="RGB", use_container_width=True, output_format="PNG")
             timeline_placeholder = create_placeholder(height=48, width=1200)
 
-    st.markdown("</div>", unsafe_allow_html=True) # Close centered container
+        # Create video placeholder directly under the timeline (only once)
+        # Ensures new_image_display updates appear immediately below the timeline without re-creating the placeholder
+        if 'video_placeholder' not in st.session_state or st.session_state.video_placeholder is None:
+            st.session_state.video_placeholder = st.empty()
+        video_placeholder = st.session_state.video_placeholder
 
-    # Create Video Placeholder *after* the controls container
-    #video_placeholder = st.empty()     # this flickers
-    video_placeholder = None
-    if(False and not st.session_state.video_placeholder):
-        if(st.session_state.last_frame is not None):
-            #print(f"!!!creating video placeholder")
-            video_placeholder = create_placeholder(height=240, width=1200, image=st.session_state.last_frame)
-        else:
-            video_placeholder = None            # delay creation to avoid flickering
-            #print(f"!!!creating None video placeholder")
-    #video_placeholder = create_empty_placeholder(height=48, width=1200, image=None)
-    #st.session_state.needs_date_update = True
-    #video_placeholder = st.container(border=True, key="video_placeholder")
+    st.markdown("</div>", unsafe_allow_html=True) # Close centered container
 
     # Return placeholders needed outside this build function (by callbacks and main loop)
     return video_placeholder, time_display, timearrow_placeholder, timeline_placeholder
@@ -1195,10 +1202,11 @@ def build_main_area():
 # --- Main UI Update Loop (runs in jiffycam.py) ---
 def run_ui_update_loop():
     """The main loop to update the UI based on capture state and interactions."""
+    global delayed_live_mode
     startup_time = time.time()
     # Get restart_interval from session state which is populated from config
-    from jiffyget import get_restart_interval
-    restart_interval = get_restart_interval(st.session_state.session, st.session_state.data_dir)
+    #from jiffyget import get_restart_interval
+    #restart_interval = get_restart_interval(st.session_state.session, st.session_state.data_dir)
     #print(f"restart_interval: {restart_interval}")
 
     # Fetch placeholders from session state at the start of the loop
@@ -1207,7 +1215,7 @@ def run_ui_update_loop():
     time_display = st.session_state.time_display
 
     # --- Initial Image Display --- 
-    is_capturing = False
+    is_capturing = False    # redundantish high level check of state
 
     if hasattr(st.session_state, 'http_client'):
         # Only check connection status if we're not in playback mode
@@ -1217,14 +1225,13 @@ def run_ui_update_loop():
         else:
             # In playback mode, don't check connection
             is_capturing = st.session_state.rt_capture
-    
-    #if(not st.session_state.autoplay_direction):
+
     if st.session_state.needs_date_update:
         #print(f"needs_date_update: {inspect.stack()[1].function}")
         change_day("current")
         update_image_display("current")
         st.session_state.needs_date_update = False
-    elif (st.session_state.need_to_display_recent and not is_capturing):
+    elif (st.session_state.need_to_display_recent): # and not is_capturing):
         display_most_recent_image() # Fetches placeholders from session_state
         st.session_state.needs_to_display_recent = False
     #elif st.session_state.autoplay_step == None and st.session_state.last_frame is not None:
@@ -1234,13 +1241,6 @@ def run_ui_update_loop():
     server_status_update_time = 0
 
     while True:
-        if restart_interval > 0:
-            dt = time.time() - startup_time
-            #print(f"dt: {dt}, restart_interval: {restart_interval}")
-            if dt > restart_interval:
-                print(f"Restarting UI due to heartbeat timeout")
-                return
-
         try:
             heartbeat()
 
@@ -1249,6 +1249,11 @@ def run_ui_update_loop():
         
             # Check if we're capturing
             is_capturing = False
+            if not hasattr(st.session_state, 'http_client'):
+                print("oops no http_client")
+                st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
+                print(f"http_client: {st.session_state.http_client}")    
+
             if hasattr(st.session_state, 'http_client'):
                 # Only check connection if we're not in playback mode
                 if not st.session_state.in_playback_mode:
@@ -1262,7 +1267,7 @@ def run_ui_update_loop():
             new_status = current_status # Default to no change
 
             if is_capturing:
-                # Get the latest frame from HTTP client                
+                # Get the latest frame from HTTP client                            
                 if hasattr(st.session_state, 'http_client'):
                     # Only get a new frame from the server if we're in live view mode
                     # This prevents unnecessary HTTP requests when in playback mode
@@ -1281,6 +1286,12 @@ def run_ui_update_loop():
                             st.session_state.rt_capture = False
                             is_capturing = False
 
+                    if delayed_live_mode:    # clugey: async Live mode toggle
+                        delayed_live_mode = False
+                        st.session_state.in_playback_mode = False
+
+                #print(f"in_playback_mode: {st.session_state.in_playback_mode}")
+                
                 if st.session_state.in_playback_mode:
                     # Playback Mode - Don't make any HTTP requests
                     # Ensure paused frame is displayed
@@ -1385,6 +1396,11 @@ def run_ui_update_loop():
             # Update status placeholder with formatted status
             # status_placeholder.markdown(f"<div style='padding: 5px 0;'>{new_status}</div>", unsafe_allow_html=True)
             st.session_state.status_message = new_status # Store new status
+
+            # Stop if in playback mode and autoplay direction is None
+            if(st.session_state.in_playback_mode and st.session_state.autoplay_direction == None): 
+                st.stop()
+                return
 
             # Main loop delay
             time.sleep(0.01)

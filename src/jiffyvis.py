@@ -202,7 +202,7 @@ def generate_timeline_arrow(width=1200, height=24, with_markers=False):
                 print(f"Error adding markers to timeline arrow: {str(e)}")
 
         # Skip if too close to edges
-        if x_pos >= radius and x_pos <= width - radius:
+        if True or (x_pos >= radius and x_pos <= width - radius):
             # Draw special marker (thicker line with yellow color)
             cv_thickness = max(2, int(width/800))  # Thicker than regular markers
             

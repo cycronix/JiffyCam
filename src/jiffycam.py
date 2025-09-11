@@ -25,13 +25,14 @@ st_logger.setLevel(logging.ERROR)
 # Import Jiffy modules
 from jiffyget import get_timestamp_range, get_active_sessions, get_session_port # get_frame moved to jiffyui 
 from jiffyconfig import JiffyConfig
-from restart import restart
+#from restart import restart
 
 # Import UI functions from the new modules
 from jiffyui import (
     build_sidebar, 
     build_main_area, 
     run_ui_update_loop,
+    get_server_status
     # Callbacks and helpers are internal to jiffyui now
 )
 # UI components are imported directly in the relevant functions
@@ -41,6 +42,9 @@ from jiffyclient import JiffyCamClient
 import logging
 logging.basicConfig(level=logging.DEBUG)
 logging.getLogger('streamlit').setLevel(logging.ERROR)
+# Suppress benign media-file missing warnings from Streamlit
+logging.getLogger('streamlit.runtime.media_file_manager').setLevel(logging.ERROR)
+logging.getLogger('streamlit.web.server.media_file_handler').setLevel(logging.ERROR)
 
 # --- Parse Command Line Arguments ---
 def parse_args():
@@ -64,10 +68,19 @@ def main():
     
     # Load config with the data_dir from command line if provided
     data_dir = args.data_dir if args.data_dir else 'JiffyData'
-    config_manager = JiffyConfig(data_dir=data_dir, session=None)
+
+    # Initialize session to first existing directory or 'Default' if none exist
+    if 'session' not in st.session_state:
+        # Get list of existing directories in data_dir
+        existing_dirs = [d for d in os.listdir(data_dir)]
+        st.session_state.session = existing_dirs[0] if existing_dirs else 'Default'
+        #print(f"session: {st.session_state.session}, existing_dirs: {existing_dirs}")
+
+    #print(f"data_dir: {data_dir}, session: {st.session_state.session}")
+    config_manager = JiffyConfig(data_dir=data_dir, session=st.session_state.session)   # config (at data_dir) is not used, only at session level
     config = config_manager.config
 
-    # Ensure data_dir is set in the config
+    #Ensure data_dir is set in the config
     if args.data_dir:
         config['data_dir'] = args.data_dir
 
@@ -81,13 +94,12 @@ def main():
     if 'autoplay_step' not in st.session_state:             st.session_state.autoplay_step = False
     if 'autoplay_interval' not in st.session_state:         st.session_state.autoplay_interval = 0.05
     if 'needs_date_update' not in st.session_state:         st.session_state.needs_date_update = True
-    if 'dataserver_port' not in st.session_state:           st.session_state.dataserver_port = int(config.get('dataserver_port', 8080))
- #   if 'restart_interval' not in st.session_state:          st.session_state.restart_interval = int(config.get('restart_interval', 0))
+    if 'dataserver_port' not in st.session_state:           st.session_state.dataserver_port = config['dataserver_port']  # default port
     if 'video_placeholder' not in st.session_state:         st.session_state.video_placeholder = None
-    
+
     st.session_state.status_message = "Initializing..."
     
-    # Set http_server_port to match dataserver_port for consistency
+    #Set http_server_port to match dataserver_port for consistency
     if 'http_server_port' not in st.session_state:
         st.session_state.http_server_port = st.session_state.dataserver_port
     
@@ -101,7 +113,7 @@ def main():
             st.session_state.http_client = JiffyCamClient(st.session_state.http_server_url)
         except Exception as e:
             print(f"Error initializing HTTP client: {str(e)}")
-    
+
     # Set data directory and ensure it exists
     if 'data_dir' not in st.session_state:
         st.session_state.data_dir = data_dir
@@ -111,13 +123,7 @@ def main():
     if 'cam_name' not in st.session_state:
         st.session_state.cam_name = 'cam0'
     
-    # Get list of existing directories in data_dir
-    existing_dirs = [d for d in os.listdir(st.session_state.data_dir) 
-                    if os.path.isdir(os.path.join(st.session_state.data_dir, d))]
-    
-    # Initialize session to first existing directory or 'Default' if none exist
-    if 'session' not in st.session_state:
-        st.session_state.session = existing_dirs[0] if existing_dirs else 'Default'
+    #print(f"get_server_status: {get_server_status()}")
     
     # Time/Date related state
     current_time = datetime.now()
@@ -161,11 +167,7 @@ def main():
             print(f"Error getting timestamp range: {str(e)}")
             st.session_state.oldest_timestamp = None
             st.session_state.newest_timestamp = None
-
-
     
-    #print(f"st.session_state: {st.session_state}")
-
     # Add performance tracking variables
     if 'frames_detected' not in st.session_state: st.session_state.frames_detected = 0
     if 'last_displayed_timestamp' not in st.session_state: st.session_state.last_displayed_timestamp = None
@@ -190,8 +192,9 @@ def main():
     #print(f"running main ui update loop")
     #st.session_state.needs_date_update = True
     run_ui_update_loop() # Loop fetches placeholders from session_state
-    st.stop()
-    restart()
+    print(f"stopping jiffycam")
+    #st.stop()
+    #restart()
 
 def seconds_since_midnight(dt):
     return (dt - dt.replace(hour=0, minute=0, second=0, microsecond=0)).total_seconds()

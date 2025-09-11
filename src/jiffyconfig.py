@@ -82,7 +82,7 @@ class JiffyConfig:
             'data_dir': self.data_dir,  # Default data directory
             'dataserver_port': 8080,  # Default port for the JiffyCam data server
             'zoom_detect': False,  # Default tiling disabled for large images
-            'restart_interval': 0,  # Default restart interval
+            'capture_interval': 0,  # Default capture interval (0 means open-ended)
         }
         
         # Check if we should enforce the config file exists
@@ -111,7 +111,7 @@ class JiffyConfig:
                 #    config['detect_interval'] = int(config['detect_interval'])
                 
                 # Handle legacy config with separate width and height
-                if 'cam_width' in config and 'cam_height' in config and 'resolution' not in config:
+                if False and 'cam_width' in config and 'cam_height' in config and 'resolution' not in config:
                     config['resolution'] = f"{config['cam_width']}x{config['cam_height']}"
                     # Remove old fields
                     config.pop('cam_width', None)
@@ -121,7 +121,7 @@ class JiffyConfig:
                 if 'cam_path' in config and 'cam_device' not in config:
                     config['cam_device'] = config.pop('cam_path')
                     
-                print(f"config: {str(config)}")
+                #print(f"config: {str(config)}")
                 return config
         except yaml.YAMLError as e:
             error_msg = f"Error parsing YAML in {self.yaml_file}: {str(e)}"
@@ -170,28 +170,10 @@ class JiffyConfig:
             self.last_error = f"Failed to save configuration: {str(e)}"
             return False
 
-    def get_resolution(self, resolution_name: str) -> tuple:
-        """Get resolution dimensions from resolution name.
-        
-        Args:
-            resolution_name (str): Name of the resolution
-            
-        Returns:
-            tuple: (width, height) dimensions
-        """
-        return RESOLUTIONS.get(resolution_name, (0, 0))
-
-    def get_resolution_name(self, width: int, height: int) -> str:
-        """Get resolution name from dimensions.
-        
-        Args:
-            width (int): Width in pixels
-            height (int): Height in pixels
-            
-        Returns:
-            str: Name of the resolution
-        """
-        for name, (w, h) in RESOLUTIONS.items():
-            if w == width and h == height:
-                return name
-        return "Default (0x0)" 
+    def get_config_parameter(session: str, data_dir: str, parameter: str):
+        config_path = os.path.join(data_dir, session, 'jiffycam.yaml')
+        if not os.path.exists(config_path):
+            return None
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        return config.get(parameter, 0)
