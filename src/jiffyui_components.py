@@ -308,16 +308,30 @@ def create_recording_selector(options, current_selection, on_change_handler, hel
         active_sessions = [active_sessions]
         
     # Format function to mark active sessions
-    format_func = lambda x: (x+" (Live)") if (x in active_sessions) else x
+    #print(f"create_recording_selector: active_sessions: {active_sessions}")
     
-    return st.selectbox(
-        "Select Recording",
-        options=options,
-        key="selected_recording_key",
-        on_change=on_change_handler,
-        help=help_text,
-        label_visibility="collapsed",
-        format_func=format_func
+    if(len(options) <= 6):    # max 6 options for horizontal radio, they will double-row 2x3 if needed
+        format_func = lambda x: f":red[{x}]" if (x in active_sessions) else x
+        return st.radio(
+            label="Select Recording",
+            options=options,
+            key="selected_recording_key",
+            on_change=on_change_handler,
+            help=help_text,
+            label_visibility="collapsed",
+            horizontal=True, 
+            format_func=format_func
+        )
+    else:
+        format_func = lambda x: (x+" (Live)") if (x in active_sessions) else x
+        return st.selectbox(  # horizontal=False
+            "Select Recording",
+            options=options,
+            key="selected_recording_key",
+            on_change=on_change_handler,
+            help=help_text,
+            label_visibility="collapsed",
+            format_func=format_func
     )
 
 def create_date_picker(value, min_value, max_value, on_change_handler, key="date", help_text="Select date", single_day=False):

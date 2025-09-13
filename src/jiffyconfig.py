@@ -82,7 +82,7 @@ class JiffyConfig:
             'data_dir': self.data_dir,  # Default data directory
             'dataserver_port': 8080,  # Default port for the JiffyCam data server
             'zoom_detect': False,  # Default tiling disabled for large images
-            'capture_interval': 0,  # Default capture interval (0 means open-ended)
+            'capture_autostop': 0,  # Default capture time in seconds before auto-stopping (0 means open-ended)
         }
         
         # Check if we should enforce the config file exists
