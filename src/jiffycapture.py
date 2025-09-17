@@ -19,7 +19,6 @@ import argparse
 #import io
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from queue import Queue
 from datetime import datetime
 from typing import Optional, Tuple
 import os
@@ -164,7 +163,6 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
                             let statusHtml = '<h2>Capture Status</h2>';
                             statusHtml += `<p>Capturing: <strong>${data.capturing ? 'Active' : 'Stopped'}</strong></p>`;
                             statusHtml += `<p>FPS: <strong>${data.fps}</strong></p>`;
-                            statusHtml += `<p>Resolution: <strong>${data.resolution}</strong></p>`;
                             statusHtml += `<p>Total Frames: <strong>${data.frame_count}</strong></p>`;
                             statusHtml += `<p>Last Save: <strong>${data.last_save_time || 'None'}</strong></p>`;
                             statusHtml += `<p>Last Detect: <strong>${data.last_detect_time || 'None'}</strong></p>`;
@@ -223,7 +221,7 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
         try:
             if global_capture_instance:
                 frame_data = global_capture_instance.get_frame()
-                _, fps, width, height = frame_data if frame_data[0] is not None else (None, 0, 0, 0)
+                _, fps = frame_data if frame_data[0] is not None else (None, 0)
                 
                 # Ensure we include the current session
                 current_session = global_capture_instance.current_session
@@ -232,7 +230,6 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
                     "capturing": global_capture_instance.is_capturing(),
                     "frame_count": global_capture_instance.frame_count,
                     "fps": fps,
-                    "resolution": f"{width}x{height}",
                     "last_save_time": datetime.fromtimestamp(global_capture_instance.last_save_time).strftime('%Y-%m-%d %H:%M:%S') if global_capture_instance.last_save_time > 0 else None,
                     "last_detect_time": datetime.fromtimestamp(global_capture_instance.last_detect_time).strftime('%Y-%m-%d %H:%M:%S') if global_capture_instance.last_detect_time > 0 else None,
                     "error": global_capture_instance.last_error,
@@ -316,13 +313,11 @@ class VideoCapture:
         if not self.config:
             raise ValueError(f"Empty or invalid configuration loaded")
         
-        self.frame_queue = Queue(maxsize=1)  # Only keep latest frame
+        # Queue removed; we operate in latest-frame-only mode
         self.last_error = None
         self.error_event = threading.Event()  # Add error event
         # Add status tracking variables
         self.current_fps = 0
-        self.current_width = 0
-        self.current_height = 0
         self.last_save_time = 0  # Track last save time
         self.last_detect_time = 0  # Track last detect time
         self.save_status = ""  # Track save status message
@@ -378,7 +373,7 @@ class VideoCapture:
         
         return False
 
-    def capture_video(self, cam_device, cam_name, width, height, save_interval, detect_interval, session):
+    def capture_video(self, cam_device, cam_name, save_interval, detect_interval, session):
         """Initialize and run video capture loop - simplified direct version."""
         
         # Check for runtime limit in config
@@ -393,8 +388,6 @@ class VideoCapture:
         self.frame_count = 0
         self.last_error = None
         self.current_fps = 0
-        self.current_width = 0
-        self.current_height = 0
         self.last_save_time = 0
         self.last_detect_time = 0
         self.save_status = ""
@@ -433,14 +426,7 @@ class VideoCapture:
         # Configure camera
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
-        if width != 0:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        if height != 0:
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-
-        # Get actual resolution (doesnt work for rtsp, uses frame.shape instead)
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        # Do not set width/height; many sources (e.g., RTSP) ignore these. Use frame.shape.
         
         save_frame = detect_frame = False  # Initialize as False to skip first frame
         last_fps_time = time.time()
@@ -463,15 +449,12 @@ class VideoCapture:
                 # Periodic status update (every 60 seconds)
                 current_time = time.time()
                 if current_time - last_status_time >= 600:
-                    print(f"Capturing at {current_fps} FPS, {width}x{height}, Total frames: {self.frame_count}")
+                    print(f"Capturing at {current_fps} FPS, Total frames: {self.frame_count}")
                     last_status_time = current_time
                 
                 # Read frame
                 ret, frame = cap.read()
-                if ret:
-                    width = frame.shape[1]
-                    height = frame.shape[0]
-                    
+                if ret:        
                     consecutive_failures = 0  # Reset failure counter on success
                     current_time = time.time()
                     frame_count_since_start += 1  # Increment frame counter
@@ -502,18 +485,10 @@ class VideoCapture:
                     #save_frame = False
                     self.frame_count += 1
 
-                    # Update frame queue
-                    if not self.frame_queue.full():
-                        self.frame_queue.put((frame, current_fps, width, height))
-                    else:
-                        try:
-                            self.frame_queue.get_nowait()  # Remove old frame
-                            self.frame_queue.put((frame, current_fps, width, height))
-                        except:
-                            pass
-
+                    # Update last-frame and metrics (latest-frame mode)
                     if frame is not None:
                         self.last_frame = frame_copy   # mjm framecopy in hopes of stop flashing imager   
+                        self.current_fps = current_fps
 
                     time.sleep(0.01)  # Small delay to prevent overwhelming the system
                 else:
@@ -548,10 +523,7 @@ class VideoCapture:
 
                             # Reapply settings on new capture
                             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                            if width != 0:
-                                cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-                            if height != 0:
-                                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                            # Do not set width/height on reconnect either
 
                             if cap.isOpened():
                                 # Sanity check: try a quick read
@@ -560,9 +532,6 @@ class VideoCapture:
                                     print("Reconnect successful")
                                     consecutive_failures = 0
                                     reconnected = True
-                                    # Update width/height from actual frame for RTSP
-                                    width = test_frame.shape[1]
-                                    height = test_frame.shape[0]
                                     # Update instantaneous FPS window
                                     last_fps_time = time.time()
                                     frames_this_second = 0
@@ -596,12 +565,9 @@ class VideoCapture:
         self.stop_event.set()
         self.running = False
         
-        # Clear the frame queue
-        while not self.frame_queue.empty():
-            try:
-                self.frame_queue.get_nowait()
-            except:
-                pass
+        # Clear last-frame state
+        self.last_frame = None
+        self.current_fps = 0
 
         try:
             # Force garbage collection
@@ -610,21 +576,18 @@ class VideoCapture:
             print(f"Warning during cleanup: {e}")
 
     def get_last_frame(self):
-        """Get the last frame from the queue."""
+        """Get the most recent frame."""
         return self.last_frame
 
     def get_frame(self) -> Tuple:
-        """Get the latest frame from the queue.
+        """Get the most recent frame and metrics.
         
         Returns:
-            Tuple of (frame, fps, width, height) or None if queue is empty
+            Tuple of (frame, fps) or (None, 0) if no frame
         """
-        if not self.frame_queue.empty():
-            try:
-                return self.frame_queue.get_nowait()
-            except:
-                pass
-        return None, 0, 0, 0
+        if self.last_frame is not None:
+            return self.last_frame, self.current_fps
+        return None, 0
 
     def is_capturing(self) -> bool:
         """Check if capture is currently running.
@@ -647,8 +610,7 @@ def parse_args():
                         help='Base name of the YAML configuration file')
     parser.add_argument('--name', type=str,
                         help='Override camera name')
-    parser.add_argument('--resolution', type=str,
-                        help='Resolution in format WxH (e.g. 1920x1080)')
+    # Resolution argument removed; source native resolution is used
     parser.add_argument('--save_interval', type=int,
                         help='Interval between saved frames in seconds')
     parser.add_argument('--detect_interval', type=int,
@@ -689,15 +651,6 @@ def run_standalone():
         
         # Get the session name from the data directory
         session = os.path.basename(data_dir)
-        
-        # Determine device to use based on the session name
-        #if session in device_aliases:
-        #    cam_device = device_aliases[session]
-        #    print(f"Using device '{cam_device}' for session '{session}'")
-        #else:
-        # If the session name isn't found in device_aliases, use the default device
-        #cam_device = device_aliases.get('Default', '0')
-        #print(f"Using default device '{cam_device}' for session '{session}'")
 
         capture = VideoCapture(config_file=args.config, session=None, data_dir=data_dir, require_config_exists=True)
         global_capture_instance = capture
@@ -720,12 +673,8 @@ def run_standalone():
     cam_device = session_config.get('cam_device', '0')
     print(f"cam_device: {cam_device}")
 
-    resolution_str = args.resolution or config.get('resolution', '1920x1080')
-    try:
-        width, height = map(int, resolution_str.split('x'))
-    except (ValueError, AttributeError, IndexError):
-        width, height = 1920, 1080
-        print(f"Warning: Invalid resolution format '{resolution_str}', using default 1920x1080")
+    # Resolution is determined by the source; no parsing from CLI or config
+    #width, height = 0, 0
     
     save_interval = args.save_interval if args.save_interval is not None else int(config.get('save_interval', 60))
     detect_interval = args.detect_interval if args.detect_interval is not None else int(config.get('detect_interval', 5))
@@ -740,7 +689,7 @@ def run_standalone():
     print(f"  Session: {session}")
     print(f"  Camera Device: {cam_device}")
     print(f"  Camera Name: {cam_name}")
-    print(f"  Resolution: {width}x{height}")
+    print(f"  Resolution: native (determined by source)")
     print(f"  Save Interval: {save_interval} seconds")
     print(f"  Detect Interval: {detect_interval} seconds")
     print(f"  Config File: {capture.config_manager.yaml_file}")
@@ -761,8 +710,6 @@ def run_standalone():
         capture.capture_video(
             cam_device=cam_device,
             cam_name=cam_name,
-            width=width,
-            height=height,
             save_interval=save_interval,
             detect_interval=detect_interval,
             session=session

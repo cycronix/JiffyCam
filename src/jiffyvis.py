@@ -45,8 +45,8 @@ def generate_timeline_image(useTimestamps=True, width=1200, height=48):
     text_color = (220, 220, 220)  # Brighter light gray for text
     
     # Add equal padding for top and bottom margins
-    text_padding = 15  # Pixels below timeline for text (reduced from 20)
-    top_margin = 0  # Match top margin to text padding (was 12)
+    text_padding = 8  # Pixels below timeline for text (reduced from 20)
+    top_margin = 8  # Match top margin to text padding (was 12)
     timeline_y_start = top_margin  # Timeline now starts below top margin
     timeline_y_end = timeline_y_start + height
     total_height = timeline_y_end + text_padding  # Total image height
@@ -104,7 +104,8 @@ def generate_timeline_image(useTimestamps=True, width=1200, height=48):
                 text_x = x_pos - text_size[0] // 2
                 # Position text below timeline with enough room for descenders
                 text_y = timeline_y_end + baseline + 8  # Adjusted positioning to avoid clipping descenders
-                
+                text_y = text_size[1] + 8
+
                 # Handle edge cases
                 if hour == 0:  # Leftmost label (12am)
                     text_x = max(text_x, 2)  # Keep a minimum of 2px from left edge

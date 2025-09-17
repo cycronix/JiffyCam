@@ -1147,46 +1147,48 @@ def build_main_area():
 
     mycontainer = st.container(border=False, key="timeline_container")
     with mycontainer:
-        # Time Arrow above timeline
-        timearrow_placeholder = create_placeholder(height=24, width=1200, image=generate_timeline_arrow())
-        #timearrow_placeholder = st.empty()
+        timecontainer = st.container(border=False, key="timecontainer", height=80)
+        with timecontainer:
+            # Time Arrow above timeline
+            timearrow_placeholder = create_placeholder(height=24, width=1200, image=generate_timeline_arrow())
+            #timearrow_placeholder = st.empty()
 
-        # Generate timeline image with appropriate width and height to match timearrow
-        #clicked_coords = st.empty()
-        if st.session_state.in_playback_mode:
-            timeline_placeholder = None     # None placeholder is updated here, not in new_image_display()
-            timeline_img = generate_timeline_image()
-    
-            # Store previous click coordinates to avoid duplicate processing
-            prev_coords = st.session_state.get('prev_timeline_coords', None)
+            # Generate timeline image with appropriate width and height to match timearrow
+            #clicked_coords = st.empty()
+            if st.session_state.in_playback_mode:
+                timeline_placeholder = None     # None placeholder is updated here, not in new_image_display()
+                timeline_img = generate_timeline_image()
+        
+                # Store previous click coordinates to avoid duplicate processing
+                prev_coords = st.session_state.get('prev_timeline_coords', None)
 
-            # Display the clickable image
-            clicked_coords = streamlit_image_coordinates(
-                timeline_img, 
-                key="clickable_timeline_bar",
-                use_column_width=True,
-                #height=30,
-                #width=1200,
-                #click_and_drag=True
-            )
-            #print(f"clicked_coords: {timeline_img.shape}")
-            # Handle timeline click only if it's a new click (different from previous)
-            if clicked_coords and 'x' in clicked_coords:
-                # Convert to tuple for comparison (dictionaries aren't hashable)
-                current_click = (clicked_coords.get('x'), clicked_coords.get('y'))
-                previous_click = prev_coords if prev_coords else (-1, -1)
-                
-                if current_click != previous_click:
-                    # This is a new click
-                    on_timeline_click(clicked_coords)
-                    # Save current click to avoid reprocessing
-                    st.session_state.prev_timeline_coords = current_click
-        else:
-            #timeline_placeholder = st.empty()  # update timeline Live in new_image_display()
-            #initial_image = generate_timeline_image(useTimestamps=False)
-            #timeline_placeholder.image(initial_image, channels="RGB", use_container_width=True)
-            #timeline_placeholder.image(initial_image, channels="RGB", use_container_width=True, output_format="PNG")
-            timeline_placeholder = create_placeholder(height=48, width=1200)
+                # Display the clickable image
+                clicked_coords = streamlit_image_coordinates(
+                    timeline_img, 
+                    key="clickable_timeline_bar",
+                    use_column_width=True,
+                    #height=30,
+                    #width=1200,
+                    #click_and_drag=True
+                )
+                #print(f"clicked_coords: {timeline_img.shape}")
+                # Handle timeline click only if it's a new click (different from previous)
+                if clicked_coords and 'x' in clicked_coords:
+                    # Convert to tuple for comparison (dictionaries aren't hashable)
+                    current_click = (clicked_coords.get('x'), clicked_coords.get('y'))
+                    previous_click = prev_coords if prev_coords else (-1, -1)
+                    
+                    if current_click != previous_click:
+                        # This is a new click
+                        on_timeline_click(clicked_coords)
+                        # Save current click to avoid reprocessing
+                        st.session_state.prev_timeline_coords = current_click
+            else:
+                #timeline_placeholder = st.empty()  # update timeline Live in new_image_display()
+                #initial_image = generate_timeline_image(useTimestamps=False)
+                #timeline_placeholder.image(initial_image, channels="RGB", use_container_width=True)
+                #timeline_placeholder.image(initial_image, channels="RGB", use_container_width=True, output_format="PNG")
+                timeline_placeholder = create_placeholder(height=48, width=1200)
 
         # Create video placeholder directly under the timeline (only once)
         # Ensures new_image_display updates appear immediately below the timeline without re-creating the placeholder

@@ -6,5 +6,4 @@ dataserver_port: 8081
 weights: 'models/yolov8s.pt'
 save_days: 30
 zoom_detect: false
-capture_autostop: 0
 
