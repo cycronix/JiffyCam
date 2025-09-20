@@ -39,10 +39,10 @@ def heartbeat():
         on_navigation_button(st.session_state.autoplay_step, False)
         #print(f"autoplay_step: {st.session_state.autoplay_step}")
         st.session_state.autoplay_step = None
-        time.sleep(0.05)     # delay to allow for button press to be processed, else video glitch possible
+        time.sleep(0.1)     # delay to allow for button press to be processed, else video glitch possible
     elif(st.session_state.in_playback_mode):
         #print("in_playback_mode")
-        time.sleep(0.05)
+        time.sleep(0.1)
 
 def set_autoplay(direction):
     """Set autoplay direction."""
@@ -495,7 +495,7 @@ def on_fast_forward_button():
         tweek_time('up')
     else:
         st.session_state.autoplay_direction = None
-    
+        
     # Set to playback mode like other buttons do
     st.session_state.in_playback_mode = True
 
@@ -546,6 +546,13 @@ def new_image_display(frame):
     if frame is None or frame.size == 0:
         return
 
+    # Throttle render frequency to reduce Streamlit media evictions
+    now = time.time()
+    last_render_time = st.session_state.get('last_render_time')
+    if last_render_time is not None and (now - last_render_time) < 0.1:  # ~10 fps
+        return
+    st.session_state.last_render_time = now
+
     timearrow_placeholder = st.session_state.timearrow_placeholder
     if st.session_state.timearrow_placeholder is None:
         print(f"unexpected error: timearrow_placeholder is None")
@@ -571,11 +578,11 @@ def new_image_display(frame):
     ucw = False
     if(not st.session_state.video_placeholder):     # delayed creation to avoid flickering
         #print(f"creating video placeholder")
-        st.session_state.video_placeholder = st.image(frame, channels="BGR", width="stretch") #, width=cwidth)
+        st.session_state.video_placeholder = st.image(frame, channels="BGR", width="stretch", output_format="JPG") #, width=cwidth)
         #st.session_state.video_placeholder = st.image(frame, channels="BGR", width=cwidth)
     else:
         #print(f"updating video placeholder, {inspect.stack()[1].function}")
-        st.session_state.video_placeholder.image(frame, channels="BGR", width="stretch") #, width=cwidth)
+        st.session_state.video_placeholder.image(frame, channels="BGR", width="stretch", output_format="JPG") #, width=cwidth)
         #st.session_state.video_placeholder.image(frame, channels="BGR", width=cwidth)
     
 def update_image_display(direction=None):
@@ -616,6 +623,7 @@ def update_image_display(direction=None):
     success = False
     if closest_image is not None:
         try:
+            #print(f"update_image_display: {closest_image.shape}")
             # Store frame and actual timestamp
             st.session_state.last_frame = closest_image   #.copy()
             dts = datetime.fromtimestamp(timestamp/1000)
@@ -1147,7 +1155,7 @@ def build_main_area():
 
     mycontainer = st.container(border=False, key="timeline_container")
     with mycontainer:
-        timecontainer = st.container(border=False, key="timecontainer", height=80)
+        timecontainer = st.container(border=False, key="timecontainer", height=90)
         with timecontainer:
             # Time Arrow above timeline
             timearrow_placeholder = create_placeholder(height=24, width=1200, image=generate_timeline_arrow())
@@ -1401,6 +1409,7 @@ def run_ui_update_loop():
 
             # Stop if in playback mode and autoplay direction is None
             if(st.session_state.in_playback_mode and st.session_state.autoplay_direction == None): 
+                update_image_display("current")
                 st.stop()
                 return
 

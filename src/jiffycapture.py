@@ -65,13 +65,19 @@ def safe_asyncio_operation(func):
 class JiffyHTTPHandler(BaseHTTPRequestHandler):
     """HTTP request handler for JiffyCam that serves the last captured frame."""
     
-    def _set_headers(self, content_type='text/html'):
-        self.send_response(200)
+    def _set_headers(self, content_type='text/html', extra_headers=None, status_code=200):
+        self.send_response(status_code)
         self.send_header('Content-type', content_type)
         self.send_header('Access-Control-Allow-Origin', '*')  # Enable CORS
+        # Encourage clients to revalidate
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        if extra_headers:
+            for key, value in extra_headers.items():
+                self.send_header(key, value)
         self.end_headers()
     
     def _send_json_response(self, data):
+        #print(f"Sending JSON response: {data}")
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.send_header('Access-Control-Allow-Origin', '*')  # Enable CORS
@@ -191,12 +197,22 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
         try:
             if global_capture_instance and global_capture_instance.last_frame is not None:
                 frame = global_capture_instance.last_frame
+                # Build an ETag based on a monotonic counter (frame_count)
+                etag_value = f'W/"{global_capture_instance.frame_count}"'
+
+                # If client provided If-None-Match, compare and return 304 when same
+                client_inm = self.headers.get('If-None-Match')
+                if client_inm and client_inm == etag_value:
+                    # No new image since last time
+                    self._set_headers('image/jpeg', extra_headers={'ETag': etag_value}, status_code=304)
+                    return
                 if frame is not None and frame.size > 0:
                     try:
                         _, buffer = cv2.imencode('.jpg', frame)
-                        self._set_headers('image/jpeg')
+                        self._set_headers('image/jpeg', extra_headers={'ETag': etag_value})
                         if self.command != 'HEAD':  # Only send body for GET, not HEAD
                             self.wfile.write(buffer.tobytes())
+                            #print(f"Sent image: {frame.shape}")
                     except Exception as e:
                         print(f"Error encoding image: {str(e)}")
                         self._set_headers()
@@ -249,7 +265,11 @@ class JiffyHTTPHandler(BaseHTTPRequestHandler):
         if self.path == '/':
             self._set_headers()
         elif self.path.startswith('/image'):
-            self._set_headers('image/jpeg')
+            # Include current ETag if available
+            etag_headers = None
+            if global_capture_instance:
+                etag_headers = {'ETag': f'W/"{global_capture_instance.frame_count}"'}
+            self._set_headers('image/jpeg', extra_headers=etag_headers)
         elif self.path == '/status':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')

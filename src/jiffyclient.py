@@ -25,6 +25,7 @@ class JiffyCamClient:
         self.last_status = None
         self.last_frame = None
         self.last_frame_time = 0
+        self.last_image_etag = None
         self.connection_check_time = 0
         self.status_check_time = 0
         self.error_event = threading.Event()  # Event for error handling
@@ -101,8 +102,12 @@ class JiffyCamClient:
             return None
             
         try:
-            # Add timestamp to URL to prevent caching
-            response = requests.get(f"{self.server_url}/image?t={int(current_time*1000)}", timeout=2)
+            # Add conditional request with If-None-Match to avoid re-downloading identical frames
+            headers = {}
+            if self.last_image_etag:
+                headers['If-None-Match'] = self.last_image_etag
+            # Timestamp query to avoid intermediary caches, server still validates via ETag
+            response = requests.get(f"{self.server_url}/image?t={int(current_time*1000)}", headers=headers, timeout=2)
             if response.status_code == 200:
                 # Convert the response content to an OpenCV image
                 img_array = np.frombuffer(response.content, np.uint8)
@@ -111,6 +116,8 @@ class JiffyCamClient:
                 # Update last frame and time
                 self.last_frame = frame
                 #self.last_frame_time = current_time
+                # Track ETag for future conditional requests
+                self.last_image_etag = response.headers.get('ETag')
                 
                 # Use last known status without making another request
                 if self.last_status:
@@ -120,6 +127,11 @@ class JiffyCamClient:
                     except (ValueError, AttributeError):
                         return frame
                 return frame
+            elif response.status_code == 304:
+                # Not modified; reuse cached frame without decoding new data
+                #return self.last_frame
+                # actually, return None so UI won't send it to browser
+                return None
             else:
                 self.last_error = f"Server responded with status code: {response.status_code}"
                 self.error_event.set()  # Set error event
