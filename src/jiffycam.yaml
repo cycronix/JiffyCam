@@ -4,6 +4,7 @@ save_interval: 600
 detect_interval: 5
 dataserver_port: 8081
 weights: 'models/yolov8s.pt'
+#weights: 'models/yolov8m-oiv7.pt'    # OIV7 has more classes, but slower
 save_days: 30
 zoom_detect: false
 

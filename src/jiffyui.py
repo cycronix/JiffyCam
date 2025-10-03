@@ -553,16 +553,18 @@ def new_image_display(frame):
         return
     st.session_state.last_render_time = now
 
-    timearrow_placeholder = st.session_state.timearrow_placeholder
+    #timearrow_placeholder = st.session_state.timearrow_placeholder
     if st.session_state.timearrow_placeholder is None:
         print(f"unexpected error: timearrow_placeholder is None")
         #return
     
     # Pass the same width parameter as used for timeline image to maintain consistency
     ta_img = generate_timeline_arrow()
+
     #ucw = True
     #timearrow_placeholder.image(ta_img, channels="RGB", use_container_width=ucw)
-    timearrow_placeholder.image(ta_img, channels="RGB", width="stretch")
+    st.session_state.timearrow_placeholder.image(ta_img, channels="RGB", width="stretch")
+    #timearrow_placeholder = st.empty()
 
     if not st.session_state.in_playback_mode:
         if st.session_state.timeline_placeholder is None:
@@ -576,10 +578,11 @@ def new_image_display(frame):
     cwidth = frame.shape[1]
     #print(f"new_image_display: {frame.shape}, {cwidth}")
     ucw = False
-    if(not st.session_state.video_placeholder):     # delayed creation to avoid flickering
+    if(not st.session_state.video_placeholder or st.session_state.video_placeholder == None):     # delayed creation to avoid flickering
         #print(f"creating video placeholder")
-        st.session_state.video_placeholder = st.image(frame, channels="BGR", width="stretch", output_format="JPG") #, width=cwidth)
+        #st.session_state.video_placeholder = st.image(frame, channels="BGR", width="content", output_format="JPG") #, width=cwidth)
         #st.session_state.video_placeholder = st.image(frame, channels="BGR", width=cwidth)
+        st.session_state.video_placeholder = st.empty()
     else:
         #print(f"updating video placeholder, {inspect.stack()[1].function}")
         st.session_state.video_placeholder.image(frame, channels="BGR", width="stretch", output_format="JPG") #, width=cwidth)
@@ -1152,13 +1155,15 @@ def build_main_area():
             session_name=ui_session,
             active_sessions=active_sessions
         )
+            
+    #timearrow_placeholder = create_placeholder(height=24, width=1200)
 
-    mycontainer = st.container(border=False, key="timeline_container")
+    mycontainer = st.container(border=False, key="timeline_container", width="stretch")
     with mycontainer:
-        timecontainer = st.container(border=False, key="timecontainer", height=90)
+        timecontainer = st.container(border=False, key="timecontainer", height=90, width="stretch")
         with timecontainer:
             # Time Arrow above timeline
-            timearrow_placeholder = create_placeholder(height=24, width=1200, image=generate_timeline_arrow())
+            timearrow_placeholder = create_placeholder(height=24, width=1200)
             #timearrow_placeholder = st.empty()
 
             # Generate timeline image with appropriate width and height to match timearrow
@@ -1200,8 +1205,8 @@ def build_main_area():
 
         # Create video placeholder directly under the timeline (only once)
         # Ensures new_image_display updates appear immediately below the timeline without re-creating the placeholder
-        if 'video_placeholder' not in st.session_state or st.session_state.video_placeholder is None:
-            st.session_state.video_placeholder = st.empty()
+        #if 'video_placeholder' not in st.session_state or st.session_state.video_placeholder is None:
+        #    st.session_state.video_placeholder = st.empty()
         video_placeholder = st.session_state.video_placeholder
 
     st.markdown("</div>", unsafe_allow_html=True) # Close centered container
@@ -1424,4 +1429,3 @@ def run_ui_update_loop():
             time.sleep(1)  # Wait a bit before continuing
 
     print("exit run_ui_update_loop!")
-

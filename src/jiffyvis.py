@@ -11,6 +11,7 @@ import cv2
 import streamlit as st
 from jiffyget import get_locations
 #import inspect
+from PIL import Image
 
 def format_time_12h(hour, minute, second):
     """Format time in 12-hour format with AM/PM indicator."""
@@ -223,4 +224,4 @@ def generate_timeline_arrow(width=1200, height=24, with_markers=False):
             cv2.fillPoly(overlay, [triangle_pts], special_marker_color)
             cv2.addWeighted(overlay, 0.8, timeline_img, 0.2, 0, timeline_img)
 
-    return timeline_img 
+    return timeline_img
