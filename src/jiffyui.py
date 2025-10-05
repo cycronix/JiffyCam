@@ -1022,7 +1022,7 @@ def build_main_area():
         
         # Calculate a valid default date - use browsing_date as single source of truth
         default_date = st.session_state.browsing_date
-        
+
         # Validate and constrain the date
         if 'valid_dates' in st.session_state and st.session_state.valid_dates:
             # If we have valid dates, ensure browsing_date is one of them
@@ -1057,13 +1057,12 @@ def build_main_area():
                 # For recordings with single day of data, just show that date
                 if len(st.session_state.valid_dates) == 1:
                     only_date = st.session_state.valid_dates[0]
-                    
                     create_date_picker(
                         value=only_date,
                         min_value=only_date,
                         max_value=only_date,
                         on_change_handler=on_date_change,
-                        key=f"date_{st.session_state.date_picker_key}",
+                        #key=f"date_{st.session_state.date_picker_key}",
                         help_text="Only one date available for this recording",
                         single_day=True
                     )
@@ -1073,13 +1072,12 @@ def build_main_area():
                 else:
                     # Multiple valid dates - create a date picker with only those dates
                     valid_dates = sorted(st.session_state.valid_dates)
-                    
                     create_date_picker(
                         value=default_date,
                         min_value=valid_dates[0],
                         max_value=valid_dates[-1],
                         on_change_handler=on_date_change,
-                        key=f"date_{st.session_state.date_picker_key}",
+                        #key=f"date_{st.session_state.date_picker_key}",
                         help_text=f"Choose from {len(valid_dates)} days with data"
                     )
             else:
@@ -1089,10 +1087,9 @@ def build_main_area():
                     min_value=min_date,
                     max_value=max_date,
                     on_change_handler=on_date_change,
-                    key=f"date_{st.session_state.date_picker_key}",
+                    #key=f"date_{st.session_state.date_picker_key}",
                     help_text="Select date"
                 )
-
         except Exception as e:
             print(f"Date picker error: {str(e)}")
 

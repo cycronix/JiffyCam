@@ -334,7 +334,7 @@ def create_recording_selector(options, current_selection, on_change_handler, hel
             format_func=format_func
     )
 
-def create_date_picker(value, min_value, max_value, on_change_handler, key="date", help_text="Select date", single_day=False):
+def create_date_picker(value, min_value, max_value, on_change_handler, help_text="Select date", single_day=False):
     """Create a date picker with appropriate range constraints.
     
     Args:
@@ -349,12 +349,14 @@ def create_date_picker(value, min_value, max_value, on_change_handler, key="date
     Returns:
         The created date picker
     """
+    #value = datetime(value)
+    #print('datetime: '+str(value))
     try:
         if single_day:
             return st.date_input(
                 "Date",
                 value=value,
-                key=key,
+                #key=key,
                 on_change=on_change_handler,
                 help=help_text,
                 label_visibility="collapsed",
@@ -365,7 +367,7 @@ def create_date_picker(value, min_value, max_value, on_change_handler, key="date
             return st.date_input(
                 "Date",
                 value=value,
-                key=key,
+                #key=key,
                 on_change=on_change_handler,
                 help=help_text,
                 label_visibility="collapsed",
@@ -378,7 +380,7 @@ def create_date_picker(value, min_value, max_value, on_change_handler, key="date
         return st.date_input(
             "Date",
             value=value,
-            key=f"{key}_fallback",
+            #key=f"{key}_fallback",
             on_change=on_change_handler,
             label_visibility="collapsed"
         ) 
