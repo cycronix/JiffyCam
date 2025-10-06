@@ -445,8 +445,8 @@ class VideoCapture:
 
         # Configure camera
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-        # Do not set width/height; many sources (e.g., RTSP) ignore these. Use frame.shape.
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)     # rtsp ignores this, webcams may respect it
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080) 
         
         save_frame = detect_frame = False  # Initialize as False to skip first frame
         last_fps_time = time.time()
